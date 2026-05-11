@@ -1,20 +1,43 @@
 from fastapi import FastAPI
 import joblib
 import pandas as pd
+import traceback
 
 app = FastAPI()
 
-artifact = joblib.load("models/basketball_xgb_calibrated.joblib")
+MODEL_PATH = "models/basketball_xgb_calibrated.joblib"
 
-model = artifact["model"]
-feature_cols = artifact["feature_cols"]
+artifact = None
+model_error = None
+
+try:
+    artifact = joblib.load(MODEL_PATH)
+except Exception as e:
+    model_error = traceback.format_exc()
 
 @app.get("/")
 def home():
-    return {"status": "Basketball prediction API is running"}
+    if artifact is None:
+        return {
+            "status": "API live, but model failed to load",
+            "error": model_error
+        }
+
+    return {
+        "status": "Basketball prediction API is running",
+        "model_loaded": True
+    }
 
 @app.post("/predict")
 def predict(features: dict):
+    if artifact is None:
+        return {
+            "error": "Model not loaded",
+            "details": model_error
+        }
+
+    model = artifact["model"]
+    feature_cols = artifact["feature_cols"]
 
     row = pd.DataFrame([features])
 
