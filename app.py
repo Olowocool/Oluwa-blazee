@@ -98,7 +98,6 @@ def predict_today(date: str = None):
                 "games": [],
                 "message": "No NBA games found"
             }
-
        
         predictions = []
 
