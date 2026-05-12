@@ -1,3 +1,5 @@
+from nba_api.stats.endpoints import scoreboardv2
+from datetime import datetime
 from fastapi import FastAPI
 import joblib
 import pandas as pd
