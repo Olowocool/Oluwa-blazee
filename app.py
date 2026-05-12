@@ -91,11 +91,17 @@ def predict_today(date: str = None):
         scoreboard = scoreboardv2.ScoreboardV2(game_date=today)
         games_df = scoreboard.get_data_frames()[0]
 
-return {
-    "date": today,
-    "columns": games_df.columns.tolist(),
-    "sample": games_df.head().to_dict(orient="records")
-}
+        return {
+            "date": today,
+            "columns": games_df.columns.tolist(),
+            "sample": games_df.head().to_dict(orient="records")
+        }
+
+    except Exception as e:
+        return {
+            "error": str(e),
+            "message": "predict_today failed"
+        }
 
         if games_df.empty:
             return {
