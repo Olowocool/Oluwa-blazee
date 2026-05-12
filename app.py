@@ -102,16 +102,7 @@ def predict_today(date: str = None):
                 "message": "No NBA games found"
             }
 
-        # Build team ID mapping from historical data
-        team_map = {}
-
-        for _, row in history.iterrows():
-            if "home_team_id" in row and "home_team_name" in row:
-                team_map[row["home_team_id"]] = row["home_team_name"]
-
-            if "away_team_id" in row and "away_team_name" in row:
-                team_map[row["away_team_id"]] = row["away_team_name"]
-
+       
         predictions = []
 
         for _, game in games_df.iterrows():
