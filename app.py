@@ -81,3 +81,21 @@ def predict_matchup(payload: dict):
         "away_win_probability": round(float(1 - prob), 4),
         "prediction": home_team if prob >= 0.5 else away_team
     }
+@app.get("/predict_today")
+def predict_today():
+    today_games = [
+        {
+            "home_team": "Boston Celtics",
+            "away_team": "Los Angeles Lakers"
+        }
+    ]
+
+    predictions = []
+
+    for game in today_games:
+        result = predict_matchup(game)
+        predictions.append(result)
+
+    return {
+        "games": predictions
+    }
