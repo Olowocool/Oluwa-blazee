@@ -91,10 +91,51 @@ def predict_today(date: str = None):
         scoreboard = scoreboardv2.ScoreboardV2(game_date=today)
         games_df = scoreboard.get_data_frames()[0]
 
+        if games_df.empty:
+            return {
+                "date": today,
+                "games": [],
+                "message": "No NBA games found"
+            }
+
+        # Build team ID mapping from historical data
+        team_map = {}
+
+        for _, row in history.iterrows():
+            if "home_team_id" in row and "home_team_name" in row:
+                team_map[row["home_team_id"]] = row["home_team_name"]
+
+            if "away_team_id" in row and "away_team_name" in row:
+                team_map[row["away_team_id"]] = row["away_team_name"]
+
+        predictions = []
+
+        for _, game in games_df.iterrows():
+            home_team_id = game["HOME_TEAM_ID"]
+            away_team_id = game["VISITOR_TEAM_ID"]
+
+            home_team = team_map.get(home_team_id)
+            away_team = team_map.get(away_team_id)
+
+            if not home_team or not away_team:
+                continue
+
+            result = predict_matchup({
+                "home_team": home_team,
+                "away_team": away_team
+            })
+
+            predictions.append(result)
+
         return {
             "date": today,
-            "columns": games_df.columns.tolist(),
-            "sample": games_df.head().to_dict(orient="records")
+            "games": predictions
+        }
+
+    except Exception as e:
+        return {
+            "error": str(e),
+            "message": "predict_today failed"
         }
 
     except Exception as e:
