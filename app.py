@@ -15,7 +15,11 @@ model = artifact["model"]
 feature_cols = artifact["feature_cols"]
 
 history = pd.read_parquet(DATA_PATH)
+team_map = {}
 
+for _, row in history.iterrows():
+    team_map[int(row["home_team_id"])] = row["home_team_name"]
+    team_map[int(row["away_team_id"])] = row["away_team_name"]
 @app.get("/")
 def home():
     return {"status": "NBA prediction API running", "model_loaded": True}
