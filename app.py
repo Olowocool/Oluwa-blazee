@@ -4,7 +4,7 @@ import pandas as pd
 
 app = FastAPI()
 
-artifact = joblib.load("models/basketball_xgb_calibrated_v2.joblib")
+artifact = joblib.load("models/basketball_xgb_calibrated_v3.joblib")
 model = artifact["model"]
 feature_cols = artifact["feature_cols"]
 
