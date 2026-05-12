@@ -85,32 +85,39 @@ def predict_matchup(payload: dict):
     }
 @app.get("/predict_today")
 def predict_today(date: str = None):
-    today = date or datetime.now().strftime("%m/%d/%Y")
+    try:
+        today = date or datetime.now().strftime("%m/%d/%Y")
 
-    scoreboard = scoreboardv2.ScoreboardV2(game_date=today)
-    games_df = scoreboard.get_data_frames()[0]
+        scoreboard = scoreboardv2.ScoreboardV2(game_date=today)
+        games_df = scoreboard.get_data_frames()[0]
 
-    if games_df.empty:
+        if games_df.empty:
+            return {
+                "date": today,
+                "games": [],
+                "message": "No NBA games found for this date"
+            }
+
+        predictions = []
+
+        for _, game in games_df.iterrows():
+            home_team = game["HOME_TEAM_NAME"]
+            away_team = game["VISITOR_TEAM_NAME"]
+
+            result = predict_matchup({
+                "home_team": home_team,
+                "away_team": away_team
+            })
+
+            predictions.append(result)
+
         return {
             "date": today,
-            "games": [],
-            "message": "No NBA games found today"
+            "games": predictions
         }
 
-    predictions = []
-
-    for _, game in games_df.iterrows():
-        home_team = game["HOME_TEAM_NAME"]
-        away_team = game["VISITOR_TEAM_NAME"]
-
-        result = predict_matchup({
-            "home_team": home_team,
-            "away_team": away_team
-        })
-
-        predictions.append(result)
-
-    return {
-        "date": today,
-        "games": predictions
-    }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "message": "predict_today failed"
+        }
