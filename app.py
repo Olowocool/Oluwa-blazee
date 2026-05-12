@@ -84,8 +84,8 @@ def predict_matchup(payload: dict):
         "prediction": home_team if prob >= 0.5 else away_team
     }
 @app.get("/predict_today")
-def predict_today():
-    today = datetime.now().strftime("%m/%d/%Y")
+def predict_today(date: str = None):
+    today = date or datetime.now().strftime("%m/%d/%Y")
 
     scoreboard = scoreboardv2.ScoreboardV2(game_date=today)
     games_df = scoreboard.get_data_frames()[0]
