@@ -7,3 +7,5 @@ xgboost
 joblib
 pyarrow
 nba_api
+streamlit
+requests
