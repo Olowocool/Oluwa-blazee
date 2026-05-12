@@ -85,19 +85,32 @@ def predict_matchup(payload: dict):
     }
 @app.get("/predict_today")
 def predict_today():
-    today_games = [
-        {
-            "home_team": "Boston Celtics",
-            "away_team": "Los Angeles Lakers"
+    today = datetime.now().strftime("%m/%d/%Y")
+
+    scoreboard = scoreboardv2.ScoreboardV2(game_date=today)
+    games_df = scoreboard.get_data_frames()[0]
+
+    if games_df.empty:
+        return {
+            "date": today,
+            "games": [],
+            "message": "No NBA games found today"
         }
-    ]
 
     predictions = []
 
-    for game in today_games:
-        result = predict_matchup(game)
+    for _, game in games_df.iterrows():
+        home_team = game["HOME_TEAM_NAME"]
+        away_team = game["VISITOR_TEAM_NAME"]
+
+        result = predict_matchup({
+            "home_team": home_team,
+            "away_team": away_team
+        })
+
         predictions.append(result)
 
     return {
+        "date": today,
         "games": predictions
     }
