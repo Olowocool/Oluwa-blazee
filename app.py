@@ -8,18 +8,15 @@ import numpy as np
 app = FastAPI()
 
 MODEL_PATH = "models/basketball_xgb_calibrated_v3.joblib"
-DATA_PATH = "outputs/training_dataset.parquet"
 
 artifact = joblib.load(MODEL_PATH)
 model = artifact["model"]
 feature_cols = artifact["feature_cols"]
 
-history = pd.read_parquet(DATA_PATH)
-team_map = {}
+import json
 
-for _, row in history.iterrows():
-    team_map[int(row["home_team_id"])] = row["home_team_name"]
-    team_map[int(row["away_team_id"])] = row["away_team_name"]
+with open("team_map.json", "r") as f:
+    team_map = {int(k): v for k, v in json.load(f).items()}
 @app.get("/")
 def home():
     return {"status": "NBA prediction API running", "model_loaded": True}
