@@ -171,13 +171,13 @@ away_team = st.selectbox(
 
 if st.button("Predict Matchup"):
     try:
-    response = requests.post(
-        f"{API_URL}/predict_matchup",
-        json={
-            "home_team": home_team,
-            "away_team": away_team
-        },
-        timeout=30
+        response = requests.post(
+            f"{API_URL}/predict_matchup",
+            json={
+                "home_team": home_team,
+                "away_team": away_team
+            },
+            timeout=30
     )
 
     if response.status_code != 200:
