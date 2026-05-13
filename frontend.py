@@ -137,18 +137,22 @@ st.title("NBA Prediction Dashboard")
 
 @st.cache_data(ttl=300)
 def load_teams():
+
     try:
-    response = requests.get(f"{API_URL}/teams", timeout=15)
+        response = requests.get(
+            f"{API_URL}/teams",
+            timeout=15
+        )
 
-    if response.status_code != 200:
-        st.error("Failed to load teams.")
+        if response.status_code != 200:
+            st.error("Failed to load teams.")
+            return []
+
+        return response.json()["teams"]
+
+    except Exception as e:
+        st.error(f"Backend connection error: {e}")
         return []
-
-    return response.json()["teams"]
-
-except Exception as e:
-    st.error(f"Backend connection error: {e}")
-    return []
 
 
 teams = load_teams()
