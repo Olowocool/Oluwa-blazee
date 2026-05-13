@@ -105,7 +105,33 @@ def kelly_fraction(probability, odds):
     kelly = ((b * probability) - q) / b
 
     return max(kelly, 0)
+    
+def save_prediction_log(game, game_date):
+    file_exists = os.path.isfile("prediction_history.csv")
 
+    with open("prediction_history.csv", "a", newline="") as file:
+        writer = csv.writer(file)
+
+        if not file_exists:
+            writer.writerow([
+                "timestamp",
+                "game_date",
+                "home_team",
+                "away_team",
+                "prediction",
+                "home_probability",
+                "away_probability"
+            ])
+
+        writer.writerow([
+            datetime.now().isoformat(),
+            game_date,
+            game["home_team"],
+            game["away_team"],
+            game["prediction"],
+            game["home_win_probability"],
+            game["away_win_probability"]
+        ])
 
 st.title("NBA Prediction Dashboard")
 
@@ -231,6 +257,7 @@ if st.button("Load Daily Predictions"):
 
             st.progress(confidence)
             st.info(betting_note)
+            save_prediction_log(game, date_input)
             save_prediction_log(game)
 
             col1, col2 = st.columns(2)
