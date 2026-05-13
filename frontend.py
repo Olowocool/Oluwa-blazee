@@ -107,8 +107,15 @@ def get_odds():
 
         for game in games:
 
-            home_team = game["home_team"]
-            away_team = game["away_team"]
+            home_team = TEAM_NAME_MAP.get(
+                game["home_team"],
+                game["home_team"]
+            )
+            
+            away_team = TEAM_NAME_MAP.get(
+                game["away_team"],
+                game["away_team"]
+            )
 
             bookmakers = game.get("bookmakers", [])
 
