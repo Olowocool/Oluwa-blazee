@@ -139,11 +139,7 @@ if st.button("Load Daily Predictions"):
     odds_map = get_odds()
 
     # DEBUG VIEW
-    st.write(
-        "Odds games found:",
-        list(odds_map.keys())[:10]
-    )
-
+    
     if "games" in data and len(data["games"]) > 0:
 
         for game in data["games"]:
