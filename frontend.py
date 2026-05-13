@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 from datetime import datetime
+import csv
+import os
 
 API_URL = "https://oluwa-blazee.onrender.com"
 ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
@@ -58,7 +60,31 @@ def get_odds():
 
     return odds_map
 
+def save_prediction_log(game):
+    file_exists = os.path.isfile("prediction_history.csv")
 
+    with open("prediction_history.csv", "a", newline="") as file:
+        writer = csv.writer(file)
+
+        if not file_exists:
+            writer.writerow([
+                "timestamp",
+                "home_team",
+                "away_team",
+                "prediction",
+                "home_probability",
+                "away_probability"
+            ])
+
+        writer.writerow([
+            datetime.now().isoformat(),
+            game["home_team"],
+            game["away_team"],
+            game["prediction"],
+            game["home_win_probability"],
+            game["away_win_probability"]
+        ])
+        
 def calculate_ev(model_prob, decimal_odds):
     implied_prob = 1 / decimal_odds
     ev = (model_prob * (decimal_odds - 1)) - (1 - model_prob)
@@ -205,6 +231,7 @@ if st.button("Load Daily Predictions"):
 
             st.progress(confidence)
             st.info(betting_note)
+            save_prediction_log(game)
 
             col1, col2 = st.columns(2)
 
