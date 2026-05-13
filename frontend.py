@@ -353,6 +353,24 @@ if st.button("Load Daily Predictions"):
                     away_odds
                 )
 
+                best_bet = None
+                best_ev = 0
+                
+                if home_ev > away_ev and home_ev > 0.05:
+                    best_bet = game["home_team"]
+                    best_ev = home_ev
+                
+                elif away_ev > home_ev and away_ev > 0.05:
+                    best_bet = game["away_team"]
+                    best_ev = away_ev
+                
+                if best_bet:
+                    st.success(
+                        f"🔥 BEST BET: {best_bet} | Expected Value: {best_ev * 100:.1f}%"
+                    )
+                else:
+                    st.warning("No strong value bet detected.")
+
                 home_kelly = kelly_fraction(
                     game["home_win_probability"],
                     home_odds
