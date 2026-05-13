@@ -18,7 +18,7 @@ TEAM_LOGOS = {
     "San Antonio Spurs": "https://cdn.nba.com/logos/nba/1610612759/primary/L/logo.svg",
 }
 
-
+@st.cache_data(ttl=300)
 def get_odds():
     url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
 
@@ -135,8 +135,13 @@ def save_prediction_log(game, game_date):
 
 st.title("NBA Prediction Dashboard")
 
-teams_response = requests.get(f"{API_URL}/teams")
-teams = teams_response.json()["teams"]
+@st.cache_data(ttl=300)
+def load_teams():
+    response = requests.get(f"{API_URL}/teams")
+    return response.json()["teams"]
+
+
+teams = load_teams()
 
 home_team = st.selectbox(
     "Home Team",
