@@ -174,7 +174,10 @@ if st.button("Load Daily Predictions"):
                 home_match = home.lower() == game["home_team"].lower()
                 away_match = away.lower() == game["away_team"].lower()
 
-                if home_match and away_match:
+                if (
+                    game["home_team"].lower() in home.lower()
+                    and game["away_team"].lower() in away.lower()
+                ):
                     odds = value
                     break
 
