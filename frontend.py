@@ -103,6 +103,9 @@ def get_odds():
 
         games = response.json()
 
+        st.write("Odds API Raw Response:")
+        st.write(games[:1])
+
         odds_map = {}
 
         for game in games:
