@@ -10,7 +10,7 @@ from datetime import datetime
 
 API_URL = "https://oluwa-blazee.onrender.com"
 
-ODDS_API_KEY = "YOUR_ODDS_API_KEY"
+ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
 
 # =========================================================
 # TEAM LOGOS
