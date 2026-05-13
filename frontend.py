@@ -258,8 +258,7 @@ if st.button("Load Daily Predictions"):
             st.progress(confidence)
             st.info(betting_note)
             save_prediction_log(game, date_input)
-            save_prediction_log(game)
-
+            
             col1, col2 = st.columns(2)
 
             with col1:
