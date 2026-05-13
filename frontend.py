@@ -131,7 +131,8 @@ st.header("Today's NBA Games")
 
 date_input = st.text_input(
     "Game Date (MM/DD/YYYY)",
-    "12/25/2025",
+    from datetime import datetime
+    datetime.today().strftime("%m/%d/%Y"),
     key="daily_games_date"
 )
 
