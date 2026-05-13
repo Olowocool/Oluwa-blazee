@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 API_URL = "https://oluwa-blazee.onrender.com"
-ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
+ODDS_API_KEY = "PASTE_YOUR_ODDS_API_KEY_HERE"
 
 TEAM_LOGOS = {
     "Boston Celtics": "https://cdn.nba.com/logos/nba/1610612738/primary/L/logo.svg",
@@ -48,7 +48,6 @@ def get_odds():
             continue
 
         outcomes = bookmaker["markets"][0]["outcomes"]
-
         odds = {}
 
         for outcome in outcomes:
@@ -59,11 +58,29 @@ def get_odds():
     return odds_map
 
 
-st.title("NBA Prediction Dashboard")
+def calculate_ev(model_prob, decimal_odds):
+    implied_prob = 1 / decimal_odds
+    ev = (model_prob * (decimal_odds - 1)) - (1 - model_prob)
 
-# =========================
-# MATCHUP PREDICTOR
-# =========================
+    return {
+        "implied_probability": implied_prob,
+        "expected_value": ev
+    }
+
+
+def kelly_fraction(probability, odds):
+    b = odds - 1
+    q = 1 - probability
+
+    if b <= 0:
+        return 0
+
+    kelly = ((b * probability) - q) / b
+
+    return max(kelly, 0)
+
+
+st.title("NBA Prediction Dashboard")
 
 teams_response = requests.get(f"{API_URL}/teams")
 teams = teams_response.json()["teams"]
@@ -81,7 +98,6 @@ away_team = st.selectbox(
 )
 
 if st.button("Predict Matchup"):
-
     response = requests.post(
         f"{API_URL}/predict_matchup",
         json={
@@ -93,11 +109,7 @@ if st.button("Predict Matchup"):
     result = response.json()
 
     st.subheader("Prediction Result")
-
-    st.metric(
-        "Predicted Winner",
-        result["prediction"]
-    )
+    st.metric("Predicted Winner", result["prediction"])
 
     col1, col2 = st.columns(2)
 
@@ -115,10 +127,6 @@ if st.button("Predict Matchup"):
 
 st.divider()
 
-# =========================
-# DAILY GAMES
-# =========================
-
 st.header("Today's NBA Games")
 
 date_input = st.text_input(
@@ -128,64 +136,43 @@ date_input = st.text_input(
 )
 
 if st.button("Load Daily Predictions"):
-
     response = requests.get(
         f"{API_URL}/predict_today",
         params={"date": date_input}
     )
 
     data = response.json()
-
     odds_map = get_odds()
 
-    # DEBUG VIEW
-    
     if "games" in data and len(data["games"]) > 0:
-
         for game in data["games"]:
-
             col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
 
-            # AWAY LOGO
             with col_logo1:
                 away_logo = TEAM_LOGOS.get(game["away_team"])
-
                 if away_logo:
                     st.image(away_logo, width=70)
 
-            # MATCHUP TEXT
             with col_text:
                 st.subheader(
                     f"{game['away_team']} @ {game['home_team']}"
                 )
 
-            # HOME LOGO
             with col_logo2:
                 home_logo = TEAM_LOGOS.get(game["home_team"])
-
                 if home_logo:
                     st.image(home_logo, width=70)
 
-            # CONFIDENCE
             confidence = max(
                 game["home_win_probability"],
                 game["away_win_probability"]
             )
 
-            # MATCH ODDS
             odds = {}
 
             for (home, away), value in odds_map.items():
-
-                home_match = (
-                    home.lower() ==
-                    game["home_team"].lower()
-                )
-
-                away_match = (
-                    away.lower() ==
-                    game["away_team"].lower()
-                )
+                home_match = home.lower() == game["home_team"].lower()
+                away_match = away.lower() == game["away_team"].lower()
 
                 if home_match and away_match:
                     odds = value
@@ -194,34 +181,27 @@ if st.button("Load Daily Predictions"):
             home_odds = odds.get(game["home_team"])
             away_odds = odds.get(game["away_team"])
 
-            # CONFIDENCE LABEL
             if confidence >= 0.70:
                 confidence_label = "Strong Favorite"
                 betting_note = "High-confidence model pick"
-
             elif confidence >= 0.60:
                 confidence_label = "Lean"
                 betting_note = "Moderate model edge"
-
             elif confidence >= 0.55:
                 confidence_label = "Slight Lean"
                 betting_note = "Small edge, use caution"
-
             else:
                 confidence_label = "Avoid"
                 betting_note = "Too close to call"
 
-            # PREDICTION
             st.metric(
                 label=f"Predicted Winner — {confidence_label}",
                 value=game["prediction"]
             )
 
             st.progress(confidence)
-
             st.info(betting_note)
 
-            # TEAM PROBABILITIES
             col1, col2 = st.columns(2)
 
             with col1:
@@ -236,9 +216,7 @@ if st.button("Load Daily Predictions"):
                     value=f"{game['away_win_probability'] * 100:.1f}%"
                 )
 
-            # SPORTSBOOK ODDS
             if home_odds and away_odds:
-
                 implied_home = 1 / home_odds
                 implied_away = 1 / away_odds
 
@@ -248,15 +226,25 @@ if st.button("Load Daily Predictions"):
                 home_edge = model_home - implied_home
                 away_edge = model_away - implied_away
 
+                home_ev_data = calculate_ev(model_home, home_odds)
+                away_ev_data = calculate_ev(model_away, away_odds)
+
+                home_kelly = kelly_fraction(model_home, home_odds)
+                away_kelly = kelly_fraction(model_away, away_odds)
+
                 st.markdown("### Sportsbook Odds")
 
                 col_odds1, col_odds2 = st.columns(2)
 
                 with col_odds1:
-
                     st.metric(
                         "Home Odds",
                         f"{home_odds:.2f}"
+                    )
+
+                    st.metric(
+                        "Home Implied Probability",
+                        f"{implied_home * 100:.1f}%"
                     )
 
                     st.metric(
@@ -265,10 +253,14 @@ if st.button("Load Daily Predictions"):
                     )
 
                 with col_odds2:
-
                     st.metric(
                         "Away Odds",
                         f"{away_odds:.2f}"
+                    )
+
+                    st.metric(
+                        "Away Implied Probability",
+                        f"{implied_away * 100:.1f}%"
                     )
 
                     st.metric(
@@ -276,26 +268,46 @@ if st.button("Load Daily Predictions"):
                         f"{away_edge * 100:.1f}%"
                     )
 
-                if home_edge > 0.05:
+                st.markdown("### Betting Analytics")
 
-                    st.success(
-                        f"Value detected on {game['home_team']}"
+                bet_col1, bet_col2 = st.columns(2)
+
+                with bet_col1:
+                    st.metric(
+                        "Home EV",
+                        f"{home_ev_data['expected_value'] * 100:.1f}%"
                     )
 
-                elif away_edge > 0.05:
-
-                    st.success(
-                        f"Value detected on {game['away_team']}"
+                    st.metric(
+                        "Home Kelly",
+                        f"{home_kelly * 100:.1f}%"
                     )
 
+                with bet_col2:
+                    st.metric(
+                        "Away EV",
+                        f"{away_ev_data['expected_value'] * 100:.1f}%"
+                    )
+
+                    st.metric(
+                        "Away Kelly",
+                        f"{away_kelly * 100:.1f}%"
+                    )
+
+                if home_ev_data["expected_value"] > 0.05:
+                    st.success(
+                        f"Value bet detected on {game['home_team']}"
+                    )
+                elif away_ev_data["expected_value"] > 0.05:
+                    st.success(
+                        f"Value bet detected on {game['away_team']}"
+                    )
                 else:
-
                     st.warning(
-                        "No major betting edge found"
+                        "No positive EV bet found"
                     )
 
             else:
-
                 st.warning(
                     "No sportsbook odds found for this matchup."
                 )
@@ -303,7 +315,4 @@ if st.button("Load Daily Predictions"):
             st.divider()
 
     else:
-
-        st.warning(
-            "No games returned from API."
-        )
+        st.warning("No games returned from API.")
