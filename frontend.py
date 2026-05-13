@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 API_URL = "https://oluwa-blazee.onrender.com"
-ODDS_API_KEY = "PASTE_YOUR_ODDS_API_KEY_HERE"
+ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
 
 TEAM_LOGOS = {
     "Boston Celtics": "https://cdn.nba.com/logos/nba/1610612738/primary/L/logo.svg",
