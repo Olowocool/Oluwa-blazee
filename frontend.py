@@ -137,8 +137,18 @@ st.title("NBA Prediction Dashboard")
 
 @st.cache_data(ttl=300)
 def load_teams():
-    response = requests.get(f"{API_URL}/teams")
+    try:
+    response = requests.get(f"{API_URL}/teams", timeout=15)
+
+    if response.status_code != 200:
+        st.error("Failed to load teams.")
+        return []
+
     return response.json()["teams"]
+
+except Exception as e:
+    st.error(f"Backend connection error: {e}")
+    return []
 
 
 teams = load_teams()
@@ -156,7 +166,25 @@ away_team = st.selectbox(
 )
 
 if st.button("Predict Matchup"):
+    try:
     response = requests.post(
+        f"{API_URL}/predict_matchup",
+        json={
+            "home_team": home_team,
+            "away_team": away_team
+        },
+        timeout=30
+    )
+
+    if response.status_code != 200:
+        st.error("Matchup prediction failed.")
+        st.stop()
+
+    result = response.json()
+
+except Exception as e:
+    st.error(f"Prediction error: {e}")
+    st.stop()
         f"{API_URL}/predict_matchup",
         json={
             "home_team": home_team,
@@ -194,12 +222,22 @@ date_input = st.text_input(
 )
 
 if st.button("Load Daily Predictions"):
+    try:
     response = requests.get(
         f"{API_URL}/predict_today",
-        params={"date": date_input}
+        params={"date": date_input},
+        timeout=30
     )
 
+    if response.status_code != 200:
+        st.error("Prediction API failed.")
+        st.stop()
+
     data = response.json()
+
+except Exception as e:
+    st.error(f"Prediction request failed: {e}")
+    st.stop()
     odds_map = get_odds()
 
     if "games" in data and len(data["games"]) > 0:
