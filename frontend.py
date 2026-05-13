@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+from datetime import datetime
 
 API_URL = "https://oluwa-blazee.onrender.com"
 ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
@@ -131,7 +132,6 @@ st.header("Today's NBA Games")
 
 date_input = st.text_input(
     "Game Date (MM/DD/YYYY)",
-    from datetime import datetime
     datetime.today().strftime("%m/%d/%Y"),
     key="daily_games_date"
 )
