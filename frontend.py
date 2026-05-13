@@ -59,7 +59,7 @@ def load_teams():
     try:
         response = requests.get(
             f"{API_URL}/teams",
-            timeout=15
+            timeout=60
         )
 
         if response.status_code != 200:
