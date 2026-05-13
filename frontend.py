@@ -48,7 +48,12 @@ TEAM_LOGOS = {
     "Utah Jazz": "https://cdn.nba.com/logos/nba/1610612762/global/L/logo.svg",
     "Washington Wizards": "https://cdn.nba.com/logos/nba/1610612764/global/L/logo.svg"
 }
-
+TEAM_NAME_MAP = {
+    "LA Clippers": "Los Angeles Clippers",
+    "Phoenix Suns": "Phoenix Suns",
+    "Orlando Magic": "Orlando Magic",
+    "New York Knicks": "New York Knicks"
+}
 # =========================================================
 # HELPERS
 # =========================================================
