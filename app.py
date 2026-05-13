@@ -102,42 +102,7 @@ def predict_today(date: str = None):
             "frame_1_columns": frames[1].columns.tolist() if len(frames) > 1 else [],
             "frame_1_sample": frames[1].head().to_dict(orient="records") if len(frames) > 1 else []
         }
-        if games_df.empty:
-            return {
-                "date": today,
-                "games": [],
-                "message": "No NBA games found"
-            }
-
-        predictions = []
-
-        for _, game in games_df.iterrows():
-            home_team_id = int(game["HOME_TEAM_ID"])
-            away_team_id = int(game["VISITOR_TEAM_ID"])
-
-            home_team = team_map.get(home_team_id)
-            away_team = team_map.get(away_team_id)
-
-            if not home_team or not away_team:
-                predictions.append({
-                    "home_team_id": home_team_id,
-                    "away_team_id": away_team_id,
-                    "error": "Team ID not found in team_map.json"
-                })
-                continue
-
-            result = predict_matchup({
-                "home_team": home_team,
-                "away_team": away_team
-            })
-
-            predictions.append(result)
-
-        return {
-            "date": today,
-            "games": predictions
-        }
-
+            
     except Exception as e:
         return {
             "error": str(e),
