@@ -96,15 +96,6 @@ def predict_today(date: str = None):
         scoreboard = scoreboardv2.ScoreboardV2(game_date=today)
         frames = scoreboard.get_data_frames()
 
-        return {
-            "date": today,
-            "frames_count": len(frames),
-            "frame_0_columns": frames[0].columns.tolist() if len(frames) > 0 else [],
-            "frame_0_sample": frames[0].fillna("").head().to_dict(orient="records") if len(frames) > 0 else [],
-            "frame_1_columns": frames[1].columns.tolist() if len(frames) > 1 else [],
-            "frame_1_sample": frames[1].fillna("").head().to_dict(orient="records") if len(frames) > 1 else []
-        }
-        
     except Exception as e:
         return {
             "error": str(e),
