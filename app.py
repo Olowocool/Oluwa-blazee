@@ -7,7 +7,9 @@ import numpy as np
 import json
 
 app = FastAPI()
-
+@app.get("/")
+def root():
+    return {"message": "backend live"}
 MODEL_PATH = "models/basketball_xgb_calibrated_v3.joblib"
 TEAM_MAP_PATH = "team_map.json"
 
