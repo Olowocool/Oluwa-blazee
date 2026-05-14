@@ -129,28 +129,28 @@ date_input = st.text_input(
 
 if st.button("Load Daily Predictions"):
 
-try:
-    response = requests.get(
-        f"{API_URL}/predict_today",
-        params={"date": date_input},
-        timeout=60
-    )
-
-    if response.status_code != 200:
-        st.error(f"Prediction API failed with status {response.status_code}")
-        st.write(response.text)
-        st.stop()
-
     try:
-        data = response.json()
-    except Exception:
-        st.error("Backend did not return valid JSON.")
-        st.write(response.text)
+        response = requests.get(
+            f"{API_URL}/predict_today",
+            params={"date": date_input},
+            timeout=60
+        )
+    
+        if response.status_code != 200:
+            st.error(f"Prediction API failed with status {response.status_code}")
+            st.write(response.text)
+            st.stop()
+    
+        try:
+            data = response.json()
+        except Exception:
+            st.error("Backend did not return valid JSON.")
+            st.write(response.text)
+            st.stop()
+    
+    except Exception as e:
+        st.error(f"Prediction request failed: {e}")
         st.stop()
-
-except Exception as e:
-    st.error(f"Prediction request failed: {e}")
-    st.stop()
 
     odds_map = get_odds()
 
