@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-API_URL = "https://oluwa-blazee.onrender.com"
+API_URL = "https://oluwa-blazee-new.onrender.com"
 ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
 
 TEAM_LOGOS = {
