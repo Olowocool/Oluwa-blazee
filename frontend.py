@@ -156,10 +156,7 @@ if st.button("Load Daily Predictions"):
 
     # DEBUG VIEW
     st.write(
-        "Odds games found:",
-        list(odds_map.keys())[:10]
-    )
-
+        
     if "games" in data and len(data["games"]) > 0:
 
         for game in data["games"]:
@@ -195,19 +192,26 @@ if st.button("Load Daily Predictions"):
             # MATCH ODDS
             odds = {}
 
+            odds = {}
+            
+            game_home = game["home_team"].lower()
+            game_away = game["away_team"].lower()
+            
             for (home, away), value in odds_map.items():
-
-                home_match = (
-                    home.lower() ==
-                    game["home_team"].lower()
+                odds_home = home.lower()
+                odds_away = away.lower()
+            
+                normal_match = (
+                    game_home == odds_home
+                    and game_away == odds_away
                 )
-
-                away_match = (
-                    away.lower() ==
-                    game["away_team"].lower()
+            
+                reversed_match = (
+                    game_home == odds_away
+                    and game_away == odds_home
                 )
-
-                if home_match and away_match:
+            
+                if normal_match or reversed_match:
                     odds = value
                     break
 
