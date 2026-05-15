@@ -616,4 +616,24 @@ else:
     )
     
     st.subheader("Saved Bet Picks")
-    st.dataframe(updated_df)
+    def highlight_results(row):
+    result = str(row["result"]).lower()
+
+    if result == "win":
+        return ["background-color: #d4edda"] * len(row)
+
+    elif result == "loss":
+        return ["background-color: #f8d7da"] * len(row)
+
+    return ["background-color: #fff3cd"] * len(row)
+
+
+styled_df = updated_df.style.apply(
+    highlight_results,
+    axis=1
+)
+
+st.dataframe(
+    styled_df,
+    use_container_width=True
+)
