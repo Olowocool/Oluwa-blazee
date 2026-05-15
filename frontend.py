@@ -275,7 +275,7 @@ if st.button("Load Daily Predictions"):
             home_odds = None
             away_odds = None
             
-            for team_name, price in odds.items():
+        for team_name, price in odds.items():
 
     normalized_team = team_name.strip().lower()
 
