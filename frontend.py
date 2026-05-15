@@ -47,6 +47,7 @@ TEAM_LOGOS = {
 TEAM_NAME_FIXES = {
     "Philadelphia Sixers": "Philadelphia 76ers",
     "LA Clippers": "Los Angeles Clippers",
+    "Los Angeles Clippers": "Los Angeles Clippers"
 }
 
 
@@ -378,16 +379,20 @@ if data and "games" in data and len(data["games"]) > 0:
 
         odds = {}
 
-        game_home = normalize_team_name(game["home_team"]).lower()
-        game_away = normalize_team_name(game["away_team"]).lower()
-
+        game_home = normalize_team_name(game["home_team"]).strip().lower()
+        game_away = normalize_team_name(game["away_team"]).strip().lower()
+        
         for (home, away), value in odds_map.items():
-            odds_home = normalize_team_name(home).lower()
-            odds_away = normalize_team_name(away).lower()
-
-            teams_match = sorted([game_home, game_away]) == sorted([odds_home, odds_away])
-
-            if teams_match:
+            odds_home = normalize_team_name(home).strip().lower()
+            odds_away = normalize_team_name(away).strip().lower()
+        
+            same_matchup = (
+                (game_home == odds_home and game_away == odds_away)
+                or
+                (game_home == odds_away and game_away == odds_home)
+            )
+        
+            if same_matchup:
                 odds = value
                 break
 
