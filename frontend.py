@@ -229,6 +229,9 @@ def load_bet_history():
 
     if "stake" not in df.columns:
         df["stake"] = STAKE
+        df["stake"] = pd.to_numeric(df["stake"], errors="coerce")
+        df["stake"] = df["stake"].fillna(STAKE)
+        df.loc[df["stake"] <= 0, "stake"] = STAKE
 
     if "result" not in df.columns:
         df["result"] = "Pending"
