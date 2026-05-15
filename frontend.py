@@ -97,14 +97,17 @@ def get_odds():
             away_team = normalize_team_name(game["away_team"])
 
             bookmakers = game.get("bookmakers", [])
+
             if not bookmakers:
                 continue
 
             markets = bookmakers[0].get("markets", [])
+
             if not markets:
                 continue
 
             outcomes = markets[0].get("outcomes", [])
+
             current_odds = {}
 
             for outcome in outcomes:
@@ -240,6 +243,38 @@ def load_bet_history():
 
 def save_bet_history(df):
     df.to_csv("bet_history.csv", index=False)
+
+
+def auto_grade_bet(row):
+    try:
+        response = requests.get(
+            f"{API_URL}/score_result",
+            params={
+                "date": row["game_date"],
+                "home_team": row["home_team"],
+                "away_team": row["away_team"],
+                "best_bet": row["best_bet"]
+            },
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return row
+
+        data = response.json()
+
+        if data.get("status") == "completed":
+            row["result"] = data["result"]
+            row["profit_loss"] = calculate_profit_loss({
+                "result": data["result"],
+                "odds": row["odds"],
+                "stake": row["stake"]
+            })
+
+        return row
+
+    except Exception:
+        return row
 
 
 teams = load_teams()
@@ -489,18 +524,23 @@ else:
         errors="coerce"
     )
 
-    total_bets = len(bet_history)
-    wins = len(bet_history[bet_history["result"].str.lower() == "win"])
-    losses = len(bet_history[bet_history["result"].str.lower() == "loss"])
+    updated_df = bet_history.copy()
+
+    updated_df = updated_df.apply(auto_grade_bet, axis=1)
+    save_bet_history(updated_df)
+
+    total_bets = len(updated_df)
+    wins = len(updated_df[updated_df["result"].str.lower() == "win"])
+    losses = len(updated_df[updated_df["result"].str.lower() == "loss"])
     settled_bets = wins + losses
 
     win_rate = (wins / settled_bets * 100) if settled_bets > 0 else 0
-    total_profit = bet_history["profit_loss"].sum()
+    total_profit = updated_df["profit_loss"].sum()
     total_staked = settled_bets * STAKE
     roi = (total_profit / total_staked * 100) if total_staked > 0 else 0
 
-    avg_ev = bet_history["expected_value"].mean() * 100
-    avg_kelly = bet_history["kelly"].mean() * 100
+    avg_ev = updated_df["expected_value"].mean() * 100
+    avg_kelly = updated_df["kelly"].mean() * 100
 
     col1, col2, col3 = st.columns(3)
 
@@ -525,8 +565,6 @@ else:
         st.metric("Average Kelly", f"{avg_kelly:.1f}%")
 
     st.subheader("Update Bet Results")
-
-    updated_df = bet_history.copy()
 
     for index, row in updated_df.iterrows():
         current_result = row["result"]
