@@ -499,6 +499,13 @@ if data and "games" in data and len(data["games"]) > 0:
 
         else:
             st.warning("No sportsbook odds found for this matchup.")
+        
+            with st.expander("Debug odds matching"):
+                st.write("Prediction matchup:")
+                st.write(game["away_team"], "@", game["home_team"])
+        
+                st.write("Available Odds API matchups:")
+                st.write(list(odds_map.keys())[:20])
 
         st.divider()
 
