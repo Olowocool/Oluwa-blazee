@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 API_URL = "https://oluwa-blazee-new.onrender.com"
-ODDS_API_KEY = "PASTE_YOUR_ODDS_API_KEY_HERE"
+ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
 
 TEAM_LOGOS = {
     "Atlanta Hawks": "https://cdn.nba.com/logos/nba/1610612737/global/L/logo.svg",
