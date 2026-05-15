@@ -20,7 +20,7 @@ TEAM_LOGOS = {
     "Golden State Warriors": "https://cdn.nba.com/logos/nba/1610612744/global/L/logo.svg",
     "Houston Rockets": "https://cdn.nba.com/logos/nba/1610612745/global/L/logo.svg",
     "Indiana Pacers": "https://cdn.nba.com/logos/nba/1610612754/global/L/logo.svg",
-    "LA Clippers": "https://cdn.nba.com/logos/nba/1610612746/global/L/logo.svg",
+    "Los Angeles Clippers": "https://cdn.nba.com/logos/nba/1610612746/global/L/logo.svg",
     "Los Angeles Lakers": "https://cdn.nba.com/logos/nba/1610612747/global/L/logo.svg",
     "Memphis Grizzlies": "https://cdn.nba.com/logos/nba/1610612763/global/L/logo.svg",
     "Miami Heat": "https://cdn.nba.com/logos/nba/1610612748/global/L/logo.svg",
@@ -39,12 +39,28 @@ TEAM_LOGOS = {
     "Utah Jazz": "https://cdn.nba.com/logos/nba/1610612762/global/L/logo.svg",
     "Washington Wizards": "https://cdn.nba.com/logos/nba/1610612764/global/L/logo.svg",
 }
+
 TEAM_NAME_FIXES = {
     "Philadelphia Sixers": "Philadelphia 76ers",
-    "LA Clippers": "Los Angeles Clippers",
-    "Phoenix Suns": "Phoenix Suns",
-    "New York Knicks": "New York Knicks"
+    "LA Clippers": "Los Angeles Clippers"
 }
+
+
+@st.cache_data(ttl=300)
+def load_teams():
+    try:
+        response = requests.get(f"{API_URL}/teams", timeout=60)
+
+        if response.status_code != 200:
+            st.error("Failed to load teams.")
+            return []
+
+        return response.json()["teams"]
+
+    except Exception as e:
+        st.error(f"Backend connection error: {e}")
+        return []
+
 
 @st.cache_data(ttl=300)
 def get_odds():
@@ -109,64 +125,6 @@ def get_odds():
         return {}
 
 
-@st.cache_data(ttl=300)
-def get_odds():
-    url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
-
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": "h2h",
-        "oddsFormat": "decimal"
-    }
-
-    try:
-        response = requests.get(url, params=params, timeout=60)
-
-        if response.status_code != 200:
-            st.warning(f"Odds API Error: {response.status_code}")
-            return {}
-
-        games = response.json()
-        odds_map = {}
-
-        for game in games:
-            home_team = TEAM_NAME_FIXES.get(
-            game["home_team"],
-            game["home_team"]
-        )
-        
-        away_team = TEAM_NAME_FIXES.get(
-            game["away_team"],
-            game["away_team"]
-        )
-
-            bookmakers = game.get("bookmakers", [])
-
-            if not bookmakers:
-                continue
-
-            markets = bookmakers[0].get("markets", [])
-
-            if not markets:
-                continue
-
-            outcomes = markets[0].get("outcomes", [])
-
-            current_odds = {}
-
-            for outcome in outcomes:
-                current_odds[outcome["name"]] = outcome["price"]
-
-            odds_map[(home_team, away_team)] = current_odds
-
-        return odds_map
-
-    except Exception as e:
-        st.warning(f"Odds fetch failed: {e}")
-        return {}
-
-
 def calculate_ev(model_prob, decimal_odds):
     implied_prob = 1 / decimal_odds
     ev = (model_prob * (decimal_odds - 1)) - (1 - model_prob)
@@ -218,8 +176,7 @@ st.title("Today's NBA Games")
 
 date_input = st.text_input(
     "Game Date (MM/DD/YYYY)",
-    value="01/15/2026",
-    key="daily_games_date"
+    value="01/15/2026"
 )
 
 if st.button("Load Daily Predictions"):
@@ -235,12 +192,7 @@ if st.button("Load Daily Predictions"):
             st.write(response.text)
             st.stop()
 
-        try:
-            data = response.json()
-        except Exception:
-            st.error("Backend did not return valid JSON.")
-            st.write(response.text)
-            st.stop()
+        data = response.json()
 
     except Exception as e:
         st.error(f"Prediction request failed: {e}")
@@ -330,13 +282,6 @@ if st.button("Load Daily Predictions"):
             home_odds = odds.get(game["home_team"])
             away_odds = odds.get(game["away_team"])
 
-            if not home_odds or not away_odds:
-                for team_name, price in odds.items():
-                    if team_name.lower() == game_home:
-                        home_odds = price
-                    if team_name.lower() == game_away:
-                        away_odds = price
-
             if home_odds and away_odds:
                 st.subheader("Betting Analytics")
 
@@ -398,80 +343,3 @@ if st.button("Load Daily Predictions"):
 
     else:
         st.warning("No games returned from API.")
-
-
-st.title("Single Matchup Prediction")
-
-if teams:
-    home_team = st.selectbox(
-        "Home Team",
-        teams,
-        key="home_team"
-    )
-
-    away_team = st.selectbox(
-        "Away Team",
-        teams,
-        key="away_team"
-    )
-
-    if st.button("Predict Matchup"):
-        try:
-            response = requests.post(
-                f"{API_URL}/predict_matchup",
-                json={
-                    "home_team": home_team,
-                    "away_team": away_team
-                },
-                timeout=60
-            )
-
-            if response.status_code != 200:
-                st.error("Matchup prediction failed.")
-                st.write(response.text)
-                st.stop()
-
-            result = response.json()
-
-        except Exception as e:
-            st.error(f"Prediction error: {e}")
-            st.stop()
-
-        col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
-
-        with col_logo1:
-            away_logo = TEAM_LOGOS.get(away_team)
-            if away_logo:
-                st.image(away_logo, width=70)
-
-        with col_text:
-            st.subheader(f"{away_team} @ {home_team}")
-
-        with col_logo2:
-            home_logo = TEAM_LOGOS.get(home_team)
-            if home_logo:
-                st.image(home_logo, width=70)
-
-        confidence = max(
-            result["home_win_probability"],
-            result["away_win_probability"]
-        )
-
-        st.header(result["prediction"])
-        st.progress(confidence)
-
-        metric_col1, metric_col2 = st.columns(2)
-
-        with metric_col1:
-            st.metric(
-                home_team,
-                f"{result['home_win_probability'] * 100:.1f}%"
-            )
-
-        with metric_col2:
-            st.metric(
-                away_team,
-                f"{result['away_win_probability'] * 100:.1f}%"
-            )
-else:
-    st.warning("Teams could not be loaded from backend.")
