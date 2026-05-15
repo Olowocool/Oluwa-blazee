@@ -166,13 +166,49 @@ def save_prediction_log(game, game_date):
         ])
 
 
+def save_bet_pick(game, game_date, best_bet, odds, model_prob, expected_value, kelly):
+    file_exists = os.path.isfile("bet_history.csv")
+
+    with open("bet_history.csv", "a", newline="") as file:
+        writer = csv.writer(file)
+
+        if not file_exists:
+            writer.writerow([
+                "timestamp",
+                "game_date",
+                "home_team",
+                "away_team",
+                "best_bet",
+                "odds",
+                "model_probability",
+                "expected_value",
+                "kelly",
+                "result",
+                "profit_loss"
+            ])
+
+        writer.writerow([
+            datetime.now().isoformat(),
+            game_date,
+            game["home_team"],
+            game["away_team"],
+            best_bet,
+            odds,
+            model_prob,
+            expected_value,
+            kelly,
+            "",
+            ""
+        ])
+
+
 teams = load_teams()
 
 st.title("Today's NBA Games")
 
 date_input = st.text_input(
     "Game Date (MM/DD/YYYY)",
-    value="01/15/2026"
+    value="05/15/2026"
 )
 
 if st.button("Load Daily Predictions"):
@@ -330,6 +366,32 @@ if st.button("Load Daily Predictions"):
                     st.success(
                         f"🔥 BEST BET: {best_bet} | Expected Value: {best_ev * 100:.1f}%"
                     )
+
+                    if best_bet == game["home_team"]:
+                        selected_odds = home_odds
+                        selected_prob = game["home_win_probability"]
+                        selected_kelly = home_kelly
+                    else:
+                        selected_odds = away_odds
+                        selected_prob = game["away_win_probability"]
+                        selected_kelly = away_kelly
+
+                    if st.button(
+                        f"Save Bet Pick: {best_bet}",
+                        key=f"save_{game['home_team']}_{game['away_team']}_{best_bet}"
+                    ):
+                        save_bet_pick(
+                            game,
+                            date_input,
+                            best_bet,
+                            selected_odds,
+                            selected_prob,
+                            best_ev,
+                            selected_kelly
+                        )
+
+                        st.success("Bet pick saved to bet_history.csv")
+
                 else:
                     st.warning("No strong value bet detected.")
 
