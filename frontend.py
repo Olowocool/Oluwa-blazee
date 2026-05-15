@@ -258,29 +258,32 @@ if st.button("Load Daily Predictions"):
 
             odds = {}
 
-            game_home = game["home_team"].lower()
-            game_away = game["away_team"].lower()
-
+            game_home = game["home_team"].strip().lower()
+            game_away = game["away_team"].strip().lower()
+            
             for (home, away), value in odds_map.items():
-                odds_home = home.lower()
-                odds_away = away.lower()
-
-                normal_match = (
-                    game_home == odds_home
-                    and game_away == odds_away
-                )
-
-                reversed_match = (
-                    game_home == odds_away
-                    and game_away == odds_home
-                )
-
-                if normal_match or reversed_match:
+            
+                odds_home = home.strip().lower()
+                odds_away = away.strip().lower()
+            
+                teams_match = sorted([game_home, game_away]) == sorted([odds_home, odds_away])
+            
+                if teams_match:
                     odds = value
                     break
+            
+            home_odds = None
+            away_odds = None
+            
+            for team_name, price in odds.items():
 
-            home_odds = odds.get(game["home_team"])
-            away_odds = odds.get(game["away_team"])
+    normalized_team = team_name.strip().lower()
+
+    if normalized_team == game_home:
+        home_odds = price
+
+    elif normalized_team == game_away:
+        away_odds = price
 
             if home_odds and away_odds:
                 st.subheader("Betting Analytics")
