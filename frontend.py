@@ -212,6 +212,13 @@ def load_bet_history():
 
 teams = load_teams()
 
+if "daily_data" not in st.session_state:
+    st.session_state["daily_data"] = None
+
+if "last_loaded_date" not in st.session_state:
+    st.session_state["last_loaded_date"] = None
+
+
 st.title("Today's NBA Games")
 
 date_input = st.text_input(
@@ -233,193 +240,198 @@ if st.button("Load Daily Predictions"):
             st.stop()
 
         data = response.json()
+        st.session_state["daily_data"] = data
+        st.session_state["last_loaded_date"] = date_input
 
     except Exception as e:
         st.error(f"Prediction request failed: {e}")
         st.stop()
 
+
+data = st.session_state["daily_data"]
+active_date = st.session_state["last_loaded_date"] or date_input
+
+if data and "games" in data and len(data["games"]) > 0:
     odds_map = get_odds()
 
-    if "games" in data and len(data["games"]) > 0:
-        for game in data["games"]:
-            col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
+    for game in data["games"]:
+        col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
 
-            with col_logo1:
-                away_logo = TEAM_LOGOS.get(game["away_team"])
-                if away_logo:
-                    st.image(away_logo, width=70)
+        with col_logo1:
+            away_logo = TEAM_LOGOS.get(game["away_team"])
+            if away_logo:
+                st.image(away_logo, width=70)
 
-            with col_text:
-                st.subheader(f"{game['away_team']} @ {game['home_team']}")
+        with col_text:
+            st.subheader(f"{game['away_team']} @ {game['home_team']}")
 
-            with col_logo2:
-                home_logo = TEAM_LOGOS.get(game["home_team"])
-                if home_logo:
-                    st.image(home_logo, width=70)
+        with col_logo2:
+            home_logo = TEAM_LOGOS.get(game["home_team"])
+            if home_logo:
+                st.image(home_logo, width=70)
 
-            confidence = max(
-                game["home_win_probability"],
-                game["away_win_probability"]
+        confidence = max(
+            game["home_win_probability"],
+            game["away_win_probability"]
+        )
+
+        if confidence >= 0.70:
+            confidence_label = "Strong Favorite"
+            betting_note = "High-confidence model pick"
+        elif confidence >= 0.60:
+            confidence_label = "Lean"
+            betting_note = "Moderate model edge"
+        elif confidence >= 0.55:
+            confidence_label = "Slight Lean"
+            betting_note = "Small edge, use caution"
+        else:
+            confidence_label = "Avoid"
+            betting_note = "Too close to call"
+
+        st.caption(f"Predicted Winner — {confidence_label}")
+        st.header(game["prediction"])
+        st.progress(confidence)
+        st.info(betting_note)
+
+        save_prediction_log(game, active_date)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.metric(
+                label=game["home_team"],
+                value=f"{game['home_win_probability'] * 100:.1f}%"
             )
 
-            if confidence >= 0.70:
-                confidence_label = "Strong Favorite"
-                betting_note = "High-confidence model pick"
-            elif confidence >= 0.60:
-                confidence_label = "Lean"
-                betting_note = "Moderate model edge"
-            elif confidence >= 0.55:
-                confidence_label = "Slight Lean"
-                betting_note = "Small edge, use caution"
-            else:
-                confidence_label = "Avoid"
-                betting_note = "Too close to call"
+        with col2:
+            st.metric(
+                label=game["away_team"],
+                value=f"{game['away_win_probability'] * 100:.1f}%"
+            )
 
-            st.caption(f"Predicted Winner — {confidence_label}")
-            st.header(game["prediction"])
-            st.progress(confidence)
-            st.info(betting_note)
+        odds = {}
 
-            save_prediction_log(game, date_input)
+        game_home = normalize_team_name(game["home_team"]).lower()
+        game_away = normalize_team_name(game["away_team"]).lower()
 
-            col1, col2 = st.columns(2)
+        for (home, away), value in odds_map.items():
+            odds_home = normalize_team_name(home).lower()
+            odds_away = normalize_team_name(away).lower()
 
-            with col1:
-                st.metric(
-                    label=game["home_team"],
-                    value=f"{game['home_win_probability'] * 100:.1f}%"
+            teams_match = sorted([game_home, game_away]) == sorted([odds_home, odds_away])
+
+            if teams_match:
+                odds = value
+                break
+
+        home_odds = None
+        away_odds = None
+
+        for team_name, price in odds.items():
+            normalized_team = normalize_team_name(team_name).lower()
+
+            if normalized_team == game_home:
+                home_odds = price
+
+            elif normalized_team == game_away:
+                away_odds = price
+
+        if home_odds and away_odds:
+            st.subheader("Betting Analytics")
+
+            home_ev, home_implied = calculate_ev(
+                game["home_win_probability"],
+                home_odds
+            )
+
+            away_ev, away_implied = calculate_ev(
+                game["away_win_probability"],
+                away_odds
+            )
+
+            home_kelly = kelly_fraction(
+                game["home_win_probability"],
+                home_odds
+            )
+
+            away_kelly = kelly_fraction(
+                game["away_win_probability"],
+                away_odds
+            )
+
+            analytics_col1, analytics_col2 = st.columns(2)
+
+            with analytics_col1:
+                st.metric(f"{game['home_team']} Odds", f"{home_odds:.2f}")
+                st.metric("Implied Probability", f"{home_implied * 100:.1f}%")
+                st.metric("Expected Value", f"{home_ev * 100:.1f}%")
+                st.metric("Kelly %", f"{home_kelly * 100:.1f}%")
+
+            with analytics_col2:
+                st.metric(f"{game['away_team']} Odds", f"{away_odds:.2f}")
+                st.metric("Implied Probability", f"{away_implied * 100:.1f}%")
+                st.metric("Expected Value", f"{away_ev * 100:.1f}%")
+                st.metric("Kelly %", f"{away_kelly * 100:.1f}%")
+
+            best_bet = None
+            best_ev = 0
+
+            if home_ev > away_ev and home_ev > 0.05:
+                best_bet = game["home_team"]
+                best_ev = home_ev
+            elif away_ev > home_ev and away_ev > 0.05:
+                best_bet = game["away_team"]
+                best_ev = away_ev
+
+            if best_bet:
+                st.success(
+                    f"🔥 BEST BET: {best_bet} | Expected Value: {best_ev * 100:.1f}%"
                 )
 
-            with col2:
-                st.metric(
-                    label=game["away_team"],
-                    value=f"{game['away_win_probability'] * 100:.1f}%"
-                )
+                if best_bet == game["home_team"]:
+                    selected_odds = home_odds
+                    selected_prob = game["home_win_probability"]
+                    selected_kelly = home_kelly
+                else:
+                    selected_odds = away_odds
+                    selected_prob = game["away_win_probability"]
+                    selected_kelly = away_kelly
 
-            odds = {}
+                button_key = f"button_{game['home_team']}_{game['away_team']}_{best_bet}"
+                saved_key = f"saved_{game['home_team']}_{game['away_team']}_{best_bet}"
 
-            game_home = normalize_team_name(game["home_team"]).lower()
-            game_away = normalize_team_name(game["away_team"]).lower()
+                if saved_key not in st.session_state:
+                    st.session_state[saved_key] = False
 
-            for (home, away), value in odds_map.items():
-                odds_home = normalize_team_name(home).lower()
-                odds_away = normalize_team_name(away).lower()
-
-                teams_match = sorted([game_home, game_away]) == sorted([odds_home, odds_away])
-
-                if teams_match:
-                    odds = value
-                    break
-
-            home_odds = None
-            away_odds = None
-
-            for team_name, price in odds.items():
-                normalized_team = normalize_team_name(team_name).lower()
-
-                if normalized_team == game_home:
-                    home_odds = price
-
-                elif normalized_team == game_away:
-                    away_odds = price
-
-            if home_odds and away_odds:
-                st.subheader("Betting Analytics")
-
-                home_ev, home_implied = calculate_ev(
-                    game["home_win_probability"],
-                    home_odds
-                )
-
-                away_ev, away_implied = calculate_ev(
-                    game["away_win_probability"],
-                    away_odds
-                )
-
-                home_kelly = kelly_fraction(
-                    game["home_win_probability"],
-                    home_odds
-                )
-
-                away_kelly = kelly_fraction(
-                    game["away_win_probability"],
-                    away_odds
-                )
-
-                analytics_col1, analytics_col2 = st.columns(2)
-
-                with analytics_col1:
-                    st.metric(f"{game['home_team']} Odds", f"{home_odds:.2f}")
-                    st.metric("Implied Probability", f"{home_implied * 100:.1f}%")
-                    st.metric("Expected Value", f"{home_ev * 100:.1f}%")
-                    st.metric("Kelly %", f"{home_kelly * 100:.1f}%")
-
-                with analytics_col2:
-                    st.metric(f"{game['away_team']} Odds", f"{away_odds:.2f}")
-                    st.metric("Implied Probability", f"{away_implied * 100:.1f}%")
-                    st.metric("Expected Value", f"{away_ev * 100:.1f}%")
-                    st.metric("Kelly %", f"{away_kelly * 100:.1f}%")
-
-                best_bet = None
-                best_ev = 0
-
-                if home_ev > away_ev and home_ev > 0.05:
-                    best_bet = game["home_team"]
-                    best_ev = home_ev
-                elif away_ev > home_ev and away_ev > 0.05:
-                    best_bet = game["away_team"]
-                    best_ev = away_ev
-
-                if best_bet:
-                    st.success(
-                        f"🔥 BEST BET: {best_bet} | Expected Value: {best_ev * 100:.1f}%"
+                if st.button(
+                    f"Save Bet Pick: {best_bet}",
+                    key=button_key
+                ):
+                    save_bet_pick(
+                        game,
+                        active_date,
+                        best_bet,
+                        selected_odds,
+                        selected_prob,
+                        best_ev,
+                        selected_kelly
                     )
 
-                    if best_bet == game["home_team"]:
-                        selected_odds = home_odds
-                        selected_prob = game["home_win_probability"]
-                        selected_kelly = home_kelly
-                    else:
-                        selected_odds = away_odds
-                        selected_prob = game["away_win_probability"]
-                        selected_kelly = away_kelly
+                    st.session_state[saved_key] = True
 
-                    save_key = f"save_{game['home_team']}_{game['away_team']}_{best_bet}"
-
-                    button_key = f"button_{game['home_team']}_{game['away_team']}_{best_bet}"
-                    saved_key = f"saved_{game['home_team']}_{game['away_team']}_{best_bet}"
-                    
-                    if saved_key not in st.session_state:
-                        st.session_state[saved_key] = False
-                    
-                    if st.button(
-                        f"Save Bet Pick: {best_bet}",
-                        key=button_key
-                    ):
-                        save_bet_pick(
-                            game,
-                            date_input,
-                            best_bet,
-                            selected_odds,
-                            selected_prob,
-                            best_ev,
-                            selected_kelly
-                        )
-                    
-                        st.session_state[saved_key] = True
-                    
-                    if st.session_state[saved_key]:
-                        st.success("Bet pick saved successfully!")
-                else:
-                    st.warning("No strong value bet detected.")
+                if st.session_state[saved_key]:
+                    st.success("Bet pick saved successfully!")
 
             else:
-                st.warning("No sportsbook odds found for this matchup.")
+                st.warning("No strong value bet detected.")
 
-            st.divider()
+        else:
+            st.warning("No sportsbook odds found for this matchup.")
 
-    else:
-        st.warning("No games returned from API.")
+        st.divider()
+
+elif data:
+    st.warning("No games returned from API.")
 
 
 st.title("Bet Performance Dashboard")
