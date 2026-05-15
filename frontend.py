@@ -5,7 +5,8 @@ import os
 from datetime import datetime
 
 API_URL = "https://oluwa-blazee-new.onrender.com"
-ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
+ODDS_API_KEY = "PASTE_YOUR_REAL_ODDS_API_KEY"
+
 
 TEAM_LOGOS = {
     "Atlanta Hawks": "https://cdn.nba.com/logos/nba/1610612737/global/L/logo.svg",
@@ -40,10 +41,16 @@ TEAM_LOGOS = {
     "Washington Wizards": "https://cdn.nba.com/logos/nba/1610612764/global/L/logo.svg",
 }
 
+
 TEAM_NAME_FIXES = {
     "Philadelphia Sixers": "Philadelphia 76ers",
-    "LA Clippers": "Los Angeles Clippers"
+    "LA Clippers": "Los Angeles Clippers",
 }
+
+
+def normalize_team_name(name):
+    fixed = TEAM_NAME_FIXES.get(name, name)
+    return fixed.strip()
 
 
 @st.cache_data(ttl=300)
@@ -84,15 +91,8 @@ def get_odds():
         odds_map = {}
 
         for game in games:
-            home_team = TEAM_NAME_FIXES.get(
-                game["home_team"],
-                game["home_team"]
-            )
-
-            away_team = TEAM_NAME_FIXES.get(
-                game["away_team"],
-                game["away_team"]
-            )
+            home_team = normalize_team_name(game["home_team"])
+            away_team = normalize_team_name(game["away_team"])
 
             bookmakers = game.get("bookmakers", [])
 
@@ -109,11 +109,7 @@ def get_odds():
             current_odds = {}
 
             for outcome in outcomes:
-                fixed_name = TEAM_NAME_FIXES.get(
-                    outcome["name"],
-                    outcome["name"]
-                )
-
+                fixed_name = normalize_team_name(outcome["name"])
                 current_odds[fixed_name] = outcome["price"]
 
             odds_map[(home_team, away_team)] = current_odds
@@ -258,32 +254,30 @@ if st.button("Load Daily Predictions"):
 
             odds = {}
 
-            game_home = game["home_team"].strip().lower()
-            game_away = game["away_team"].strip().lower()
-            
+            game_home = normalize_team_name(game["home_team"]).lower()
+            game_away = normalize_team_name(game["away_team"]).lower()
+
             for (home, away), value in odds_map.items():
-            
-                odds_home = home.strip().lower()
-                odds_away = away.strip().lower()
-            
+                odds_home = normalize_team_name(home).lower()
+                odds_away = normalize_team_name(away).lower()
+
                 teams_match = sorted([game_home, game_away]) == sorted([odds_home, odds_away])
-            
+
                 if teams_match:
                     odds = value
                     break
-            
+
             home_odds = None
             away_odds = None
-            
-        for team_name, price in odds.items():
 
-    normalized_team = team_name.strip().lower()
+            for team_name, price in odds.items():
+                normalized_team = normalize_team_name(team_name).lower()
 
-    if normalized_team == game_home:
-        home_odds = price
+                if normalized_team == game_home:
+                    home_odds = price
 
-    elif normalized_team == game_away:
-        away_odds = price
+                elif normalized_team == game_away:
+                    away_odds = price
 
             if home_odds and away_odds:
                 st.subheader("Betting Analytics")
