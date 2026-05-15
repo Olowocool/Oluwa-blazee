@@ -127,7 +127,11 @@ def calculate_ev(model_prob, decimal_odds):
     implied_prob = 1 / decimal_odds
     ev = (model_prob * (decimal_odds - 1)) - (1 - model_prob)
     return ev, implied_prob
-
+    
+def calibrate_probability(probability, strength=0.75, min_prob=0.05, max_prob=0.95):
+    probability = max(min(probability, max_prob), min_prob)
+    calibrated = 0.5 + ((probability - 0.5) * strength)
+    return calibrated
 
 def kelly_fraction(probability, decimal_odds):
     b = decimal_odds - 1
@@ -431,6 +435,9 @@ if data and "games" in data and len(data["games"]) > 0:
 
         if home_odds and away_odds:
             st.subheader("Betting Analytics")
+            
+            calibrated_home_prob = calibrate_probability(game["home_win_probability"])
+            calibrated_away_prob = calibrate_probability(game["away_win_probability"])
 
             home_ev, home_implied = calculate_ev(
                 game["home_win_probability"],
