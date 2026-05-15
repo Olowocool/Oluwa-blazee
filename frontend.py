@@ -155,39 +155,40 @@ if st.button("Load Daily Predictions"):
     odds_map = get_odds()
 
     # DEBUG VIEW
+    
     st.write(
-        
-    if "games" in data and len(data["games"]) > 0:
-
-        for game in data["games"]:
-
-            col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
-
-            # AWAY LOGO
-            with col_logo1:
-                away_logo = TEAM_LOGOS.get(game["away_team"])
-
-                if away_logo:
-                    st.image(away_logo, width=70)
-
-            # MATCHUP TEXT
-            with col_text:
-                st.subheader(
-                    f"{game['away_team']} @ {game['home_team']}"
+            
+        if "games" in data and len(data["games"]) > 0:
+    
+            for game in data["games"]:
+    
+                col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
+    
+                # AWAY LOGO
+                with col_logo1:
+                    away_logo = TEAM_LOGOS.get(game["away_team"])
+    
+                    if away_logo:
+                        st.image(away_logo, width=70)
+    
+                # MATCHUP TEXT
+                with col_text:
+                    st.subheader(
+                        f"{game['away_team']} @ {game['home_team']}"
+                    )
+    
+                # HOME LOGO
+                with col_logo2:
+                    home_logo = TEAM_LOGOS.get(game["home_team"])
+    
+                    if home_logo:
+                        st.image(home_logo, width=70)
+    
+                # CONFIDENCE
+                confidence = max(
+                    game["home_win_probability"],
+                    game["away_win_probability"]
                 )
-
-            # HOME LOGO
-            with col_logo2:
-                home_logo = TEAM_LOGOS.get(game["home_team"])
-
-                if home_logo:
-                    st.image(home_logo, width=70)
-
-            # CONFIDENCE
-            confidence = max(
-                game["home_win_probability"],
-                game["away_win_probability"]
-            )
 
             # MATCH ODDS
             odds = {}
