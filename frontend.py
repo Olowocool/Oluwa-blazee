@@ -1,21 +1,63 @@
 import streamlit as st
 import requests
+import csv
+import os
+from datetime import datetime
 
 API_URL = "https://oluwa-blazee-new.onrender.com"
-ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
+ODDS_API_KEY = "PASTE_YOUR_ODDS_API_KEY_HERE"
 
 TEAM_LOGOS = {
-    "Boston Celtics": "https://cdn.nba.com/logos/nba/1610612738/primary/L/logo.svg",
-    "Los Angeles Lakers": "https://cdn.nba.com/logos/nba/1610612747/primary/L/logo.svg",
-    "New York Knicks": "https://cdn.nba.com/logos/nba/1610612752/primary/L/logo.svg",
-    "Cleveland Cavaliers": "https://cdn.nba.com/logos/nba/1610612739/primary/L/logo.svg",
-    "Golden State Warriors": "https://cdn.nba.com/logos/nba/1610612744/primary/L/logo.svg",
-    "Dallas Mavericks": "https://cdn.nba.com/logos/nba/1610612742/primary/L/logo.svg",
-    "Oklahoma City Thunder": "https://cdn.nba.com/logos/nba/1610612760/primary/L/logo.svg",
-    "San Antonio Spurs": "https://cdn.nba.com/logos/nba/1610612759/primary/L/logo.svg",
+    "Atlanta Hawks": "https://cdn.nba.com/logos/nba/1610612737/global/L/logo.svg",
+    "Boston Celtics": "https://cdn.nba.com/logos/nba/1610612738/global/L/logo.svg",
+    "Brooklyn Nets": "https://cdn.nba.com/logos/nba/1610612751/global/L/logo.svg",
+    "Charlotte Hornets": "https://cdn.nba.com/logos/nba/1610612766/global/L/logo.svg",
+    "Chicago Bulls": "https://cdn.nba.com/logos/nba/1610612741/global/L/logo.svg",
+    "Cleveland Cavaliers": "https://cdn.nba.com/logos/nba/1610612739/global/L/logo.svg",
+    "Dallas Mavericks": "https://cdn.nba.com/logos/nba/1610612742/global/L/logo.svg",
+    "Denver Nuggets": "https://cdn.nba.com/logos/nba/1610612743/global/L/logo.svg",
+    "Detroit Pistons": "https://cdn.nba.com/logos/nba/1610612765/global/L/logo.svg",
+    "Golden State Warriors": "https://cdn.nba.com/logos/nba/1610612744/global/L/logo.svg",
+    "Houston Rockets": "https://cdn.nba.com/logos/nba/1610612745/global/L/logo.svg",
+    "Indiana Pacers": "https://cdn.nba.com/logos/nba/1610612754/global/L/logo.svg",
+    "LA Clippers": "https://cdn.nba.com/logos/nba/1610612746/global/L/logo.svg",
+    "Los Angeles Lakers": "https://cdn.nba.com/logos/nba/1610612747/global/L/logo.svg",
+    "Memphis Grizzlies": "https://cdn.nba.com/logos/nba/1610612763/global/L/logo.svg",
+    "Miami Heat": "https://cdn.nba.com/logos/nba/1610612748/global/L/logo.svg",
+    "Milwaukee Bucks": "https://cdn.nba.com/logos/nba/1610612749/global/L/logo.svg",
+    "Minnesota Timberwolves": "https://cdn.nba.com/logos/nba/1610612750/global/L/logo.svg",
+    "New Orleans Pelicans": "https://cdn.nba.com/logos/nba/1610612740/global/L/logo.svg",
+    "New York Knicks": "https://cdn.nba.com/logos/nba/1610612752/global/L/logo.svg",
+    "Oklahoma City Thunder": "https://cdn.nba.com/logos/nba/1610612760/global/L/logo.svg",
+    "Orlando Magic": "https://cdn.nba.com/logos/nba/1610612753/global/L/logo.svg",
+    "Philadelphia 76ers": "https://cdn.nba.com/logos/nba/1610612755/global/L/logo.svg",
+    "Phoenix Suns": "https://cdn.nba.com/logos/nba/1610612756/global/L/logo.svg",
+    "Portland Trail Blazers": "https://cdn.nba.com/logos/nba/1610612757/global/L/logo.svg",
+    "Sacramento Kings": "https://cdn.nba.com/logos/nba/1610612758/global/L/logo.svg",
+    "San Antonio Spurs": "https://cdn.nba.com/logos/nba/1610612759/global/L/logo.svg",
+    "Toronto Raptors": "https://cdn.nba.com/logos/nba/1610612761/global/L/logo.svg",
+    "Utah Jazz": "https://cdn.nba.com/logos/nba/1610612762/global/L/logo.svg",
+    "Washington Wizards": "https://cdn.nba.com/logos/nba/1610612764/global/L/logo.svg",
 }
 
 
+@st.cache_data(ttl=300)
+def load_teams():
+    try:
+        response = requests.get(f"{API_URL}/teams", timeout=60)
+
+        if response.status_code != 200:
+            st.error("Failed to load teams.")
+            return []
+
+        return response.json()["teams"]
+
+    except Exception as e:
+        st.error(f"Backend connection error: {e}")
+        return []
+
+
+@st.cache_data(ttl=300)
 def get_odds():
     url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
 
@@ -26,227 +68,169 @@ def get_odds():
         "oddsFormat": "decimal"
     }
 
-    response = requests.get(url, params=params)
+    try:
+        response = requests.get(url, params=params, timeout=60)
 
-    if response.status_code != 200:
-        st.error(f"Odds API Error: {response.status_code}")
+        if response.status_code != 200:
+            st.warning(f"Odds API Error: {response.status_code}")
+            return {}
+
+        games = response.json()
+        odds_map = {}
+
+        for game in games:
+            home_team = game["home_team"]
+            away_team = game["away_team"]
+
+            bookmakers = game.get("bookmakers", [])
+
+            if not bookmakers:
+                continue
+
+            markets = bookmakers[0].get("markets", [])
+
+            if not markets:
+                continue
+
+            outcomes = markets[0].get("outcomes", [])
+
+            current_odds = {}
+
+            for outcome in outcomes:
+                current_odds[outcome["name"]] = outcome["price"]
+
+            odds_map[(home_team, away_team)] = current_odds
+
+        return odds_map
+
+    except Exception as e:
+        st.warning(f"Odds fetch failed: {e}")
         return {}
 
-    games = response.json()
-    odds_map = {}
 
-    for game in games:
-        home_team = game["home_team"]
-        away_team = game["away_team"]
-
-        if not game.get("bookmakers"):
-            continue
-
-        bookmaker = game["bookmakers"][0]
-
-        if not bookmaker.get("markets"):
-            continue
-
-        outcomes = bookmaker["markets"][0]["outcomes"]
-
-        odds = {}
-
-        for outcome in outcomes:
-            odds[outcome["name"]] = outcome["price"]
-
-        odds_map[(home_team, away_team)] = odds
-
-    return odds_map
+def calculate_ev(model_prob, decimal_odds):
+    implied_prob = 1 / decimal_odds
+    ev = (model_prob * (decimal_odds - 1)) - (1 - model_prob)
+    return ev, implied_prob
 
 
-st.title("NBA Prediction Dashboard")
+def kelly_fraction(probability, decimal_odds):
+    b = decimal_odds - 1
+    q = 1 - probability
 
-# =========================
-# MATCHUP PREDICTOR
-# =========================
+    if b <= 0:
+        return 0
 
-teams_response = requests.get(f"{API_URL}/teams")
-teams = teams_response.json()["teams"]
+    kelly = ((b * probability) - q) / b
+    return max(kelly, 0)
 
-home_team = st.selectbox(
-    "Home Team",
-    teams,
-    index=teams.index("Boston Celtics")
-)
 
-away_team = st.selectbox(
-    "Away Team",
-    teams,
-    index=teams.index("Los Angeles Lakers")
-)
+def save_prediction_log(game, game_date):
+    file_exists = os.path.isfile("prediction_history.csv")
 
-if st.button("Predict Matchup"):
+    with open("prediction_history.csv", "a", newline="") as file:
+        writer = csv.writer(file)
 
-    response = requests.post(
-        f"{API_URL}/predict_matchup",
-        json={
-            "home_team": home_team,
-            "away_team": away_team
-        }
-    )
+        if not file_exists:
+            writer.writerow([
+                "timestamp",
+                "game_date",
+                "home_team",
+                "away_team",
+                "prediction",
+                "home_probability",
+                "away_probability"
+            ])
 
-    result = response.json()
+        writer.writerow([
+            datetime.now().isoformat(),
+            game_date,
+            game["home_team"],
+            game["away_team"],
+            game["prediction"],
+            game["home_win_probability"],
+            game["away_win_probability"]
+        ])
 
-    st.subheader("Prediction Result")
 
-    st.metric(
-        "Predicted Winner",
-        result["prediction"]
-    )
+teams = load_teams()
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.metric(
-            result["home_team"],
-            f"{result['home_win_probability'] * 100:.1f}%"
-        )
-
-    with col2:
-        st.metric(
-            result["away_team"],
-            f"{result['away_win_probability'] * 100:.1f}%"
-        )
-
-st.divider()
-
-# =========================
-# DAILY GAMES
-# =========================
-
-st.header("Today's NBA Games")
+st.title("Today's NBA Games")
 
 date_input = st.text_input(
     "Game Date (MM/DD/YYYY)",
-    "12/25/2025",
+    value="01/15/2026",
     key="daily_games_date"
 )
 
 if st.button("Load Daily Predictions"):
-
     try:
         response = requests.get(
             f"{API_URL}/predict_today",
             params={"date": date_input},
             timeout=60
         )
-    
+
         if response.status_code != 200:
             st.error(f"Prediction API failed with status {response.status_code}")
             st.write(response.text)
             st.stop()
-    
+
         try:
             data = response.json()
         except Exception:
             st.error("Backend did not return valid JSON.")
             st.write(response.text)
             st.stop()
-    
+
     except Exception as e:
         st.error(f"Prediction request failed: {e}")
         st.stop()
 
     odds_map = get_odds()
 
-    # DEBUG VIEW
-    
-    st.write(
-            
-        if "games" in data and len(data["games"]) > 0:
-    
-            for game in data["games"]:
-    
-                col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
-    
-                # AWAY LOGO
-                with col_logo1:
-                    away_logo = TEAM_LOGOS.get(game["away_team"])
-    
-                    if away_logo:
-                        st.image(away_logo, width=70)
-    
-                # MATCHUP TEXT
-                with col_text:
-                    st.subheader(
-                        f"{game['away_team']} @ {game['home_team']}"
-                    )
-    
-                # HOME LOGO
-                with col_logo2:
-                    home_logo = TEAM_LOGOS.get(game["home_team"])
-    
-                    if home_logo:
-                        st.image(home_logo, width=70)
-    
-                # CONFIDENCE
-                confidence = max(
-                    game["home_win_probability"],
-                    game["away_win_probability"]
-                )
+    if "games" in data and len(data["games"]) > 0:
+        for game in data["games"]:
+            col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
 
-            # MATCH ODDS
-            odds = {}
+            with col_logo1:
+                away_logo = TEAM_LOGOS.get(game["away_team"])
+                if away_logo:
+                    st.image(away_logo, width=70)
 
-            odds = {}
-            
-            game_home = game["home_team"].lower()
-            game_away = game["away_team"].lower()
-            
-            for (home, away), value in odds_map.items():
-                odds_home = home.lower()
-                odds_away = away.lower()
-            
-                normal_match = (
-                    game_home == odds_home
-                    and game_away == odds_away
-                )
-            
-                reversed_match = (
-                    game_home == odds_away
-                    and game_away == odds_home
-                )
-            
-                if normal_match or reversed_match:
-                    odds = value
-                    break
+            with col_text:
+                st.subheader(f"{game['away_team']} @ {game['home_team']}")
 
-            home_odds = odds.get(game["home_team"])
-            away_odds = odds.get(game["away_team"])
+            with col_logo2:
+                home_logo = TEAM_LOGOS.get(game["home_team"])
+                if home_logo:
+                    st.image(home_logo, width=70)
 
-            # CONFIDENCE LABEL
+            confidence = max(
+                game["home_win_probability"],
+                game["away_win_probability"]
+            )
+
             if confidence >= 0.70:
                 confidence_label = "Strong Favorite"
                 betting_note = "High-confidence model pick"
-
             elif confidence >= 0.60:
                 confidence_label = "Lean"
                 betting_note = "Moderate model edge"
-
             elif confidence >= 0.55:
                 confidence_label = "Slight Lean"
                 betting_note = "Small edge, use caution"
-
             else:
                 confidence_label = "Avoid"
                 betting_note = "Too close to call"
 
-            # PREDICTION
-            st.metric(
-                label=f"Predicted Winner — {confidence_label}",
-                value=game["prediction"]
-            )
-
+            st.caption(f"Predicted Winner — {confidence_label}")
+            st.header(game["prediction"])
             st.progress(confidence)
-
             st.info(betting_note)
 
-            # TEAM PROBABILITIES
+            save_prediction_log(game, date_input)
+
             col1, col2 = st.columns(2)
 
             with col1:
@@ -261,74 +245,174 @@ if st.button("Load Daily Predictions"):
                     value=f"{game['away_win_probability'] * 100:.1f}%"
                 )
 
-            # SPORTSBOOK ODDS
+            odds = {}
+
+            game_home = game["home_team"].lower()
+            game_away = game["away_team"].lower()
+
+            for (home, away), value in odds_map.items():
+                odds_home = home.lower()
+                odds_away = away.lower()
+
+                normal_match = (
+                    game_home == odds_home
+                    and game_away == odds_away
+                )
+
+                reversed_match = (
+                    game_home == odds_away
+                    and game_away == odds_home
+                )
+
+                if normal_match or reversed_match:
+                    odds = value
+                    break
+
+            home_odds = odds.get(game["home_team"])
+            away_odds = odds.get(game["away_team"])
+
+            if not home_odds or not away_odds:
+                for team_name, price in odds.items():
+                    if team_name.lower() == game_home:
+                        home_odds = price
+                    if team_name.lower() == game_away:
+                        away_odds = price
+
             if home_odds and away_odds:
+                st.subheader("Betting Analytics")
 
-                implied_home = 1 / home_odds
-                implied_away = 1 / away_odds
+                home_ev, home_implied = calculate_ev(
+                    game["home_win_probability"],
+                    home_odds
+                )
 
-                model_home = game["home_win_probability"]
-                model_away = game["away_win_probability"]
+                away_ev, away_implied = calculate_ev(
+                    game["away_win_probability"],
+                    away_odds
+                )
 
-                home_edge = model_home - implied_home
-                away_edge = model_away - implied_away
+                home_kelly = kelly_fraction(
+                    game["home_win_probability"],
+                    home_odds
+                )
 
-                st.markdown("### Sportsbook Odds")
+                away_kelly = kelly_fraction(
+                    game["away_win_probability"],
+                    away_odds
+                )
 
-                col_odds1, col_odds2 = st.columns(2)
+                analytics_col1, analytics_col2 = st.columns(2)
 
-                with col_odds1:
+                with analytics_col1:
+                    st.metric(f"{game['home_team']} Odds", f"{home_odds:.2f}")
+                    st.metric("Implied Probability", f"{home_implied * 100:.1f}%")
+                    st.metric("Expected Value", f"{home_ev * 100:.1f}%")
+                    st.metric("Kelly %", f"{home_kelly * 100:.1f}%")
 
-                    st.metric(
-                        "Home Odds",
-                        f"{home_odds:.2f}"
-                    )
+                with analytics_col2:
+                    st.metric(f"{game['away_team']} Odds", f"{away_odds:.2f}")
+                    st.metric("Implied Probability", f"{away_implied * 100:.1f}%")
+                    st.metric("Expected Value", f"{away_ev * 100:.1f}%")
+                    st.metric("Kelly %", f"{away_kelly * 100:.1f}%")
 
-                    st.metric(
-                        "Home Model Edge",
-                        f"{home_edge * 100:.1f}%"
-                    )
+                best_bet = None
+                best_ev = 0
 
-                with col_odds2:
+                if home_ev > away_ev and home_ev > 0.05:
+                    best_bet = game["home_team"]
+                    best_ev = home_ev
+                elif away_ev > home_ev and away_ev > 0.05:
+                    best_bet = game["away_team"]
+                    best_ev = away_ev
 
-                    st.metric(
-                        "Away Odds",
-                        f"{away_odds:.2f}"
-                    )
-
-                    st.metric(
-                        "Away Model Edge",
-                        f"{away_edge * 100:.1f}%"
-                    )
-
-                if home_edge > 0.05:
-
+                if best_bet:
                     st.success(
-                        f"Value detected on {game['home_team']}"
+                        f"🔥 BEST BET: {best_bet} | Expected Value: {best_ev * 100:.1f}%"
                     )
-
-                elif away_edge > 0.05:
-
-                    st.success(
-                        f"Value detected on {game['away_team']}"
-                    )
-
                 else:
-
-                    st.warning(
-                        "No major betting edge found"
-                    )
+                    st.warning("No strong value bet detected.")
 
             else:
-
-                st.warning(
-                    "No sportsbook odds found for this matchup."
-                )
+                st.warning("No sportsbook odds found for this matchup.")
 
             st.divider()
 
     else:
+        st.warning("No games returned from API.")
 
-        st.warning(
-            "No games returned from API."
+
+st.title("Single Matchup Prediction")
+
+if teams:
+    home_team = st.selectbox(
+        "Home Team",
+        teams,
+        key="home_team"
+    )
+
+    away_team = st.selectbox(
+        "Away Team",
+        teams,
+        key="away_team"
+    )
+
+    if st.button("Predict Matchup"):
+        try:
+            response = requests.post(
+                f"{API_URL}/predict_matchup",
+                json={
+                    "home_team": home_team,
+                    "away_team": away_team
+                },
+                timeout=60
+            )
+
+            if response.status_code != 200:
+                st.error("Matchup prediction failed.")
+                st.write(response.text)
+                st.stop()
+
+            result = response.json()
+
+        except Exception as e:
+            st.error(f"Prediction error: {e}")
+            st.stop()
+
+        col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
+
+        with col_logo1:
+            away_logo = TEAM_LOGOS.get(away_team)
+            if away_logo:
+                st.image(away_logo, width=70)
+
+        with col_text:
+            st.subheader(f"{away_team} @ {home_team}")
+
+        with col_logo2:
+            home_logo = TEAM_LOGOS.get(home_team)
+            if home_logo:
+                st.image(home_logo, width=70)
+
+        confidence = max(
+            result["home_win_probability"],
+            result["away_win_probability"]
         )
+
+        st.header(result["prediction"])
+        st.progress(confidence)
+
+        metric_col1, metric_col2 = st.columns(2)
+
+        with metric_col1:
+            st.metric(
+                home_team,
+                f"{result['home_win_probability'] * 100:.1f}%"
+            )
+
+        with metric_col2:
+            st.metric(
+                away_team,
+                f"{result['away_win_probability'] * 100:.1f}%"
+            )
+else:
+    st.warning("Teams could not be loaded from backend.")
