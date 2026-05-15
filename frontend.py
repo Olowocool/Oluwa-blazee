@@ -601,5 +601,19 @@ else:
         save_bet_history(updated_df)
         st.success("Bet results updated successfully!")
 
+    st.subheader("Bankroll Growth")
+
+    chart_df = updated_df.copy()
+    
+    chart_df["timestamp"] = pd.to_datetime(chart_df["timestamp"])
+    
+    chart_df = chart_df.sort_values("timestamp")
+    
+    chart_df["cumulative_profit"] = chart_df["profit_loss"].cumsum()
+    
+    st.line_chart(
+        chart_df.set_index("timestamp")["cumulative_profit"]
+    )
+    
     st.subheader("Saved Bet Picks")
     st.dataframe(updated_df)
