@@ -633,7 +633,7 @@ styled_df = updated_df.style.apply(
     axis=1
 )
 
-st.dataframe(
-    styled_df,
-    use_container_width=True
+st.write(
+    styled_df.to_html(),
+    unsafe_allow_html=True
 )
