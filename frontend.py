@@ -616,7 +616,7 @@ else:
     )
     
     st.subheader("Saved Bet Picks")
-    def highlight_results(row):
+def highlight_results(row):
     result = str(row["result"]).lower()
 
     if result == "win":
