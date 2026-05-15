@@ -164,3 +164,96 @@ def predict_today(date: str = None):
             "error": str(e),
             "message": "predict_today failed"
         }
+
+
+@app.get("/score_result")
+def score_result(
+    date: str,
+    home_team: str,
+    away_team: str,
+    best_bet: str
+):
+    try:
+        parsed_date = datetime.strptime(date, "%m/%d/%Y")
+
+        scoreboard = scoreboardv2.ScoreboardV2(
+            game_date=parsed_date.strftime("%m/%d/%Y")
+        )
+
+        frames = scoreboard.get_data_frames()
+
+        if len(frames) < 2:
+            return {
+                "status": "pending",
+                "message": "No line score data returned yet."
+            }
+
+        line_score = frames[1].fillna("")
+
+        if line_score.empty:
+            return {
+                "status": "pending",
+                "message": "No completed games found yet."
+            }
+
+        grouped_games = []
+
+        for game_id in line_score["GAME_ID"].unique():
+            game_df = line_score[line_score["GAME_ID"] == game_id]
+
+            if len(game_df) != 2:
+                continue
+
+            grouped_games.append(game_df)
+
+        for game_df in grouped_games:
+            team1 = game_df.iloc[0]
+            team2 = game_df.iloc[1]
+
+            t1 = f"{team1['TEAM_CITY_NAME']} {team1['TEAM_NAME']}"
+            t2 = f"{team2['TEAM_CITY_NAME']} {team2['TEAM_NAME']}"
+
+            teams_match = sorted([
+                t1.lower(),
+                t2.lower()
+            ]) == sorted([
+                home_team.lower(),
+                away_team.lower()
+            ])
+
+            if teams_match:
+                team1_points = int(team1["PTS"])
+                team2_points = int(team2["PTS"])
+
+                if team1_points > team2_points:
+                    winner = t1
+                else:
+                    winner = t2
+
+                result = (
+                    "Win"
+                    if winner.lower() == best_bet.lower()
+                    else "Loss"
+                )
+
+                return {
+                    "status": "completed",
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "home_score": team1_points,
+                    "away_score": team2_points,
+                    "winner": winner,
+                    "best_bet": best_bet,
+                    "result": result
+                }
+
+        return {
+            "status": "not_found",
+            "message": "Game not found."
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
