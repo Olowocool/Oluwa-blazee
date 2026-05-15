@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import csv
 import os
+import pandas as pd
 from datetime import datetime
 
 API_URL = "https://oluwa-blazee-new.onrender.com"
@@ -200,6 +201,13 @@ def save_bet_pick(game, game_date, best_bet, odds, model_prob, expected_value, k
             "",
             ""
         ])
+
+
+def load_bet_history():
+    if not os.path.isfile("bet_history.csv"):
+        return None
+
+    return pd.read_csv("bet_history.csv")
 
 
 teams = load_teams()
@@ -402,3 +410,39 @@ if st.button("Load Daily Predictions"):
 
     else:
         st.warning("No games returned from API.")
+
+
+st.title("Bet Performance Dashboard")
+
+bet_history = load_bet_history()
+
+if bet_history is None or bet_history.empty:
+    st.info("No saved bet picks yet.")
+else:
+    bet_history["expected_value"] = pd.to_numeric(
+        bet_history["expected_value"],
+        errors="coerce"
+    )
+
+    bet_history["kelly"] = pd.to_numeric(
+        bet_history["kelly"],
+        errors="coerce"
+    )
+
+    total_bets = len(bet_history)
+    avg_ev = bet_history["expected_value"].mean() * 100
+    avg_kelly = bet_history["kelly"].mean() * 100
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Total Saved Picks", total_bets)
+
+    with col2:
+        st.metric("Average EV", f"{avg_ev:.1f}%")
+
+    with col3:
+        st.metric("Average Kelly", f"{avg_kelly:.1f}%")
+
+    st.subheader("Saved Bet Picks")
+    st.dataframe(bet_history)
