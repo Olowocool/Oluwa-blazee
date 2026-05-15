@@ -439,26 +439,33 @@ if data and "games" in data and len(data["games"]) > 0:
             calibrated_home_prob = calibrate_probability(game["home_win_probability"])
             calibrated_away_prob = calibrate_probability(game["away_win_probability"])
 
+            calibrated_home_prob = calibrate_probability(
+                game["home_win_probability"]
+            )
+            
+            calibrated_away_prob = calibrate_probability(
+                game["away_win_probability"]
+            )
+            
             home_ev, home_implied = calculate_ev(
-                game["home_win_probability"],
+                calibrated_home_prob,
                 home_odds
             )
-
+            
             away_ev, away_implied = calculate_ev(
-                game["away_win_probability"],
+                calibrated_away_prob,
                 away_odds
             )
-
+            
             home_kelly = kelly_fraction(
-                game["home_win_probability"],
+                calibrated_home_prob,
                 home_odds
             )
-
+            
             away_kelly = kelly_fraction(
-                game["away_win_probability"],
+                calibrated_away_prob,
                 away_odds
             )
-
             analytics_col1, analytics_col2 = st.columns(2)
 
             with analytics_col1:
