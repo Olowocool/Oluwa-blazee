@@ -7,6 +7,7 @@ from datetime import datetime
 
 API_URL = "https://oluwa-blazee-new.onrender.com"
 ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
+STAKE = 100
 
 
 TEAM_LOGOS = {
@@ -96,17 +97,14 @@ def get_odds():
             away_team = normalize_team_name(game["away_team"])
 
             bookmakers = game.get("bookmakers", [])
-
             if not bookmakers:
                 continue
 
             markets = bookmakers[0].get("markets", [])
-
             if not markets:
                 continue
 
             outcomes = markets[0].get("outcomes", [])
-
             current_odds = {}
 
             for outcome in outcomes:
@@ -184,6 +182,7 @@ def save_bet_pick(game, game_date, best_bet, odds, model_prob, expected_value, k
                 "model_probability",
                 "expected_value",
                 "kelly",
+                "stake",
                 "result",
                 "profit_loss"
             ])
@@ -198,16 +197,49 @@ def save_bet_pick(game, game_date, best_bet, odds, model_prob, expected_value, k
             model_prob,
             expected_value,
             kelly,
-            "",
-            ""
+            STAKE,
+            "Pending",
+            0
         ])
+
+
+def calculate_profit_loss(row):
+    result = str(row.get("result", "Pending")).lower()
+    odds = float(row.get("odds", 0))
+    stake = float(row.get("stake", STAKE))
+
+    if result == "win":
+        return (odds - 1) * stake
+
+    if result == "loss":
+        return -stake
+
+    return 0
 
 
 def load_bet_history():
     if not os.path.isfile("bet_history.csv"):
         return None
 
-    return pd.read_csv("bet_history.csv")
+    df = pd.read_csv("bet_history.csv")
+
+    if "stake" not in df.columns:
+        df["stake"] = STAKE
+
+    if "result" not in df.columns:
+        df["result"] = "Pending"
+
+    if "profit_loss" not in df.columns:
+        df["profit_loss"] = 0
+
+    df["result"] = df["result"].fillna("Pending")
+    df["profit_loss"] = df.apply(calculate_profit_loss, axis=1)
+
+    return df
+
+
+def save_bet_history(df):
+    df.to_csv("bet_history.csv", index=False)
 
 
 teams = load_teams()
@@ -440,6 +472,7 @@ bet_history = load_bet_history()
 
 if bet_history is None or bet_history.empty:
     st.info("No saved bet picks yet.")
+
 else:
     bet_history["expected_value"] = pd.to_numeric(
         bet_history["expected_value"],
@@ -451,20 +484,72 @@ else:
         errors="coerce"
     )
 
+    bet_history["profit_loss"] = pd.to_numeric(
+        bet_history["profit_loss"],
+        errors="coerce"
+    )
+
     total_bets = len(bet_history)
+    wins = len(bet_history[bet_history["result"].str.lower() == "win"])
+    losses = len(bet_history[bet_history["result"].str.lower() == "loss"])
+    settled_bets = wins + losses
+
+    win_rate = (wins / settled_bets * 100) if settled_bets > 0 else 0
+    total_profit = bet_history["profit_loss"].sum()
+    total_staked = settled_bets * STAKE
+    roi = (total_profit / total_staked * 100) if total_staked > 0 else 0
+
     avg_ev = bet_history["expected_value"].mean() * 100
     avg_kelly = bet_history["kelly"].mean() * 100
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Total Saved Picks", total_bets)
+        st.metric("Total Picks", total_bets)
+        st.metric("Wins", wins)
 
     with col2:
-        st.metric("Average EV", f"{avg_ev:.1f}%")
+        st.metric("Losses", losses)
+        st.metric("Win Rate", f"{win_rate:.1f}%")
 
     with col3:
+        st.metric("Profit/Loss", f"${total_profit:.2f}")
+        st.metric("ROI", f"{roi:.1f}%")
+
+    col4, col5 = st.columns(2)
+
+    with col4:
+        st.metric("Average EV", f"{avg_ev:.1f}%")
+
+    with col5:
         st.metric("Average Kelly", f"{avg_kelly:.1f}%")
 
+    st.subheader("Update Bet Results")
+
+    updated_df = bet_history.copy()
+
+    for index, row in updated_df.iterrows():
+        current_result = row["result"]
+
+        if current_result not in ["Pending", "Win", "Loss"]:
+            current_result = "Pending"
+
+        st.write(
+            f"{row['game_date']} — {row['best_bet']} "
+            f"({row['away_team']} @ {row['home_team']})"
+        )
+
+        updated_df.at[index, "result"] = st.selectbox(
+            "Result",
+            ["Pending", "Win", "Loss"],
+            index=["Pending", "Win", "Loss"].index(current_result),
+            key=f"result_{index}"
+        )
+
+    if st.button("Save Updated Results"):
+        updated_df["profit_loss"] = updated_df.apply(calculate_profit_loss, axis=1)
+        save_bet_history(updated_df)
+        st.success("Bet results updated successfully!")
+
     st.subheader("Saved Bet Picks")
-    st.dataframe(bet_history)
+    st.dataframe(updated_df)
