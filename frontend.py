@@ -39,7 +39,12 @@ TEAM_LOGOS = {
     "Utah Jazz": "https://cdn.nba.com/logos/nba/1610612762/global/L/logo.svg",
     "Washington Wizards": "https://cdn.nba.com/logos/nba/1610612764/global/L/logo.svg",
 }
-
+TEAM_NAME_FIXES = {
+    "Philadelphia Sixers": "Philadelphia 76ers",
+    "LA Clippers": "Los Angeles Clippers",
+    "Phoenix Suns": "Phoenix Suns",
+    "New York Knicks": "New York Knicks"
+}
 
 @st.cache_data(ttl=300)
 def load_teams():
@@ -79,8 +84,15 @@ def get_odds():
         odds_map = {}
 
         for game in games:
-            home_team = game["home_team"]
-            away_team = game["away_team"]
+            home_team = TEAM_NAME_FIXES.get(
+            game["home_team"],
+            game["home_team"]
+        )
+        
+        away_team = TEAM_NAME_FIXES.get(
+            game["away_team"],
+            game["away_team"]
+        )
 
             bookmakers = game.get("bookmakers", [])
 
