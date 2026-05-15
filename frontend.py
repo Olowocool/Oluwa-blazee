@@ -47,19 +47,66 @@ TEAM_NAME_FIXES = {
 }
 
 @st.cache_data(ttl=300)
-def load_teams():
+def get_odds():
+    url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
+
+    params = {
+        "apiKey": ODDS_API_KEY,
+        "regions": "us",
+        "markets": "h2h",
+        "oddsFormat": "decimal"
+    }
+
     try:
-        response = requests.get(f"{API_URL}/teams", timeout=60)
+        response = requests.get(url, params=params, timeout=60)
 
         if response.status_code != 200:
-            st.error("Failed to load teams.")
-            return []
+            st.warning(f"Odds API Error: {response.status_code}")
+            return {}
 
-        return response.json()["teams"]
+        games = response.json()
+        odds_map = {}
+
+        for game in games:
+            home_team = TEAM_NAME_FIXES.get(
+                game["home_team"],
+                game["home_team"]
+            )
+
+            away_team = TEAM_NAME_FIXES.get(
+                game["away_team"],
+                game["away_team"]
+            )
+
+            bookmakers = game.get("bookmakers", [])
+
+            if not bookmakers:
+                continue
+
+            markets = bookmakers[0].get("markets", [])
+
+            if not markets:
+                continue
+
+            outcomes = markets[0].get("outcomes", [])
+
+            current_odds = {}
+
+            for outcome in outcomes:
+                fixed_name = TEAM_NAME_FIXES.get(
+                    outcome["name"],
+                    outcome["name"]
+                )
+
+                current_odds[fixed_name] = outcome["price"]
+
+            odds_map[(home_team, away_team)] = current_odds
+
+        return odds_map
 
     except Exception as e:
-        st.error(f"Backend connection error: {e}")
-        return []
+        st.warning(f"Odds fetch failed: {e}")
+        return {}
 
 
 @st.cache_data(ttl=300)
