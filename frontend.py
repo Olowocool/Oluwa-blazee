@@ -47,7 +47,6 @@ TEAM_LOGOS = {
 TEAM_NAME_FIXES = {
     "Philadelphia Sixers": "Philadelphia 76ers",
     "LA Clippers": "Los Angeles Clippers",
-    "Los Angeles Clippers": "Los Angeles Clippers"
 }
 
 
@@ -229,15 +228,16 @@ def load_bet_history():
 
     if "stake" not in df.columns:
         df["stake"] = STAKE
-        df["stake"] = pd.to_numeric(df["stake"], errors="coerce")
-        df["stake"] = df["stake"].fillna(STAKE)
-        df.loc[df["stake"] <= 0, "stake"] = STAKE
 
     if "result" not in df.columns:
         df["result"] = "Pending"
 
     if "profit_loss" not in df.columns:
         df["profit_loss"] = 0
+
+    df["stake"] = pd.to_numeric(df["stake"], errors="coerce")
+    df["stake"] = df["stake"].fillna(STAKE)
+    df.loc[df["stake"] <= 0, "stake"] = STAKE
 
     df["result"] = df["result"].fillna("Pending")
     df["profit_loss"] = df.apply(calculate_profit_loss, axis=1)
@@ -380,22 +380,40 @@ if data and "games" in data and len(data["games"]) > 0:
                 value=f"{game['away_win_probability'] * 100:.1f}%"
             )
 
+        st.subheader("Injury Impact")
+
+        injury_col1, injury_col2, injury_col3 = st.columns(3)
+
+        with injury_col1:
+            st.metric(
+                "Home Penalty",
+                game.get("home_injury_penalty", 0)
+            )
+
+        with injury_col2:
+            st.metric(
+                "Away Penalty",
+                game.get("away_injury_penalty", 0)
+            )
+
+        with injury_col3:
+            st.metric(
+                "Injury Diff",
+                game.get("injury_diff", 0)
+            )
+
         odds = {}
 
-        game_home = normalize_team_name(game["home_team"]).strip().lower()
-        game_away = normalize_team_name(game["away_team"]).strip().lower()
-        
+        game_home = normalize_team_name(game["home_team"]).lower()
+        game_away = normalize_team_name(game["away_team"]).lower()
+
         for (home, away), value in odds_map.items():
-            odds_home = normalize_team_name(home).strip().lower()
-            odds_away = normalize_team_name(away).strip().lower()
-        
-            same_matchup = (
-                (game_home == odds_home and game_away == odds_away)
-                or
-                (game_home == odds_away and game_away == odds_home)
-            )
-        
-            if same_matchup:
+            odds_home = normalize_team_name(home).lower()
+            odds_away = normalize_team_name(away).lower()
+
+            teams_match = sorted([game_home, game_away]) == sorted([odds_home, odds_away])
+
+            if teams_match:
                 odds = value
                 break
 
@@ -502,11 +520,11 @@ if data and "games" in data and len(data["games"]) > 0:
 
         else:
             st.warning("No sportsbook odds found for this matchup.")
-        
+
             with st.expander("Debug odds matching"):
                 st.write("Prediction matchup:")
                 st.write(game["away_team"], "@", game["home_team"])
-        
+
                 st.write("Available Odds API matchups:")
                 st.write(list(odds_map.keys())[:20])
 
@@ -607,36 +625,34 @@ else:
     st.subheader("Bankroll Growth")
 
     chart_df = updated_df.copy()
-    
+
     chart_df["timestamp"] = pd.to_datetime(chart_df["timestamp"])
-    
     chart_df = chart_df.sort_values("timestamp")
-    
     chart_df["cumulative_profit"] = chart_df["profit_loss"].cumsum()
-    
+
     st.line_chart(
         chart_df.set_index("timestamp")["cumulative_profit"]
     )
-    
+
     st.subheader("Saved Bet Picks")
-def highlight_results(row):
-    result = str(row["result"]).lower()
 
-    if result == "win":
-        return ["background-color: #d4edda"] * len(row)
+    def highlight_results(row):
+        result = str(row["result"]).lower()
 
-    elif result == "loss":
-        return ["background-color: #f8d7da"] * len(row)
+        if result == "win":
+            return ["background-color: #d4edda"] * len(row)
 
-    return ["background-color: #fff3cd"] * len(row)
+        elif result == "loss":
+            return ["background-color: #f8d7da"] * len(row)
 
+        return ["background-color: #fff3cd"] * len(row)
 
-styled_df = updated_df.style.apply(
-    highlight_results,
-    axis=1
-)
+    styled_df = updated_df.style.apply(
+        highlight_results,
+        axis=1
+    )
 
-st.write(
-    styled_df.to_html(),
-    unsafe_allow_html=True
-)
+    st.write(
+        styled_df.to_html(),
+        unsafe_allow_html=True
+    )
