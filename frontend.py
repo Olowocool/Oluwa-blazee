@@ -56,7 +56,7 @@ def normalize_team_name(name):
 @st.cache_data(ttl=300)
 def load_teams():
     try:
-        response = requests.get(f"{API_URL}/teams", timeout=60)
+        response = requests.get(f"{API_URL}/teams", timeout=120)
 
         if response.status_code != 200:
             st.error("Failed to load teams.")
