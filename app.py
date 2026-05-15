@@ -7,6 +7,7 @@ import numpy as np
 import json
 
 from injury_impact import calculate_matchup_injury_adjustment
+
 app = FastAPI()
 
 MODEL_PATH = "models/basketball_xgb_calibrated_v3.joblib"
@@ -82,11 +83,12 @@ def predict_matchup(payload: dict):
             row[col] = 0
 
     row["home_court"] = 1
+
     injury_data = calculate_matchup_injury_adjustment(
         home_team,
         away_team
     )
-    
+
     row["home_injury_penalty"] = injury_data["home_injury_penalty"]
     row["away_injury_penalty"] = injury_data["away_injury_penalty"]
     row["injury_diff"] = injury_data["injury_diff"]
@@ -108,7 +110,10 @@ def predict_matchup(payload: dict):
         "away_team": away_team,
         "home_win_probability": round(float(prob), 4),
         "away_win_probability": round(float(1 - prob), 4),
-        "prediction": home_team if prob >= 0.5 else away_team
+        "prediction": home_team if prob >= 0.5 else away_team,
+        "home_injury_penalty": injury_data["home_injury_penalty"],
+        "away_injury_penalty": injury_data["away_injury_penalty"],
+        "injury_diff": injury_data["injury_diff"]
     }
 
 
@@ -164,9 +169,6 @@ def predict_today(date: str = None):
         return {
             "date": today,
             "games": predictions
-            "home_injury_penalty": injury_data["home_injury_penalty"],
-            "away_injury_penalty": injury_data["away_injury_penalty"],
-            "injury_diff": injury_data["injury_diff"]
         }
 
     except Exception as e:
