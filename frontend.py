@@ -384,9 +384,14 @@ if st.button("Load Daily Predictions"):
                         selected_prob = game["away_win_probability"]
                         selected_kelly = away_kelly
 
+                    save_key = f"save_{game['home_team']}_{game['away_team']}_{best_bet}"
+
+                    if save_key not in st.session_state:
+                        st.session_state[save_key] = False
+                    
                     if st.button(
                         f"Save Bet Pick: {best_bet}",
-                        key=f"save_{game['home_team']}_{game['away_team']}_{best_bet}"
+                        key=save_key
                     ):
                         save_bet_pick(
                             game,
@@ -397,8 +402,11 @@ if st.button("Load Daily Predictions"):
                             best_ev,
                             selected_kelly
                         )
-
-                        st.success("Bet pick saved to bet_history.csv")
+                    
+                        st.session_state[save_key] = True
+                    
+                    if st.session_state[save_key]:
+                        st.success("Bet pick saved successfully!")
 
                 else:
                     st.warning("No strong value bet detected.")
