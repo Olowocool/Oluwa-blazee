@@ -7,3 +7,4 @@ xgboost
 joblib
 pyarrow
 nba_api
+beautifulsoup4
