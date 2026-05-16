@@ -8,9 +8,10 @@ DATA_PATH = "outputs/training_dataset.parquet"
 
 STARTING_BANKROLL = 1000
 STAKE = 100
-EV_THRESHOLDS = [0.03, 0.05, 0.07, 0.08, 0.10, 0.12, 0.15]
 MARKET_NOISE_STD = 0.04
 RANDOM_SEED = 42
+
+EV_THRESHOLDS = [0.03, 0.05, 0.07, 0.08, 0.10, 0.12, 0.15]
 
 
 np.random.seed(RANDOM_SEED)
@@ -48,7 +49,9 @@ def simulate_market_odds(home_prob):
     return market_home_prob, market_away_prob, home_odds, away_odds
 
 
-def simulate_backtest():
+def run_backtest_for_threshold(threshold):
+    np.random.seed(RANDOM_SEED)
+
     bankroll = STARTING_BANKROLL
     results = []
 
@@ -65,8 +68,6 @@ def simulate_backtest():
     df["home_prob"] = df["raw_home_prob"].apply(calibrate_probability)
     df["away_prob"] = 1 - df["home_prob"]
 
-    debug_counter = 0
-
     for _, row in df.iterrows():
         home_prob = row["home_prob"]
         away_prob = row["away_prob"]
@@ -77,17 +78,6 @@ def simulate_backtest():
 
         home_ev = calculate_ev(home_prob, home_odds)
         away_ev = calculate_ev(away_prob, away_odds)
-
-        if debug_counter < 5:
-            print(
-                "DEBUG:",
-                "home_prob=", round(home_prob, 4),
-                "market_home_prob=", round(market_home_prob, 4),
-                "home_odds=", round(home_odds, 3),
-                "home_ev=", round(home_ev, 4),
-                "away_ev=", round(away_ev, 4)
-            )
-            debug_counter += 1
 
         bet_team = None
         bet_side = None
@@ -124,6 +114,7 @@ def simulate_backtest():
         bankroll += profit
 
         results.append({
+            "threshold": threshold,
             "date": row.get("date"),
             "home_team": row["home_team_name"],
             "away_team": row["away_team_name"],
@@ -142,8 +133,18 @@ def simulate_backtest():
     results_df = pd.DataFrame(results)
 
     if results_df.empty:
-        print("No bets matched the strategy.")
-        return
+        return {
+            "threshold": threshold,
+            "total_bets": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0,
+            "total_profit": 0,
+            "roi": 0,
+            "final_bankroll": STARTING_BANKROLL,
+            "avg_ev": 0,
+            "avg_edge": 0
+        }, results_df
 
     total_bets = len(results_df)
     wins = len(results_df[results_df["result"] == "Win"])
@@ -151,22 +152,57 @@ def simulate_backtest():
     win_rate = wins / total_bets
     total_profit = results_df["profit"].sum()
     roi = total_profit / (total_bets * STAKE)
-    final_bankroll = bankroll
 
-    print("===== BACKTEST RESULTS =====")
-    print(f"Total Bets: {total_bets}")
-    print(f"Wins: {wins}")
-    print(f"Losses: {losses}")
-    print(f"Win Rate: {win_rate:.2%}")
-    print(f"Total Profit: ${total_profit:.2f}")
-    print(f"ROI: {roi:.2%}")
-    print(f"Final Bankroll: ${final_bankroll:.2f}")
-    print(f"Average EV: {results_df['expected_value'].mean():.2%}")
-    print(f"Average Edge: {results_df['model_edge'].mean():.2%}")
+    summary = {
+        "threshold": threshold,
+        "total_bets": total_bets,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": win_rate,
+        "total_profit": total_profit,
+        "roi": roi,
+        "final_bankroll": bankroll,
+        "avg_ev": results_df["expected_value"].mean(),
+        "avg_edge": results_df["model_edge"].mean()
+    }
 
-    results_df.to_csv("outputs/backtest_results.csv", index=False)
+    return summary, results_df
+
+
+def run_threshold_sweep():
+    summaries = []
+    all_results = []
+
+    for threshold in EV_THRESHOLDS:
+        summary, results_df = run_backtest_for_threshold(threshold)
+        summaries.append(summary)
+
+        if not results_df.empty:
+            all_results.append(results_df)
+
+    summary_df = pd.DataFrame(summaries)
+
+    print("===== EV THRESHOLD SWEEP RESULTS =====")
+
+    display_df = summary_df.copy()
+    display_df["win_rate"] = display_df["win_rate"].map(lambda x: f"{x:.2%}")
+    display_df["roi"] = display_df["roi"].map(lambda x: f"{x:.2%}")
+    display_df["avg_ev"] = display_df["avg_ev"].map(lambda x: f"{x:.2%}")
+    display_df["avg_edge"] = display_df["avg_edge"].map(lambda x: f"{x:.2%}")
+    display_df["total_profit"] = display_df["total_profit"].map(lambda x: f"${x:.2f}")
+    display_df["final_bankroll"] = display_df["final_bankroll"].map(lambda x: f"${x:.2f}")
+
+    print(display_df.to_string(index=False))
+
+    summary_df.to_csv("outputs/backtest_threshold_summary.csv", index=False)
+
+    if all_results:
+        full_results_df = pd.concat(all_results, ignore_index=True)
+        full_results_df.to_csv("outputs/backtest_results.csv", index=False)
+
+    print("Saved: outputs/backtest_threshold_summary.csv")
     print("Saved: outputs/backtest_results.csv")
 
 
 if __name__ == "__main__":
-    simulate_backtest()
+    run_threshold_sweep()
