@@ -119,9 +119,9 @@ def predict_matchup(payload: dict):
         "prediction": home_team if prob >= 0.5 else away_team,
         "home_injury_penalty": injury_data["home_injury_penalty"],
         "away_injury_penalty": injury_data["away_injury_penalty"],
-        "injury_diff": injury_data["injury_diff"]
+        "injury_diff": injury_data["injury_diff"],
         "raw_home_win_probability": round(float(raw_prob), 4),
-        "injury_probability_adjustment": round(float(injury_adjustment), 4),
+        "injury_probability_adjustment": round(float(injury_adjustment), 4)
     }
 
 
