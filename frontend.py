@@ -124,6 +124,8 @@ def get_odds():
 
 
 def calculate_ev(model_prob, decimal_odds):
+def calculate_model_edge(model_prob, implied_prob):
+    return model_prob - implied_prob
     implied_prob = 1 / decimal_odds
     ev = (model_prob * (decimal_odds - 1)) - (1 - model_prob)
     return ev, implied_prob
