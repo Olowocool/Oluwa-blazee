@@ -51,6 +51,7 @@ def fetch_live_injuries():
             return {}
 
         payload = response.json()
+        print(payload)
         injuries = {}
 
         for item in payload.get("data", []):
