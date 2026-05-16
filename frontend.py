@@ -405,7 +405,10 @@ if data and "games" in data and len(data["games"]) > 0:
                 "Injury Diff",
                 game.get("injury_diff", 0)
             )
-
+        st.metric(
+            "Probability Adjustment",
+            f"{game.get('injury_probability_adjustment', 0) * 100:.1f}%"
+        )
         odds = {}
 
         game_home = normalize_team_name(game["home_team"]).lower()
