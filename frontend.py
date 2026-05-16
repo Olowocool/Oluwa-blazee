@@ -124,16 +124,36 @@ def get_odds():
 
 
 def calculate_ev(model_prob, decimal_odds):
-def calculate_model_edge(model_prob, implied_prob):
-    return model_prob - implied_prob
     implied_prob = 1 / decimal_odds
     ev = (model_prob * (decimal_odds - 1)) - (1 - model_prob)
     return ev, implied_prob
-    
+
+
+def calculate_model_edge(model_prob, implied_prob):
+    return model_prob - implied_prob
+
+
+def classify_edge(edge):
+    if edge >= 0.10:
+        return "Elite Edge"
+
+    if edge >= 0.06:
+        return "Strong Edge"
+
+    if edge >= 0.03:
+        return "Playable Edge"
+
+    if edge > 0:
+        return "Small Edge"
+
+    return "No Edge"
+
+
 def calibrate_probability(probability, strength=0.75, min_prob=0.05, max_prob=0.95):
     probability = max(min(probability, max_prob), min_prob)
     calibrated = 0.5 + ((probability - 0.5) * strength)
     return calibrated
+
 
 def kelly_fraction(probability, decimal_odds):
     b = decimal_odds - 1
@@ -407,10 +427,12 @@ if data and "games" in data and len(data["games"]) > 0:
                 "Injury Diff",
                 game.get("injury_diff", 0)
             )
+
         st.metric(
             "Probability Adjustment",
             f"{game.get('injury_probability_adjustment', 0) * 100:.1f}%"
         )
+
         odds = {}
 
         game_home = normalize_team_name(game["home_team"]).lower()
@@ -440,48 +462,63 @@ if data and "games" in data and len(data["games"]) > 0:
 
         if home_odds and away_odds:
             st.subheader("Betting Analytics")
-            
-            calibrated_home_prob = calibrate_probability(game["home_win_probability"])
-            calibrated_away_prob = calibrate_probability(game["away_win_probability"])
 
             calibrated_home_prob = calibrate_probability(
                 game["home_win_probability"]
             )
-            
+
             calibrated_away_prob = calibrate_probability(
                 game["away_win_probability"]
             )
-            
+
             home_ev, home_implied = calculate_ev(
                 calibrated_home_prob,
                 home_odds
             )
-            
+
             away_ev, away_implied = calculate_ev(
                 calibrated_away_prob,
                 away_odds
             )
-            
+
+            home_edge = calculate_model_edge(
+                calibrated_home_prob,
+                home_implied
+            )
+
+            away_edge = calculate_model_edge(
+                calibrated_away_prob,
+                away_implied
+            )
+
+            home_edge_label = classify_edge(home_edge)
+            away_edge_label = classify_edge(away_edge)
+
             home_kelly = kelly_fraction(
                 calibrated_home_prob,
                 home_odds
             )
-            
+
             away_kelly = kelly_fraction(
                 calibrated_away_prob,
                 away_odds
             )
+
             analytics_col1, analytics_col2 = st.columns(2)
 
             with analytics_col1:
                 st.metric(f"{game['home_team']} Odds", f"{home_odds:.2f}")
                 st.metric("Implied Probability", f"{home_implied * 100:.1f}%")
+                st.metric("Model Edge", f"{home_edge * 100:.1f}%")
+                st.caption(home_edge_label)
                 st.metric("Expected Value", f"{home_ev * 100:.1f}%")
                 st.metric("Kelly %", f"{home_kelly * 100:.1f}%")
 
             with analytics_col2:
                 st.metric(f"{game['away_team']} Odds", f"{away_odds:.2f}")
                 st.metric("Implied Probability", f"{away_implied * 100:.1f}%")
+                st.metric("Model Edge", f"{away_edge * 100:.1f}%")
+                st.caption(away_edge_label)
                 st.metric("Expected Value", f"{away_ev * 100:.1f}%")
                 st.metric("Kelly %", f"{away_kelly * 100:.1f}%")
 
@@ -502,11 +539,11 @@ if data and "games" in data and len(data["games"]) > 0:
 
                 if best_bet == game["home_team"]:
                     selected_odds = home_odds
-                    selected_prob = game["home_win_probability"]
+                    selected_prob = calibrated_home_prob
                     selected_kelly = home_kelly
                 else:
                     selected_odds = away_odds
-                    selected_prob = game["away_win_probability"]
+                    selected_prob = calibrated_away_prob
                     selected_kelly = away_kelly
 
                 button_key = f"button_{game['home_team']}_{game['away_team']}_{best_bet}"
