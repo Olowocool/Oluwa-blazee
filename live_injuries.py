@@ -67,7 +67,7 @@ def fetch_live_injuries():
                     "comment": comment,
                     "impact": get_player_impact(player)
                 })
-
+    print(injuries)
     return injuries
 
 
