@@ -32,6 +32,18 @@ STAR_PLAYER_IMPACT = {
     "Jalen Brunson": 8,
 }
 
+TEAM_DEPTH_FACTOR = {
+    "Boston Celtics": 0.85,
+    "Denver Nuggets": 1.30,
+    "Minnesota Timberwolves": 1.10,
+    "San Antonio Spurs": 1.05,
+    "Cleveland Cavaliers": 1.00,
+    "Detroit Pistons": 0.95,
+    "Oklahoma City Thunder": 1.15,
+    "Los Angeles Lakers": 1.20,
+    "Golden State Warriors": 1.15,
+    "Philadelphia 76ers": 1.25
+}
 
 def status_multiplier(status):
     status = status.lower()
@@ -69,8 +81,11 @@ def calculate_team_injury_penalty(team_name):
 
         total_penalty += impact * multiplier
 
-    return round(total_penalty, 2)
+    depth_factor = TEAM_DEPTH_FACTOR.get(team_name, 1.0)
 
+    adjusted_penalty = total_penalty * depth_factor
+    
+    return round(adjusted_penalty, 2)
 
 def calculate_matchup_injury_adjustment(home_team, away_team):
     home_penalty = calculate_team_injury_penalty(home_team)
