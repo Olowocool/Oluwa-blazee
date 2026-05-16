@@ -1,8 +1,8 @@
 import requests
-from bs4 import BeautifulSoup
 
+BALLDONTLIE_API_KEY = "56a1d133-c182-45f6-a7d5-50373e959100"
 
-ESPN_INJURY_URL = "https://www.espn.com/nba/injuries"
+BALLDONTLIE_INJURY_URL = "https://api.balldontlie.io/v1/player_injuries"
 
 
 STAR_PLAYER_IMPACT = {
@@ -28,47 +28,61 @@ def get_player_impact(player_name):
     return STAR_PLAYER_IMPACT.get(player_name, 3)
 
 
+def normalize_status(status):
+    if not status:
+        return ""
+
+    return str(status).lower()
+
+
 def fetch_live_injuries():
     headers = {
-        "User-Agent": "Mozilla/5.0"
+        "Authorization": BALLDONTLIE_API_KEY
     }
 
-    response = requests.get(
-        ESPN_INJURY_URL,
-        headers=headers,
-        timeout=30
-    )
+    try:
+        response = requests.get(
+            BALLDONTLIE_INJURY_URL,
+            headers=headers,
+            timeout=30
+        )
 
-    if response.status_code != 200:
+        if response.status_code != 200:
+            return {}
+
+        payload = response.json()
+        injuries = {}
+
+        for item in payload.get("data", []):
+            player = item.get("player", {})
+            team = item.get("team", {})
+
+            first_name = player.get("first_name", "")
+            last_name = player.get("last_name", "")
+            player_name = f"{first_name} {last_name}".strip()
+
+            team_name = team.get("full_name", "")
+
+            status = item.get("status", "")
+            description = item.get("description", "")
+
+            if not team_name or not player_name:
+                continue
+
+            if team_name not in injuries:
+                injuries[team_name] = []
+
+            injuries[team_name].append({
+                "player": player_name,
+                "status": status,
+                "description": description,
+                "impact": get_player_impact(player_name)
+            })
+
+        return injuries
+
+    except Exception:
         return {}
-
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    injuries = {}
-
-    current_team = None
-
-    for tag in soup.find_all(["h2", "tr"]):
-        if tag.name == "h2":
-            current_team = tag.get_text(strip=True)
-            injuries[current_team] = []
-
-        elif tag.name == "tr" and current_team:
-            cells = tag.find_all("td")
-
-            if len(cells) >= 4:
-                player = cells[0].get_text(strip=True)
-                status = cells[2].get_text(strip=True)
-                comment = cells[3].get_text(strip=True)
-
-                injuries[current_team].append({
-                    "player": player,
-                    "status": status,
-                    "comment": comment,
-                    "impact": get_player_impact(player)
-                })
-    print(injuries)
-    return injuries
 
 
 def calculate_team_live_injury_penalty(team_name):
@@ -79,7 +93,7 @@ def calculate_team_live_injury_penalty(team_name):
     penalty = 0
 
     for injury in team_injuries:
-        status = injury["status"].lower()
+        status = normalize_status(injury["status"])
         impact = injury["impact"]
 
         if "out" in status:
@@ -90,6 +104,9 @@ def calculate_team_live_injury_penalty(team_name):
 
         elif "questionable" in status:
             penalty += impact * 0.5
+
+        elif "probable" in status:
+            penalty += impact * 0.15
 
     return round(penalty, 2)
 
