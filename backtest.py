@@ -1,0 +1,126 @@
+import pandas as pd
+import numpy as np
+import joblib
+
+
+MODEL_PATH = "models/basketball_xgb_calibrated_v3.joblib"
+DATA_PATH = "outputs/training_dataset.parquet"
+
+STARTING_BANKROLL = 1000
+STAKE = 100
+MIN_EV_THRESHOLD = 0.05
+
+
+artifact = joblib.load(MODEL_PATH)
+model = artifact["model"]
+feature_cols = artifact["feature_cols"]
+
+history = pd.read_parquet(DATA_PATH)
+
+
+def calculate_ev(model_prob, decimal_odds):
+    return (model_prob * (decimal_odds - 1)) - (1 - model_prob)
+
+
+def calibrate_probability(probability, strength=0.75):
+    return 0.5 + ((probability - 0.5) * strength)
+
+
+def simulate_backtest():
+    bankroll = STARTING_BANKROLL
+    results = []
+
+    df = history.copy()
+
+    if "home_win" not in df.columns:
+        df["home_win"] = (df["home_score"] > df["away_score"]).astype(int)
+
+    X = df[feature_cols].replace([np.inf, -np.inf], 0).fillna(0)
+
+    probs = model.predict_proba(X)[:, 1]
+
+    df["raw_home_prob"] = probs
+    df["home_prob"] = df["raw_home_prob"].apply(calibrate_probability)
+    df["away_prob"] = 1 - df["home_prob"]
+
+    for _, row in df.iterrows():
+        home_prob = row["home_prob"]
+        away_prob = row["away_prob"]
+
+        # temporary fair odds placeholders
+        home_odds = 1 / max(0.01, row["home_prob"])
+        away_odds = 1 / max(0.01, row["away_prob"])
+
+        home_ev = calculate_ev(home_prob, home_odds)
+        away_ev = calculate_ev(away_prob, away_odds)
+
+        bet_team = None
+        bet_side = None
+        bet_odds = None
+        bet_ev = None
+
+        if home_ev > away_ev and home_ev >= MIN_EV_THRESHOLD:
+            bet_team = row["home_team_name"]
+            bet_side = "home"
+            bet_odds = home_odds
+            bet_ev = home_ev
+
+        elif away_ev > home_ev and away_ev >= MIN_EV_THRESHOLD:
+            bet_team = row["away_team_name"]
+            bet_side = "away"
+            bet_odds = away_odds
+            bet_ev = away_ev
+
+        if bet_team is None:
+            continue
+
+        if bet_side == "home":
+            won = row["home_win"] == 1
+        else:
+            won = row["home_win"] == 0
+
+        profit = (bet_odds - 1) * STAKE if won else -STAKE
+        bankroll += profit
+
+        results.append({
+            "date": row.get("date"),
+            "home_team": row["home_team_name"],
+            "away_team": row["away_team_name"],
+            "bet_team": bet_team,
+            "bet_side": bet_side,
+            "bet_odds": bet_odds,
+            "model_prob": home_prob if bet_side == "home" else away_prob,
+            "expected_value": bet_ev,
+            "result": "Win" if won else "Loss",
+            "profit": profit,
+            "bankroll": bankroll
+        })
+
+    results_df = pd.DataFrame(results)
+
+    if results_df.empty:
+        print("No bets matched the strategy.")
+        return
+
+    total_bets = len(results_df)
+    wins = len(results_df[results_df["result"] == "Win"])
+    losses = len(results_df[results_df["result"] == "Loss"])
+    win_rate = wins / total_bets
+    total_profit = results_df["profit"].sum()
+    roi = total_profit / (total_bets * STAKE)
+
+    print("===== BACKTEST RESULTS =====")
+    print(f"Total Bets: {total_bets}")
+    print(f"Wins: {wins}")
+    print(f"Losses: {losses}")
+    print(f"Win Rate: {win_rate:.2%}")
+    print(f"Total Profit: ${total_profit:.2f}")
+    print(f"ROI: {roi:.2%}")
+    print(f"Final Bankroll: ${bankroll:.2f}")
+
+    results_df.to_csv("outputs/backtest_results.csv", index=False)
+    print("Saved: outputs/backtest_results.csv")
+
+
+if __name__ == "__main__":
+    simulate_backtest()
