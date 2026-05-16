@@ -1,7 +1,13 @@
 TEAM_INJURIES = {
     "Cleveland Cavaliers": [],
     "Detroit Pistons": [],
-    "Minnesota Timberwolves": [],
+    "Minnesota Timberwolves": [
+    {
+        "player": "Anthony Edwards",
+        "status": "Questionable",
+        "impact": 7
+    }
+],
     "San Antonio Spurs": [],
     "Denver Nuggets": [],
     "Oklahoma City Thunder": [],
