@@ -105,7 +105,7 @@ def predict_matchup(payload: dict):
 
     raw_prob = model.predict_proba(X)[0][1]
 
-    injury_adjustment = injury_data["injury_diff"] * 0.01
+    injury_adjustment = injury_data["injury_diff"] * 0.004
     
     prob = raw_prob + injury_adjustment
     
