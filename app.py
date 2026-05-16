@@ -271,3 +271,13 @@ def score_result(
             "status": "error",
             "message": str(e)
         }
+@app.get("/debug_injuries")
+def debug_injuries():
+    from live_injuries import fetch_live_injuries
+
+    injuries = fetch_live_injuries()
+
+    return {
+        "injury_team_count": len(injuries),
+        "injuries": injuries
+    }
