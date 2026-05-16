@@ -8,7 +8,7 @@ DATA_PATH = "outputs/training_dataset.parquet"
 
 STARTING_BANKROLL = 1000
 STAKE = 100
-MIN_EV_THRESHOLD = 0.00
+MIN_EV_THRESHOLD = 0.05
 
 
 artifact = joblib.load(MODEL_PATH)
@@ -48,8 +48,15 @@ def simulate_backtest():
         away_prob = row["away_prob"]
 
         # temporary fair odds placeholders
-        home_odds = 1 / max(0.01, row["home_prob"])
-        away_odds = 1 / max(0.01, row["away_prob"])
+        market_home_prob = min(
+            max(row["home_prob"] + np.random.normal(0, 0.04), 0.05),
+            0.95
+        )
+        
+        market_away_prob = 1 - market_home_prob
+        
+        home_odds = 1 / market_home_prob
+        away_odds = 1 / market_away_prob
 
         home_ev = calculate_ev(home_prob, home_odds)
         away_ev = calculate_ev(away_prob, away_odds)
