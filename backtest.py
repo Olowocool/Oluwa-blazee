@@ -96,7 +96,7 @@ def simulate_backtest():
         bet_model_prob = None
         bet_market_prob = None
 
-        if home_ev > away_ev and home_ev >= MIN_EV_THRESHOLD:
+        if home_ev > away_ev and home_ev >= threshold:
             bet_team = row["home_team_name"]
             bet_side = "home"
             bet_odds = home_odds
@@ -104,7 +104,7 @@ def simulate_backtest():
             bet_model_prob = home_prob
             bet_market_prob = market_home_prob
 
-        elif away_ev > home_ev and away_ev >= MIN_EV_THRESHOLD:
+        elif away_ev > home_ev and away_ev >= threshold:
             bet_team = row["away_team_name"]
             bet_side = "away"
             bet_odds = away_odds
