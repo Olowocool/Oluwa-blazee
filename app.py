@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import json
 
-from injury_impact import calculate_matchup_injury_adjustment
+from live_injuries import calculate_live_matchup_injury_adjustment
 
 app = FastAPI()
 
@@ -84,7 +84,7 @@ def predict_matchup(payload: dict):
 
     row["home_court"] = 1
 
-    injury_data = calculate_matchup_injury_adjustment(
+    injury_data = calculate_live_matchup_injury_adjustment(
         home_team,
         away_team
     )
