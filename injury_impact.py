@@ -1,12 +1,10 @@
-TEAM_INJURY_IMPACT = {
-    "Boston Celtics": 0,
-    "Los Angeles Lakers": 0,
-    "Cleveland Cavaliers": 0,
-    "Minnesota Timberwolves": 0,
-    "San Antonio Spurs": 0,
-    "Detroit Pistons": 0,
-    "Oklahoma City Thunder": 0,
-    "Denver Nuggets": 0,
+TEAM_INJURIES = {
+    "Cleveland Cavaliers": [],
+    "Detroit Pistons": [],
+    "Minnesota Timberwolves": [],
+    "San Antonio Spurs": [],
+    "Denver Nuggets": [],
+    "Oklahoma City Thunder": [],
 }
 
 
@@ -20,25 +18,64 @@ STAR_PLAYER_IMPACT = {
     "Nikola Jokic": 10,
     "Shai Gilgeous-Alexander": 10,
     "Victor Wembanyama": 9,
+    "Joel Embiid": 9,
+    "Luka Doncic": 10,
+    "Stephen Curry": 9,
+    "Kevin Durant": 8,
+    "Giannis Antetokounmpo": 10,
+    "Jalen Brunson": 8,
 }
 
 
-def get_team_injury_penalty(team_name):
-    return TEAM_INJURY_IMPACT.get(team_name, 0)
+def status_multiplier(status):
+    status = status.lower()
+
+    if status == "out":
+        return 1.0
+
+    if status == "doubtful":
+        return 0.75
+
+    if status == "questionable":
+        return 0.5
+
+    if status == "probable":
+        return 0.15
+
+    return 0
 
 
-def get_player_injury_impact(player_name):
+def get_player_impact(player_name):
     return STAR_PLAYER_IMPACT.get(player_name, 3)
 
 
+def calculate_team_injury_penalty(team_name):
+    injuries = TEAM_INJURIES.get(team_name, [])
+
+    total_penalty = 0
+
+    for injury in injuries:
+        player = injury["player"]
+        status = injury["status"]
+
+        impact = injury.get("impact", get_player_impact(player))
+        multiplier = status_multiplier(status)
+
+        total_penalty += impact * multiplier
+
+    return round(total_penalty, 2)
+
+
 def calculate_matchup_injury_adjustment(home_team, away_team):
-    home_penalty = get_team_injury_penalty(home_team)
-    away_penalty = get_team_injury_penalty(away_team)
+    home_penalty = calculate_team_injury_penalty(home_team)
+    away_penalty = calculate_team_injury_penalty(away_team)
 
     injury_diff = away_penalty - home_penalty
 
     return {
         "home_injury_penalty": home_penalty,
         "away_injury_penalty": away_penalty,
-        "injury_diff": injury_diff
+        "injury_diff": injury_diff,
+        "home_injuries": TEAM_INJURIES.get(home_team, []),
+        "away_injuries": TEAM_INJURIES.get(away_team, [])
     }
