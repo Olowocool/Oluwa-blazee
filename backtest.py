@@ -7,9 +7,14 @@ MODEL_PATH = "models/basketball_xgb_calibrated_v3.joblib"
 DATA_PATH = "outputs/training_dataset.parquet"
 
 STARTING_BANKROLL = 1000
-STAKE = 100
+FLAT_STAKE = 100
+
 MARKET_NOISE_STD = 0.04
 RANDOM_SEED = 42
+
+FRACTIONAL_KELLY_MULTIPLIER = 0.25
+MIN_BET_SIZE = 10
+MAX_BET_SIZE = 500
 
 EV_THRESHOLDS = [0.03, 0.05, 0.07, 0.08, 0.10, 0.12, 0.15]
 
@@ -25,6 +30,18 @@ history = pd.read_parquet(DATA_PATH)
 
 def calculate_ev(model_prob, decimal_odds):
     return (model_prob * (decimal_odds - 1)) - (1 - model_prob)
+
+
+def kelly_fraction(probability, decimal_odds):
+    b = decimal_odds - 1
+    q = 1 - probability
+
+    if b <= 0:
+        return 0
+
+    kelly = ((b * probability) - q) / b
+
+    return max(kelly, 0)
 
 
 def calibrate_probability(probability, strength=0.75):
@@ -47,6 +64,18 @@ def simulate_market_odds(home_prob):
     away_odds = 1 / market_away_prob
 
     return market_home_prob, market_away_prob, home_odds, away_odds
+
+
+def calculate_dynamic_bet_size(bankroll, model_prob, decimal_odds):
+    kelly = kelly_fraction(model_prob, decimal_odds)
+
+    fractional_kelly = kelly * FRACTIONAL_KELLY_MULTIPLIER
+
+    bet_size = bankroll * fractional_kelly
+
+    bet_size = max(min(bet_size, MAX_BET_SIZE), MIN_BET_SIZE)
+
+    return bet_size, kelly, fractional_kelly
 
 
 def run_backtest_for_threshold(threshold):
@@ -110,7 +139,18 @@ def run_backtest_for_threshold(threshold):
         else:
             won = row["home_win"] == 0
 
-        profit = (bet_odds - 1) * STAKE if won else -STAKE
+        bet_size, kelly, fractional_kelly = calculate_dynamic_bet_size(
+            bankroll,
+            bet_model_prob,
+            bet_odds
+        )
+
+        profit = (
+            (bet_odds - 1) * bet_size
+            if won
+            else -bet_size
+        )
+
         bankroll += profit
 
         results.append({
@@ -125,6 +165,9 @@ def run_backtest_for_threshold(threshold):
             "market_prob": bet_market_prob,
             "model_edge": bet_model_prob - bet_market_prob,
             "expected_value": bet_ev,
+            "kelly": kelly,
+            "fractional_kelly": fractional_kelly,
+            "bet_size": bet_size,
             "result": "Win" if won else "Loss",
             "profit": profit,
             "bankroll": bankroll
@@ -143,7 +186,9 @@ def run_backtest_for_threshold(threshold):
             "roi": 0,
             "final_bankroll": STARTING_BANKROLL,
             "avg_ev": 0,
-            "avg_edge": 0
+            "avg_edge": 0,
+            "avg_bet_size": 0,
+            "avg_kelly": 0
         }, results_df
 
     total_bets = len(results_df)
@@ -151,7 +196,8 @@ def run_backtest_for_threshold(threshold):
     losses = len(results_df[results_df["result"] == "Loss"])
     win_rate = wins / total_bets
     total_profit = results_df["profit"].sum()
-    roi = total_profit / (total_bets * STAKE)
+    total_staked = results_df["bet_size"].sum()
+    roi = total_profit / total_staked if total_staked > 0 else 0
 
     summary = {
         "threshold": threshold,
@@ -163,7 +209,9 @@ def run_backtest_for_threshold(threshold):
         "roi": roi,
         "final_bankroll": bankroll,
         "avg_ev": results_df["expected_value"].mean(),
-        "avg_edge": results_df["model_edge"].mean()
+        "avg_edge": results_df["model_edge"].mean(),
+        "avg_bet_size": results_df["bet_size"].mean(),
+        "avg_kelly": results_df["kelly"].mean()
     }
 
     return summary, results_df
@@ -182,13 +230,15 @@ def run_threshold_sweep():
 
     summary_df = pd.DataFrame(summaries)
 
-    print("===== EV THRESHOLD SWEEP RESULTS =====")
+    print("===== EV THRESHOLD + DYNAMIC KELLY SWEEP RESULTS =====")
 
     display_df = summary_df.copy()
     display_df["win_rate"] = display_df["win_rate"].map(lambda x: f"{x:.2%}")
     display_df["roi"] = display_df["roi"].map(lambda x: f"{x:.2%}")
     display_df["avg_ev"] = display_df["avg_ev"].map(lambda x: f"{x:.2%}")
     display_df["avg_edge"] = display_df["avg_edge"].map(lambda x: f"{x:.2%}")
+    display_df["avg_kelly"] = display_df["avg_kelly"].map(lambda x: f"{x:.2%}")
+    display_df["avg_bet_size"] = display_df["avg_bet_size"].map(lambda x: f"${x:.2f}")
     display_df["total_profit"] = display_df["total_profit"].map(lambda x: f"${x:.2f}")
     display_df["final_bankroll"] = display_df["final_bankroll"].map(lambda x: f"${x:.2f}")
 
