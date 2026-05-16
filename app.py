@@ -103,7 +103,13 @@ def predict_matchup(payload: dict):
     X = X.replace([np.inf, -np.inf], 0)
     X = X.fillna(0)
 
-    prob = model.predict_proba(X)[0][1]
+    raw_prob = model.predict_proba(X)[0][1]
+
+    injury_adjustment = injury_data["injury_diff"] * 0.01
+    
+    prob = raw_prob + injury_adjustment
+    
+    prob = max(0.05, min(0.95, prob))
 
     return {
         "home_team": home_team,
@@ -114,6 +120,8 @@ def predict_matchup(payload: dict):
         "home_injury_penalty": injury_data["home_injury_penalty"],
         "away_injury_penalty": injury_data["away_injury_penalty"],
         "injury_diff": injury_data["injury_diff"]
+        "raw_home_win_probability": round(float(raw_prob), 4),
+        "injury_probability_adjustment": round(float(injury_adjustment), 4),
     }
 
 
