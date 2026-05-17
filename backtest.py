@@ -13,6 +13,8 @@ MARKET_NOISE_STD = 0.04
 RANDOM_SEED = 42
 
 FRACTIONAL_KELLY_MULTIPLIER = 0.10
+MAX_BANKROLL_RISK_PER_BET = 0.03
+
 MIN_BET_SIZE = 10
 MAX_BET_SIZE = 500
 
@@ -70,6 +72,11 @@ def calculate_dynamic_bet_size(bankroll, model_prob, decimal_odds):
     kelly = kelly_fraction(model_prob, decimal_odds)
 
     fractional_kelly = kelly * FRACTIONAL_KELLY_MULTIPLIER
+
+    fractional_kelly = min(
+        fractional_kelly,
+        MAX_BANKROLL_RISK_PER_BET
+    )
 
     bet_size = bankroll * fractional_kelly
 
@@ -260,7 +267,7 @@ def run_threshold_sweep():
 
     summary_df = pd.DataFrame(summaries)
 
-    print("===== EV THRESHOLD + DYNAMIC KELLY + RISK SWEEP RESULTS =====")
+    print("===== EV THRESHOLD + RISK-CAPPED KELLY SWEEP RESULTS =====")
 
     display_df = summary_df.copy()
     display_df["win_rate"] = display_df["win_rate"].map(lambda x: f"{x:.2%}")
