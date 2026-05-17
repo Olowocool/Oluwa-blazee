@@ -174,6 +174,25 @@ def run_backtest_for_threshold(threshold):
         })
 
     results_df = pd.DataFrame(results)
+    results_df["running_peak"] = results_df["bankroll"].cummax()
+
+    results_df["drawdown"] = (
+        results_df["bankroll"] - results_df["running_peak"]
+    ) / results_df["running_peak"]
+    
+    max_drawdown = results_df["drawdown"].min()
+    
+    loss_streak = 0
+    max_loss_streak = 0
+    
+    for result in results_df["result"]:
+        if result == "Loss":
+            loss_streak += 1
+            max_loss_streak = max(max_loss_streak, loss_streak)
+        else:
+            loss_streak = 0
+    
+    profit_std = results_df["profit"].std()
 
     if results_df.empty:
         return {
@@ -212,6 +231,9 @@ def run_backtest_for_threshold(threshold):
         "avg_edge": results_df["model_edge"].mean(),
         "avg_bet_size": results_df["bet_size"].mean(),
         "avg_kelly": results_df["kelly"].mean()
+        "max_drawdown": max_drawdown,
+        "max_loss_streak": max_loss_streak,
+        "profit_volatility": profit_std
     }
 
     return summary, results_df
@@ -241,6 +263,13 @@ def run_threshold_sweep():
     display_df["avg_bet_size"] = display_df["avg_bet_size"].map(lambda x: f"${x:.2f}")
     display_df["total_profit"] = display_df["total_profit"].map(lambda x: f"${x:.2f}")
     display_df["final_bankroll"] = display_df["final_bankroll"].map(lambda x: f"${x:.2f}")
+    display_df["max_drawdown"] = display_df["max_drawdown"].map(
+        lambda x: f"{x:.2%}"
+    )
+    
+    display_df["profit_volatility"] = display_df["profit_volatility"].map(
+        lambda x: f"${x:.2f}"
+    )
 
     print(display_df.to_string(index=False))
 
