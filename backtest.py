@@ -78,6 +78,20 @@ def calculate_dynamic_bet_size(bankroll, model_prob, decimal_odds):
     return bet_size, kelly, fractional_kelly
 
 
+def calculate_max_loss_streak(results_series):
+    loss_streak = 0
+    max_loss_streak = 0
+
+    for result in results_series:
+        if result == "Loss":
+            loss_streak += 1
+            max_loss_streak = max(max_loss_streak, loss_streak)
+        else:
+            loss_streak = 0
+
+    return max_loss_streak
+
+
 def run_backtest_for_threshold(threshold):
     np.random.seed(RANDOM_SEED)
 
@@ -174,25 +188,6 @@ def run_backtest_for_threshold(threshold):
         })
 
     results_df = pd.DataFrame(results)
-    results_df["running_peak"] = results_df["bankroll"].cummax()
-
-    results_df["drawdown"] = (
-        results_df["bankroll"] - results_df["running_peak"]
-    ) / results_df["running_peak"]
-    
-    max_drawdown = results_df["drawdown"].min()
-    
-    loss_streak = 0
-    max_loss_streak = 0
-    
-    for result in results_df["result"]:
-        if result == "Loss":
-            loss_streak += 1
-            max_loss_streak = max(max_loss_streak, loss_streak)
-        else:
-            loss_streak = 0
-    
-    profit_std = results_df["profit"].std()
 
     if results_df.empty:
         return {
@@ -207,8 +202,21 @@ def run_backtest_for_threshold(threshold):
             "avg_ev": 0,
             "avg_edge": 0,
             "avg_bet_size": 0,
-            "avg_kelly": 0
+            "avg_kelly": 0,
+            "max_drawdown": 0,
+            "max_loss_streak": 0,
+            "profit_volatility": 0
         }, results_df
+
+    results_df["running_peak"] = results_df["bankroll"].cummax()
+
+    results_df["drawdown"] = (
+        results_df["bankroll"] - results_df["running_peak"]
+    ) / results_df["running_peak"]
+
+    max_drawdown = results_df["drawdown"].min()
+    max_loss_streak = calculate_max_loss_streak(results_df["result"])
+    profit_std = results_df["profit"].std()
 
     total_bets = len(results_df)
     wins = len(results_df[results_df["result"] == "Win"])
@@ -252,7 +260,7 @@ def run_threshold_sweep():
 
     summary_df = pd.DataFrame(summaries)
 
-    print("===== EV THRESHOLD + DYNAMIC KELLY SWEEP RESULTS =====")
+    print("===== EV THRESHOLD + DYNAMIC KELLY + RISK SWEEP RESULTS =====")
 
     display_df = summary_df.copy()
     display_df["win_rate"] = display_df["win_rate"].map(lambda x: f"{x:.2%}")
@@ -260,16 +268,11 @@ def run_threshold_sweep():
     display_df["avg_ev"] = display_df["avg_ev"].map(lambda x: f"{x:.2%}")
     display_df["avg_edge"] = display_df["avg_edge"].map(lambda x: f"{x:.2%}")
     display_df["avg_kelly"] = display_df["avg_kelly"].map(lambda x: f"{x:.2%}")
+    display_df["max_drawdown"] = display_df["max_drawdown"].map(lambda x: f"{x:.2%}")
     display_df["avg_bet_size"] = display_df["avg_bet_size"].map(lambda x: f"${x:.2f}")
+    display_df["profit_volatility"] = display_df["profit_volatility"].map(lambda x: f"${x:.2f}")
     display_df["total_profit"] = display_df["total_profit"].map(lambda x: f"${x:.2f}")
     display_df["final_bankroll"] = display_df["final_bankroll"].map(lambda x: f"${x:.2f}")
-    display_df["max_drawdown"] = display_df["max_drawdown"].map(
-        lambda x: f"{x:.2%}"
-    )
-    
-    display_df["profit_volatility"] = display_df["profit_volatility"].map(
-        lambda x: f"${x:.2f}"
-    )
 
     print(display_df.to_string(index=False))
 
