@@ -551,9 +551,14 @@ class ModelPipeline:
             "validation_metrics": metrics,
         }
 
-        model_path = self.config.model_dir / "basketball_xgb_calibrated.joblib"
+        model_path = self.config.model_dir / "basketball_xgb_calibrated_v3.joblib"
         joblib.dump(artifact, model_path)
+
+        legacy_model_path = self.config.model_dir / "basketball_xgb_calibrated.joblib"
+        joblib.dump(artifact, legacy_model_path)
+
         self.logger.info("Saved model to %s", model_path)
+        self.logger.info("Saved legacy model copy to %s", legacy_model_path)
         self.logger.info("Final calibration metrics: %s", metrics)
         return artifact
 
@@ -746,7 +751,12 @@ def run_training(csv_path: Path, config: Config) -> None:
     logger.info("Loading games from %s", csv_path)
 
     games = load_games_from_csv(csv_path)
-    logger.info("Loaded %s games from %s to %s", len(games), games["date"].min(), games["date"].max())
+    logger.info(
+        "Loaded %s games from %s to %s",
+        len(games),
+        games["date"].min(),
+        games["date"].max(),
+    )
 
     builder = FeatureBuilder(config, logger)
     dataset, feature_cols = builder.build(games)
@@ -766,7 +776,6 @@ def run_training(csv_path: Path, config: Config) -> None:
         logger.info("Mean Brier: %.3f", results["brier"].mean())
 
     pipeline.train_final(dataset, feature_cols)
-
 
 def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train an NBA basketball prediction model.")
@@ -821,3 +830,4 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
