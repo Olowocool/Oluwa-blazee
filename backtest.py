@@ -230,7 +230,7 @@ def run_backtest_for_threshold(threshold):
         "avg_ev": results_df["expected_value"].mean(),
         "avg_edge": results_df["model_edge"].mean(),
         "avg_bet_size": results_df["bet_size"].mean(),
-        "avg_kelly": results_df["kelly"].mean()
+        "avg_kelly": results_df["kelly"].mean(),
         "max_drawdown": max_drawdown,
         "max_loss_streak": max_loss_streak,
         "profit_volatility": profit_std
