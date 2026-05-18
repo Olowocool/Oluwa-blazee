@@ -12,6 +12,7 @@ app = FastAPI()
 
 MODEL_PATH = "models/basketball_xgb_calibrated_v3.joblib"
 TEAM_MAP_PATH = "team_map.json"
+DATA_PATH = "outputs/training_dataset.parquet"
 
 artifact = joblib.load(MODEL_PATH)
 model = artifact["model"]
@@ -20,7 +21,7 @@ feature_cols = artifact["feature_cols"]
 with open(TEAM_MAP_PATH, "r") as f:
     team_map = {int(k): v for k, v in json.load(f).items()}
 
-history = pd.read_parquet("outputs/training_dataset.parquet")
+history = pd.read_parquet(DATA_PATH)
 
 
 @app.get("/")
@@ -106,9 +107,8 @@ def predict_matchup(payload: dict):
     raw_prob = model.predict_proba(X)[0][1]
 
     injury_adjustment = injury_data["injury_diff"] * 0.004
-    
+
     prob = raw_prob + injury_adjustment
-    
     prob = max(0.05, min(0.95, prob))
 
     return {
@@ -121,7 +121,9 @@ def predict_matchup(payload: dict):
         "away_injury_penalty": injury_data["away_injury_penalty"],
         "injury_diff": injury_data["injury_diff"],
         "raw_home_win_probability": round(float(raw_prob), 4),
-        "injury_probability_adjustment": round(float(injury_adjustment), 4)
+        "injury_probability_adjustment": round(float(injury_adjustment), 4),
+        "home_injuries": injury_data.get("home_injuries", []),
+        "away_injuries": injury_data.get("away_injuries", [])
     }
 
 
@@ -218,17 +220,12 @@ def score_result(
                 "message": "No completed games found yet."
             }
 
-        grouped_games = []
-
         for game_id in line_score["GAME_ID"].unique():
             game_df = line_score[line_score["GAME_ID"] == game_id]
 
             if len(game_df) != 2:
                 continue
 
-            grouped_games.append(game_df)
-
-        for game_df in grouped_games:
             team1 = game_df.iloc[0]
             team2 = game_df.iloc[1]
 
@@ -279,13 +276,22 @@ def score_result(
             "status": "error",
             "message": str(e)
         }
+
+
 @app.get("/debug_injuries")
 def debug_injuries():
-    from live_injuries import fetch_live_injuries
+    sample_teams = [
+        "Cleveland Cavaliers",
+        "Detroit Pistons",
+        "Minnesota Timberwolves",
+        "San Antonio Spurs",
+        "Denver Nuggets",
+        "Oklahoma City Thunder"
+    ]
 
-    injuries = fetch_live_injuries()
+    output = {}
 
-    return {
-        "injury_team_count": len(injuries),
-        "injuries": injuries
-    }
+    for team in sample_teams:
+        output[team] = calculate_matchup_injury_adjustment(team, team)
+
+    return output
