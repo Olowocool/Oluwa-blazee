@@ -433,24 +433,24 @@ if data and "games" in data and len(data["games"]) > 0:
         )
 
         if confidence >= 0.75:
-        confidence_label = "Elite"
-        betting_note = "Strong model position"
-        confidence_color = "green"
-    
-    elif confidence >= 0.65:
-        confidence_label = "Good"
-        betting_note = "Moderate confidence"
-        confidence_color = "orange"
-    
-    elif confidence >= 0.55:
-        confidence_label = "Risky"
-        betting_note = "Weak betting profile"
-        confidence_color = "red"
-    
-    else:
-        confidence_label = "Avoid"
-        betting_note = "No predictive edge"
-        confidence_color = "red"
+            confidence_label = "Elite"
+            betting_note = "Strong model position"
+            confidence_color = "green"
+        
+        elif confidence >= 0.65:
+            confidence_label = "Good"
+            betting_note = "Moderate confidence"
+            confidence_color = "orange"
+        
+        elif confidence >= 0.55:
+            confidence_label = "Risky"
+            betting_note = "Weak betting profile"
+            confidence_color = "red"
+        
+        else:
+            confidence_label = "Avoid"
+            betting_note = "No predictive edge"
+            confidence_color = "red"
 
         st.markdown(
             f"""
