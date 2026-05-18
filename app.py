@@ -36,7 +36,6 @@ def teams():
             set(history["away_team_name"])
         )
     )
-
     return {"teams": team_names}
 
 
@@ -77,8 +76,10 @@ def predict_matchup(payload: dict):
             base = col.replace("diff_", "")
             home_col = "home_" + base
             away_col = "away_" + base
-
             row[col] = latest_home.get(home_col, 0) - latest_away.get(away_col, 0)
+
+        elif col == "home_court":
+            row[col] = 1
 
         else:
             row[col] = 0
@@ -89,10 +90,6 @@ def predict_matchup(payload: dict):
         home_team,
         away_team
     )
-
-    row["home_injury_penalty"] = injury_data["home_injury_penalty"]
-    row["away_injury_penalty"] = injury_data["away_injury_penalty"]
-    row["injury_diff"] = injury_data["injury_diff"]
 
     X = pd.DataFrame([row])
 
@@ -117,11 +114,13 @@ def predict_matchup(payload: dict):
         "home_win_probability": round(float(prob), 4),
         "away_win_probability": round(float(1 - prob), 4),
         "prediction": home_team if prob >= 0.5 else away_team,
+
         "home_injury_penalty": injury_data["home_injury_penalty"],
         "away_injury_penalty": injury_data["away_injury_penalty"],
         "injury_diff": injury_data["injury_diff"],
-        "raw_home_win_probability": round(float(raw_prob), 4),
         "injury_probability_adjustment": round(float(injury_adjustment), 4),
+        "raw_home_win_probability": round(float(raw_prob), 4),
+
         "home_injuries": injury_data.get("home_injuries", []),
         "away_injuries": injury_data.get("away_injuries", [])
     }
@@ -244,10 +243,7 @@ def score_result(
                 team1_points = int(team1["PTS"])
                 team2_points = int(team2["PTS"])
 
-                if team1_points > team2_points:
-                    winner = t1
-                else:
-                    winner = t2
+                winner = t1 if team1_points > team2_points else t2
 
                 result = (
                     "Win"
