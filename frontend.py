@@ -341,7 +341,7 @@ def auto_grade_bet(row):
         return row
 
 
-# teams = load_teams()
+teams = load_teams()
 
 if "daily_data" not in st.session_state:
     st.session_state["daily_data"] = None
