@@ -159,11 +159,47 @@ def get_historical_odds(game_date):
     except Exception as e:
         st.warning(f"Historical odds file error: {e}")
         return {}
-        
+
+    required_cols = ["game_date", "home_team", "away_team", "home_odds", "away_odds"]
+
+    for col in required_cols:
+        if col not in df.columns:
+            st.warning(f"historical_odds.csv missing column: {col}")
+            return {}
+
+    df["game_date"] = df["game_date"].astype(str).str.strip()
+    filtered = df[df["game_date"] == str(game_date).strip()]
+
+    odds_map = {}
+
+    for _, row in filtered.iterrows():
+        home_team = normalize_team_name(row["home_team"]).lower()
+        away_team = normalize_team_name(row["away_team"]).lower()
+
+        odds_map[(home_team, away_team)] = {
+            home_team: {
+                "price": float(row["home_odds"]),
+                "bookmaker": "Historical Odds"
+            },
+            away_team: {
+                "price": float(row["away_odds"]),
+                "bookmaker": "Historical Odds"
+            }
+        }
+
+    return odds_map
+
+
 def save_live_odds_to_history(game_date, odds_map):
+    if not isinstance(odds_map, dict):
+        return
+
     rows = []
 
     for (home_team, away_team), odds in odds_map.items():
+        if not isinstance(odds, dict):
+            continue
+
         home_data = odds.get(home_team)
         away_data = odds.get(away_team)
 
@@ -194,35 +230,6 @@ def save_live_odds_to_history(game_date, odds_map):
         final_df = new_df
 
     final_df.to_csv("historical_odds.csv", index=False)
-    
-    required_cols = ["game_date", "home_team", "away_team", "home_odds", "away_odds"]
-
-    for col in required_cols:
-        if col not in df.columns:
-            st.warning(f"historical_odds.csv missing column: {col}")
-            return {}
-
-    df["game_date"] = df["game_date"].astype(str).str.strip()
-    filtered = df[df["game_date"] == str(game_date).strip()]
-
-    odds_map = {}
-
-    for _, row in filtered.iterrows():
-        home_team = normalize_team_name(row["home_team"]).lower()
-        away_team = normalize_team_name(row["away_team"]).lower()
-
-        odds_map[(home_team, away_team)] = {
-            home_team: {
-                "price": float(row["home_odds"]),
-                "bookmaker": "Historical Odds"
-            },
-            away_team: {
-                "price": float(row["away_odds"]),
-                "bookmaker": "Historical Odds"
-            }
-        }
-
-    return odds_map
 
 
 def calculate_ev(model_prob, decimal_odds):
@@ -477,12 +484,18 @@ live_odds_mode = should_fetch_live_odds(active_date)
 if data and "games" in data and len(data["games"]) > 0:
     if live_odds_mode:
         odds_map = get_odds()
-    
+
+        if not isinstance(odds_map, dict):
+            odds_map = {}
+
         if odds_map:
             save_live_odds_to_history(active_date, odds_map)
             st.success("Live odds saved into historical odds file.")
     else:
         odds_map = get_historical_odds(active_date)
+
+        if not isinstance(odds_map, dict):
+            odds_map = {}
 
         if odds_map:
             st.success("Historical odds loaded.")
@@ -585,9 +598,11 @@ if data and "games" in data and len(data["games"]) > 0:
 
         game_home = normalize_team_name(game["home_team"]).lower()
         game_away = normalize_team_name(game["away_team"]).lower()
-    if not isinstance(odds_map, dict):
-        odds_map = {}
-    for (home, away), value in odds_map.items():
+
+        if not isinstance(odds_map, dict):
+            odds_map = {}
+
+        for (home, away), value in odds_map.items():
             odds_home = normalize_team_name(home).lower()
             odds_away = normalize_team_name(away).lower()
 
