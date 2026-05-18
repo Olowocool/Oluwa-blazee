@@ -228,6 +228,35 @@ def kelly_fraction(probability, decimal_odds):
     return max(kelly, 0)
 
 
+def calculate_profit_loss(row):
+    result = str(row.get("result", "Pending")).lower()
+    odds = float(row.get("odds", 0))
+    stake = float(row.get("stake", STAKE))
+
+    if result == "win":
+        return (odds - 1) * stake
+
+    if result == "loss":
+        return -stake
+
+    return 0
+
+
+def calculate_clv(saved_odds, closing_odds):
+    try:
+        saved_odds = float(saved_odds)
+        closing_odds = float(closing_odds)
+
+        if saved_odds <= 0 or closing_odds <= 0:
+            return ""
+
+        clv = (saved_odds / closing_odds) - 1
+        return round(clv, 4)
+
+    except Exception:
+        return ""
+
+
 def save_prediction_log(game, game_date):
     file_exists = os.path.isfile("prediction_history.csv")
 
@@ -275,7 +304,9 @@ def save_bet_pick(game, game_date, best_bet, odds, model_prob, expected_value, k
                 "kelly",
                 "stake",
                 "result",
-                "profit_loss"
+                "profit_loss",
+                "closing_odds",
+                "clv"
             ])
 
         writer.writerow([
@@ -290,22 +321,10 @@ def save_bet_pick(game, game_date, best_bet, odds, model_prob, expected_value, k
             kelly,
             STAKE,
             "Pending",
-            0
+            0,
+            "",
+            ""
         ])
-
-
-def calculate_profit_loss(row):
-    result = str(row.get("result", "Pending")).lower()
-    odds = float(row.get("odds", 0))
-    stake = float(row.get("stake", STAKE))
-
-    if result == "win":
-        return (odds - 1) * stake
-
-    if result == "loss":
-        return -stake
-
-    return 0
 
 
 def load_bet_history():
@@ -323,12 +342,23 @@ def load_bet_history():
     if "profit_loss" not in df.columns:
         df["profit_loss"] = 0
 
+    if "closing_odds" not in df.columns:
+        df["closing_odds"] = ""
+
+    if "clv" not in df.columns:
+        df["clv"] = ""
+
     df["stake"] = pd.to_numeric(df["stake"], errors="coerce")
     df["stake"] = df["stake"].fillna(STAKE)
     df.loc[df["stake"] <= 0, "stake"] = STAKE
 
     df["result"] = df["result"].fillna("Pending")
     df["profit_loss"] = df.apply(calculate_profit_loss, axis=1)
+
+    df["clv"] = df.apply(
+        lambda row: calculate_clv(row["odds"], row["closing_odds"]),
+        axis=1
+    )
 
     return df
 
@@ -729,6 +759,12 @@ else:
 
     updated_df = bet_history.copy()
     updated_df = updated_df.apply(auto_grade_bet, axis=1)
+
+    updated_df["clv"] = updated_df.apply(
+        lambda row: calculate_clv(row["odds"], row["closing_odds"]),
+        axis=1
+    )
+
     save_bet_history(updated_df)
 
     total_bets = len(updated_df)
@@ -744,6 +780,9 @@ else:
     avg_ev = updated_df["expected_value"].mean() * 100
     avg_kelly = updated_df["kelly"].mean() * 100
 
+    numeric_clv = pd.to_numeric(updated_df["clv"], errors="coerce")
+    avg_clv = numeric_clv.mean() * 100 if not numeric_clv.dropna().empty else 0
+
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -758,7 +797,7 @@ else:
         st.metric("Profit/Loss", f"${total_profit:.2f}")
         st.metric("ROI", f"{roi:.1f}%")
 
-    col4, col5 = st.columns(2)
+    col4, col5, col6 = st.columns(3)
 
     with col4:
         st.metric("Average EV", f"{avg_ev:.1f}%")
@@ -766,7 +805,10 @@ else:
     with col5:
         st.metric("Average Kelly", f"{avg_kelly:.1f}%")
 
-    st.subheader("Update Bet Results")
+    with col6:
+        st.metric("Average CLV", f"{avg_clv:.1f}%")
+
+    st.subheader("Update Bet Results + CLV")
 
     for index, row in updated_df.iterrows():
         current_result = row["result"]
@@ -779,6 +821,12 @@ else:
             f"({row['away_team']} @ {row['home_team']})"
         )
 
+        updated_df.at[index, "closing_odds"] = st.text_input(
+            "Closing Odds",
+            value=str(row.get("closing_odds", "")),
+            key=f"closing_odds_{index}"
+        )
+
         updated_df.at[index, "result"] = st.selectbox(
             "Result",
             ["Pending", "Win", "Loss"],
@@ -788,8 +836,14 @@ else:
 
     if st.button("Save Updated Results"):
         updated_df["profit_loss"] = updated_df.apply(calculate_profit_loss, axis=1)
+
+        updated_df["clv"] = updated_df.apply(
+            lambda row: calculate_clv(row["odds"], row["closing_odds"]),
+            axis=1
+        )
+
         save_bet_history(updated_df)
-        st.success("Bet results updated successfully!")
+        st.success("Bet results and CLV updated successfully!")
 
     st.subheader("Bankroll Growth")
 
