@@ -1,9 +1,15 @@
-from fastapi import FastAPI, Query
-from fastapi.middleware.cors import CORSMiddleware
+from nba_api.stats.endpoints import scoreboardv2
 from datetime import datetime
-import random
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import joblib
+import pandas as pd
+import numpy as np
+import json
 
-app = FastAPI(title="NBA Prediction API")
+from injury_impact import calculate_matchup_injury_adjustment
+
+app = FastAPI(title="NBA Basketball Prediction Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,126 +19,291 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-NBA_TEAMS = [
-    "Atlanta Hawks", "Boston Celtics", "Brooklyn Nets", "Charlotte Hornets",
-    "Chicago Bulls", "Cleveland Cavaliers", "Dallas Mavericks", "Denver Nuggets",
-    "Detroit Pistons", "Golden State Warriors", "Houston Rockets", "Indiana Pacers",
-    "LA Clippers", "Los Angeles Lakers", "Memphis Grizzlies", "Miami Heat",
-    "Milwaukee Bucks", "Minnesota Timberwolves", "New Orleans Pelicans",
-    "New York Knicks", "Oklahoma City Thunder", "Orlando Magic",
-    "Philadelphia 76ers", "Phoenix Suns", "Portland Trail Blazers",
-    "Sacramento Kings", "San Antonio Spurs", "Toronto Raptors",
-    "Utah Jazz", "Washington Wizards"
-]
+MODEL_PATH = "models/basketball_xgb_calibrated_v3.joblib"
+TEAM_MAP_PATH = "team_map.json"
+DATA_PATH = "outputs/training_dataset.parquet"
+
+artifact = joblib.load(MODEL_PATH)
+model = artifact["model"]
+feature_cols = artifact["feature_cols"]
+
+with open(TEAM_MAP_PATH, "r") as f:
+    team_map = {int(k): v for k, v in json.load(f).items()}
+
+history = pd.read_parquet(DATA_PATH)
 
 
 @app.get("/")
-def home():
-    return {
-        "message": "NBA Prediction API is running",
-        "status": "ok"
-    }
+def root():
+    return {"message": "NBA backend live"}
 
 
 @app.get("/version")
 def version():
     return {
-        "version": "basketball-model-v1",
-        "model": "NBA prediction engine",
-        "status": "active"
+        "version": "basketball-model-v3-fixed",
+        "message": "real NBA model backend is live"
     }
 
 
-def create_prediction(home_team, away_team):
-    home_strength = random.uniform(0.45, 0.75)
-    away_strength = random.uniform(0.35, 0.65)
+@app.get("/teams")
+def teams():
+    team_names = sorted(
+        set(history["home_team_name"]).union(set(history["away_team_name"]))
+    )
+    return {"teams": team_names}
 
-    total = home_strength + away_strength
-    home_prob = round((home_strength / total) * 100, 1)
-    away_prob = round(100 - home_prob, 1)
 
-    home_score = random.randint(104, 124)
-    away_score = random.randint(98, 121)
+@app.post("/predict_matchup")
+def predict_matchup(payload: dict):
+    home_team = payload["home_team"]
+    away_team = payload["away_team"]
 
-    total_points = home_score + away_score
+    home_games = history[
+        (history["home_team_name"] == home_team)
+        | (history["away_team_name"] == home_team)
+    ]
 
-    if home_prob >= 60:
-        confidence = "High"
-    elif home_prob >= 53:
-        confidence = "Medium"
-    else:
-        confidence = "Low"
+    away_games = history[
+        (history["home_team_name"] == away_team)
+        | (history["away_team_name"] == away_team)
+    ]
 
-    recommendation = "BET" if confidence in ["High", "Medium"] else "NO BET"
+    if home_games.empty:
+        return {"error": f"Home team not found: {home_team}"}
 
-    if total_points > 224:
-        total_pick = "Over 224.5"
-    else:
-        total_pick = "Under 224.5"
+    if away_games.empty:
+        return {"error": f"Away team not found: {away_team}"}
+
+    latest_home = home_games.sort_values("date").iloc[-1]
+    latest_away = away_games.sort_values("date").iloc[-1]
+
+    row = {}
+
+    for col in feature_cols:
+        if col.startswith("home_") and col in latest_home:
+            row[col] = latest_home[col]
+
+        elif col.startswith("away_") and col in latest_away:
+            row[col] = latest_away[col]
+
+        elif col.startswith("diff_"):
+            base = col.replace("diff_", "")
+            home_col = "home_" + base
+            away_col = "away_" + base
+            row[col] = latest_home.get(home_col, 0) - latest_away.get(away_col, 0)
+
+        elif col == "home_court":
+            row[col] = 1
+
+        else:
+            row[col] = 0
+
+    row["home_court"] = 1
+
+    injury_data = calculate_matchup_injury_adjustment(home_team, away_team)
+
+    X = pd.DataFrame([row])
+
+    for col in feature_cols:
+        if col not in X.columns:
+            X[col] = 0
+
+    X = X[feature_cols]
+    X = X.replace([np.inf, -np.inf], 0)
+    X = X.fillna(0)
+
+    raw_prob = model.predict_proba(X)[0][1]
+
+    injury_adjustment = injury_data["injury_diff"] * 0.004
+
+    prob = raw_prob + injury_adjustment
+    prob = max(0.05, min(0.95, prob))
+
+    home_probability = round(float(prob), 4)
+    away_probability = round(float(1 - prob), 4)
+
+    best_bet = home_team if prob >= 0.5 else away_team
 
     return {
         "home_team": home_team,
         "away_team": away_team,
-        "home_win_probability": home_prob,
-        "away_win_probability": away_prob,
-        "predicted_home_score": home_score,
-        "predicted_away_score": away_score,
-        "predicted_total_points": total_points,
-        "moneyline_pick": home_team if home_prob > away_prob else away_team,
-        "totals_pick": total_pick,
-        "confidence": confidence,
-        "recommendation": recommendation,
-        "value_edge": round(random.uniform(1.5, 8.5), 2)
+        "home_win_probability": home_probability,
+        "away_win_probability": away_probability,
+        "prediction": best_bet,
+        "best_bet": best_bet,
+        "confidence": round(float(max(prob, 1 - prob)), 4),
+
+        "home_injury_penalty": injury_data["home_injury_penalty"],
+        "away_injury_penalty": injury_data["away_injury_penalty"],
+        "injury_diff": injury_data["injury_diff"],
+        "injury_probability_adjustment": round(float(injury_adjustment), 4),
+        "raw_home_win_probability": round(float(raw_prob), 4),
+
+        "home_injuries": injury_data.get("home_injuries", []),
+        "away_injuries": injury_data.get("away_injuries", [])
     }
 
 
-@app.get("/predict")
-def predict(
-    home_team: str = Query(...),
-    away_team: str = Query(...)
-):
-    prediction = create_prediction(home_team, away_team)
+@app.get("/predict_today")
+def predict_today(date: str = None):
+    try:
+        today = date or datetime.now().strftime("%m/%d/%Y")
 
-    return {
-        "status": "success",
-        "prediction": prediction
-    }
+        scoreboard = scoreboardv2.ScoreboardV2(game_date=today)
+        frames = scoreboard.get_data_frames()
+
+        if len(frames) == 0:
+            return {
+                "date": today,
+                "games": [],
+                "message": "No NBA schedule data returned"
+            }
+
+        games_df = frames[0].fillna("")
+
+        if games_df.empty:
+            return {
+                "date": today,
+                "games": [],
+                "message": "No NBA games found"
+            }
+
+        predictions = []
+
+        for _, game in games_df.iterrows():
+            home_team_id = game.get("HOME_TEAM_ID")
+            away_team_id = game.get("VISITOR_TEAM_ID")
+
+            if home_team_id == "" or away_team_id == "":
+                continue
+
+            home_team = team_map.get(int(home_team_id))
+            away_team = team_map.get(int(away_team_id))
+
+            if not home_team or not away_team:
+                continue
+
+            result = predict_matchup(
+                {
+                    "home_team": home_team,
+                    "away_team": away_team
+                }
+            )
+
+            if "error" not in result:
+                predictions.append(result)
+
+        return {
+            "date": today,
+            "games": predictions
+        }
+
+    except Exception as e:
+        return {
+            "date": date,
+            "games": [],
+            "error": str(e),
+            "message": "predict_today failed"
+        }
 
 
 @app.get("/daily-predictions")
-def daily_predictions(
-    date: str = Query(...)
+def daily_predictions(date: str = None):
+    return predict_today(date)
+
+
+@app.get("/score_result")
+def score_result(
+    date: str,
+    home_team: str,
+    away_team: str,
+    best_bet: str
 ):
-    games = []
+    try:
+        parsed_date = datetime.strptime(date, "%m/%d/%Y")
 
-    shuffled_teams = NBA_TEAMS.copy()
-    random.shuffle(shuffled_teams)
+        scoreboard = scoreboardv2.ScoreboardV2(
+            game_date=parsed_date.strftime("%m/%d/%Y")
+        )
 
-    for i in range(0, 10, 2):
-        home_team = shuffled_teams[i]
-        away_team = shuffled_teams[i + 1]
+        frames = scoreboard.get_data_frames()
 
-        prediction = create_prediction(home_team, away_team)
-        games.append(prediction)
+        if len(frames) < 2:
+            return {
+                "status": "pending",
+                "message": "No line score data returned yet."
+            }
 
-    return {
-        "status": "success",
-        "date": date,
-        "games": games
-    }
+        line_score = frames[1].fillna("")
+
+        if line_score.empty:
+            return {
+                "status": "pending",
+                "message": "No completed games found yet."
+            }
+
+        for game_id in line_score["GAME_ID"].unique():
+            game_df = line_score[line_score["GAME_ID"] == game_id]
+
+            if len(game_df) != 2:
+                continue
+
+            team1 = game_df.iloc[0]
+            team2 = game_df.iloc[1]
+
+            t1 = f"{team1['TEAM_CITY_NAME']} {team1['TEAM_NAME']}"
+            t2 = f"{team2['TEAM_CITY_NAME']} {team2['TEAM_NAME']}"
+
+            teams_match = sorted([t1.lower(), t2.lower()]) == sorted(
+                [home_team.lower(), away_team.lower()]
+            )
+
+            if teams_match:
+                team1_points = int(team1["PTS"])
+                team2_points = int(team2["PTS"])
+
+                winner = t1 if team1_points > team2_points else t2
+
+                result = "Win" if winner.lower() == best_bet.lower() else "Loss"
+
+                return {
+                    "status": "completed",
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "home_score": team1_points,
+                    "away_score": team2_points,
+                    "winner": winner,
+                    "best_bet": best_bet,
+                    "result": result
+                }
+
+        return {
+            "status": "not_found",
+            "message": "Game not found."
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 
-@app.get("/performance")
-def performance():
-    return {
-        "status": "success",
-        "summary": {
-            "total_bets": 0,
-            "wins": 0,
-            "losses": 0,
-            "win_rate": "0%",
-            "roi": "0%",
-            "units_won": 0
-        },
-        "message": "No saved bet picks yet."
-    }
+@app.get("/debug_injuries")
+def debug_injuries():
+    sample_teams = [
+        "Cleveland Cavaliers",
+        "Detroit Pistons",
+        "Minnesota Timberwolves",
+        "San Antonio Spurs",
+        "Denver Nuggets",
+        "Oklahoma City Thunder"
+    ]
+
+    output = {}
+
+    for team in sample_teams:
+        output[team] = calculate_matchup_injury_adjustment(team, team)
+
+    return output
