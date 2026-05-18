@@ -3,11 +3,25 @@ import requests
 import csv
 import os
 import pandas as pd
-from datetime import datetime
+from datetime import date, datetime
 
 API_URL = "https://oluwa-blazee-new.onrender.com"
-ODDS_API_KEY = "462ebe76301cb50ce7a9f125c077f9e2"
 STAKE = 100
+
+
+def load_odds_api_key():
+    env_key = os.getenv("ODDS_API_KEY")
+
+    if env_key:
+        return env_key
+
+    try:
+        return st.secrets.get("ODDS_API_KEY", "")
+    except Exception:
+        return ""
+
+
+ODDS_API_KEY = load_odds_api_key()
 
 
 TEAM_LOGOS = {
@@ -55,6 +69,22 @@ def normalize_team_name(name):
     return fixed.strip()
 
 
+def parse_game_date(date_text):
+    try:
+        return datetime.strptime(date_text, "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def should_fetch_live_odds(date_text):
+    game_date = parse_game_date(date_text)
+
+    if game_date is None:
+        return True
+
+    return game_date >= date.today()
+
+
 @st.cache_data(ttl=300)
 def load_teams():
     try:
@@ -73,6 +103,10 @@ def load_teams():
 
 @st.cache_data(ttl=300)
 def get_odds():
+    if not ODDS_API_KEY:
+        st.warning("Odds API key is not configured.")
+        return {}
+
     url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
 
     params = {
@@ -316,7 +350,7 @@ if "last_loaded_date" not in st.session_state:
     st.session_state["last_loaded_date"] = None
 
 
-st.title("Today's NBA Games")
+st.title("NBA Games")
 
 date_input = st.text_input(
     "Game Date (MM/DD/YYYY)",
@@ -347,9 +381,13 @@ if st.button("Load Daily Predictions"):
 
 data = st.session_state["daily_data"]
 active_date = st.session_state["last_loaded_date"] or date_input
+live_odds_mode = should_fetch_live_odds(active_date)
 
 if data and "games" in data and len(data["games"]) > 0:
-    odds_map = get_odds()
+    odds_map = get_odds() if live_odds_mode else {}
+
+    if not live_odds_mode:
+        st.info("Historical review: live sportsbook odds are skipped for past dates.")
 
     for game in data["games"]:
         col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
@@ -575,14 +613,17 @@ if data and "games" in data and len(data["games"]) > 0:
                 st.warning("No strong value bet detected.")
 
         else:
-            st.warning("No sportsbook odds found for this matchup.")
+            if live_odds_mode:
+                st.warning("No sportsbook odds found for this matchup.")
 
-            with st.expander("Debug odds matching"):
-                st.write("Prediction matchup:")
-                st.write(game["away_team"], "@", game["home_team"])
+                with st.expander("Debug odds matching"):
+                    st.write("Prediction matchup:")
+                    st.write(game["away_team"], "@", game["home_team"])
 
-                st.write("Available Odds API matchups:")
-                st.write(list(odds_map.keys())[:20])
+                    st.write("Available Odds API matchups:")
+                    st.write(list(odds_map.keys())[:20])
+            else:
+                st.info("Betting analytics need a live or stored odds line.")
 
         st.divider()
 
