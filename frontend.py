@@ -215,6 +215,22 @@ def calculate_line_movement(opening_odds, current_odds):
         return 0
 
 
+def market_movement_signal(move_pct):
+    try:
+        move_pct = float(move_pct)
+
+        if move_pct >= 3:
+            return "Market drifting — worse price now"
+
+        if move_pct <= -3:
+            return "Market shortening — stronger support"
+
+        return "Market stable"
+
+    except Exception:
+        return "Market stable"
+
+
 def save_live_odds_to_history(game_date, odds_map):
     if not isinstance(odds_map, dict):
         return
@@ -770,6 +786,7 @@ if data and "games" in data and len(data["games"]) > 0:
                 st.caption(f"Best book: {home_bookmaker}")
                 st.metric("Opening Odds", f"{float(opening_home_odds):.2f}")
                 st.metric("Line Movement", f"{home_line_move:.1f}%")
+                st.caption(market_movement_signal(home_line_move))
                 st.metric("Implied Probability", f"{home_implied * 100:.1f}%")
                 st.metric("Model Edge", f"{home_edge * 100:.1f}%")
                 st.caption(home_edge_label)
@@ -781,6 +798,7 @@ if data and "games" in data and len(data["games"]) > 0:
                 st.caption(f"Best book: {away_bookmaker}")
                 st.metric("Opening Odds", f"{float(opening_away_odds):.2f}")
                 st.metric("Line Movement", f"{away_line_move:.1f}%")
+                st.caption(market_movement_signal(away_line_move))
                 st.metric("Implied Probability", f"{away_implied * 100:.1f}%")
                 st.metric("Model Edge", f"{away_edge * 100:.1f}%")
                 st.caption(away_edge_label)
