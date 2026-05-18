@@ -135,6 +135,7 @@ def get_odds():
                             "price": price,
                             "bookmaker": bookmaker_name
                         }
+
                     elif price > current_odds[fixed_name]["price"]:
                         current_odds[fixed_name] = {
                             "price": price,
@@ -160,7 +161,13 @@ def get_historical_odds(game_date):
         st.warning(f"Historical odds file error: {e}")
         return {}
 
-    required_cols = ["game_date", "home_team", "away_team", "home_odds", "away_odds"]
+    required_cols = [
+        "game_date",
+        "home_team",
+        "away_team",
+        "home_odds",
+        "away_odds"
+    ]
 
     for col in required_cols:
         if col not in df.columns:
@@ -184,10 +191,28 @@ def get_historical_odds(game_date):
             away_team: {
                 "price": float(row["away_odds"]),
                 "bookmaker": "Historical Odds"
-            }
+            },
+            "home_line_move_pct": float(row.get("home_line_move_pct", 0)),
+            "away_line_move_pct": float(row.get("away_line_move_pct", 0)),
+            "opening_home_odds": float(row.get("opening_home_odds", row["home_odds"])),
+            "opening_away_odds": float(row.get("opening_away_odds", row["away_odds"]))
         }
 
     return odds_map
+
+
+def calculate_line_movement(opening_odds, current_odds):
+    try:
+        opening_odds = float(opening_odds)
+        current_odds = float(current_odds)
+
+        if opening_odds <= 0 or current_odds <= 0:
+            return 0
+
+        return ((current_odds / opening_odds) - 1) * 100
+
+    except Exception:
+        return 0
 
 
 def save_live_odds_to_history(game_date, odds_map):
@@ -195,6 +220,13 @@ def save_live_odds_to_history(game_date, odds_map):
         return
 
     rows = []
+    existing_df = None
+
+    if os.path.isfile("historical_odds.csv"):
+        try:
+            existing_df = pd.read_csv("historical_odds.csv")
+        except Exception:
+            existing_df = None
 
     for (home_team, away_team), odds in odds_map.items():
         if not isinstance(odds, dict):
@@ -206,12 +238,70 @@ def save_live_odds_to_history(game_date, odds_map):
         if not home_data or not away_data:
             continue
 
+        opening_home_odds = home_data["price"]
+        opening_away_odds = away_data["price"]
+
+        if existing_df is not None:
+            for needed_col in [
+                "opening_home_odds",
+                "opening_away_odds",
+                "home_line_move_pct",
+                "away_line_move_pct"
+            ]:
+                if needed_col not in existing_df.columns:
+                    existing_df[needed_col] = 0
+
+            existing_match = existing_df[
+                (existing_df["game_date"].astype(str).str.strip() == str(game_date).strip())
+                & (existing_df["home_team"].astype(str).str.lower() == home_team.lower())
+                & (existing_df["away_team"].astype(str).str.lower() == away_team.lower())
+            ]
+
+            if not existing_match.empty:
+                opening_home_odds = existing_match.iloc[0].get(
+                    "opening_home_odds",
+                    home_data["price"]
+                )
+                opening_away_odds = existing_match.iloc[0].get(
+                    "opening_away_odds",
+                    away_data["price"]
+                )
+
+                if pd.isna(opening_home_odds) or float(opening_home_odds) <= 0:
+                    opening_home_odds = existing_match.iloc[0].get(
+                        "home_odds",
+                        home_data["price"]
+                    )
+
+                if pd.isna(opening_away_odds) or float(opening_away_odds) <= 0:
+                    opening_away_odds = existing_match.iloc[0].get(
+                        "away_odds",
+                        away_data["price"]
+                    )
+
+        home_line_move = calculate_line_movement(
+            opening_home_odds,
+            home_data["price"]
+        )
+
+        away_line_move = calculate_line_movement(
+            opening_away_odds,
+            away_data["price"]
+        )
+
         rows.append({
             "game_date": game_date,
             "home_team": home_team.title(),
             "away_team": away_team.title(),
+
+            "opening_home_odds": opening_home_odds,
+            "opening_away_odds": opening_away_odds,
+
             "home_odds": home_data["price"],
-            "away_odds": away_data["price"]
+            "away_odds": away_data["price"],
+
+            "home_line_move_pct": round(home_line_move, 2),
+            "away_line_move_pct": round(away_line_move, 2)
         })
 
     if not rows:
@@ -219,9 +309,8 @@ def save_live_odds_to_history(game_date, odds_map):
 
     new_df = pd.DataFrame(rows)
 
-    if os.path.isfile("historical_odds.csv"):
-        old_df = pd.read_csv("historical_odds.csv")
-        final_df = pd.concat([old_df, new_df], ignore_index=True)
+    if existing_df is not None:
+        final_df = pd.concat([existing_df, new_df], ignore_index=True)
         final_df = final_df.drop_duplicates(
             subset=["game_date", "home_team", "away_team"],
             keep="last"
@@ -624,6 +713,12 @@ if data and "games" in data and len(data["games"]) > 0:
         home_bookmaker = home_odds_data["bookmaker"] if home_odds_data else "N/A"
         away_bookmaker = away_odds_data["bookmaker"] if away_odds_data else "N/A"
 
+        home_line_move = float(odds.get("home_line_move_pct", 0))
+        away_line_move = float(odds.get("away_line_move_pct", 0))
+
+        opening_home_odds = odds.get("opening_home_odds", home_odds)
+        opening_away_odds = odds.get("opening_away_odds", away_odds)
+
         if home_odds and away_odds:
             st.subheader("Betting Analytics")
 
@@ -673,6 +768,8 @@ if data and "games" in data and len(data["games"]) > 0:
             with analytics_col1:
                 st.metric(f"{game['home_team']} Odds", f"{home_odds:.2f}")
                 st.caption(f"Best book: {home_bookmaker}")
+                st.metric("Opening Odds", f"{float(opening_home_odds):.2f}")
+                st.metric("Line Movement", f"{home_line_move:.1f}%")
                 st.metric("Implied Probability", f"{home_implied * 100:.1f}%")
                 st.metric("Model Edge", f"{home_edge * 100:.1f}%")
                 st.caption(home_edge_label)
@@ -682,6 +779,8 @@ if data and "games" in data and len(data["games"]) > 0:
             with analytics_col2:
                 st.metric(f"{game['away_team']} Odds", f"{away_odds:.2f}")
                 st.caption(f"Best book: {away_bookmaker}")
+                st.metric("Opening Odds", f"{float(opening_away_odds):.2f}")
+                st.metric("Line Movement", f"{away_line_move:.1f}%")
                 st.metric("Implied Probability", f"{away_implied * 100:.1f}%")
                 st.metric("Model Edge", f"{away_edge * 100:.1f}%")
                 st.caption(away_edge_label)
