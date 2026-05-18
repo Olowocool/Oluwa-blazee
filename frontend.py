@@ -11,7 +11,6 @@ STAKE = 100
 
 def load_odds_api_key():
     env_key = os.getenv("ODDS_API_KEY")
-
     if env_key:
         return env_key
 
@@ -65,8 +64,8 @@ TEAM_NAME_FIXES = {
 
 
 def normalize_team_name(name):
-    fixed = TEAM_NAME_FIXES.get(name, name)
-    return fixed.strip()
+    fixed = TEAM_NAME_FIXES.get(str(name).strip(), str(name).strip())
+    return fixed
 
 
 def parse_game_date(date_text):
@@ -78,27 +77,10 @@ def parse_game_date(date_text):
 
 def should_fetch_live_odds(date_text):
     game_date = parse_game_date(date_text)
-
     if game_date is None:
         return True
 
     return game_date >= date.today()
-
-
-@st.cache_data(ttl=300)
-def load_teams():
-    try:
-        response = requests.get(f"{API_URL}/teams", timeout=120)
-
-        if response.status_code != 200:
-            st.error("Failed to load teams.")
-            return []
-
-        return response.json()["teams"]
-
-    except Exception as e:
-        st.error(f"Backend connection error: {e}")
-        return []
 
 
 @st.cache_data(ttl=300)
@@ -127,25 +109,22 @@ def get_odds():
         odds_map = {}
 
         for game in games:
-            home_team = normalize_team_name(game["home_team"])
-            away_team = normalize_team_name(game["away_team"])
+            home_team = normalize_team_name(game["home_team"]).lower()
+            away_team = normalize_team_name(game["away_team"]).lower()
 
             bookmakers = game.get("bookmakers", [])
-
             if not bookmakers:
                 continue
 
             markets = bookmakers[0].get("markets", [])
-
             if not markets:
                 continue
 
             outcomes = markets[0].get("outcomes", [])
-
             current_odds = {}
 
             for outcome in outcomes:
-                fixed_name = normalize_team_name(outcome["name"])
+                fixed_name = normalize_team_name(outcome["name"]).lower()
                 current_odds[fixed_name] = outcome["price"]
 
             odds_map[(home_team, away_team)] = current_odds
@@ -155,6 +134,46 @@ def get_odds():
     except Exception as e:
         st.warning(f"Odds fetch failed: {e}")
         return {}
+
+
+def get_historical_odds(game_date):
+    if not os.path.isfile("historical_odds.csv"):
+        return {}
+
+    try:
+        df = pd.read_csv("historical_odds.csv")
+    except Exception as e:
+        st.warning(f"Historical odds file error: {e}")
+        return {}
+
+    required_cols = [
+        "game_date",
+        "home_team",
+        "away_team",
+        "home_odds",
+        "away_odds"
+    ]
+
+    for col in required_cols:
+        if col not in df.columns:
+            st.warning(f"historical_odds.csv missing column: {col}")
+            return {}
+
+    df["game_date"] = df["game_date"].astype(str).str.strip()
+    filtered = df[df["game_date"] == str(game_date).strip()]
+
+    odds_map = {}
+
+    for _, row in filtered.iterrows():
+        home_team = normalize_team_name(row["home_team"]).lower()
+        away_team = normalize_team_name(row["away_team"]).lower()
+
+        odds_map[(home_team, away_team)] = {
+            home_team: float(row["home_odds"]),
+            away_team: float(row["away_odds"])
+        }
+
+    return odds_map
 
 
 def calculate_ev(model_prob, decimal_odds):
@@ -341,8 +360,6 @@ def auto_grade_bet(row):
         return row
 
 
-teams = load_teams()
-
 if "daily_data" not in st.session_state:
     st.session_state["daily_data"] = None
 
@@ -384,10 +401,15 @@ active_date = st.session_state["last_loaded_date"] or date_input
 live_odds_mode = should_fetch_live_odds(active_date)
 
 if data and "games" in data and len(data["games"]) > 0:
-    odds_map = get_odds() if live_odds_mode else {}
+    if live_odds_mode:
+        odds_map = get_odds()
+    else:
+        odds_map = get_historical_odds(active_date)
 
-    if not live_odds_mode:
-        st.info("Historical review: live sportsbook odds are skipped for past dates.")
+        if odds_map:
+            st.success("Historical odds loaded.")
+        else:
+            st.info("No stored historical odds found for this date.")
 
     for game in data["games"]:
         col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
@@ -449,22 +471,13 @@ if data and "games" in data and len(data["games"]) > 0:
         injury_col1, injury_col2, injury_col3 = st.columns(3)
 
         with injury_col1:
-            st.metric(
-                "Home Penalty",
-                game.get("home_injury_penalty", 0)
-            )
+            st.metric("Home Penalty", game.get("home_injury_penalty", 0))
 
         with injury_col2:
-            st.metric(
-                "Away Penalty",
-                game.get("away_injury_penalty", 0)
-            )
+            st.metric("Away Penalty", game.get("away_injury_penalty", 0))
 
         with injury_col3:
-            st.metric(
-                "Injury Diff",
-                game.get("injury_diff", 0)
-            )
+            st.metric("Injury Diff", game.get("injury_diff", 0))
 
         st.metric(
             "Probability Adjustment",
@@ -480,23 +493,17 @@ if data and "games" in data and len(data["games"]) > 0:
             odds_home = normalize_team_name(home).lower()
             odds_away = normalize_team_name(away).lower()
 
-            teams_match = sorted([game_home, game_away]) == sorted([odds_home, odds_away])
+            teams_match = (
+                odds_home == game_home
+                and odds_away == game_away
+            )
 
             if teams_match:
                 odds = value
                 break
 
-        home_odds = None
-        away_odds = None
-
-        for team_name, price in odds.items():
-            normalized_team = normalize_team_name(team_name).lower()
-
-            if normalized_team == game_home:
-                home_odds = price
-
-            elif normalized_team == game_away:
-                away_odds = price
+        home_odds = odds.get(game_home)
+        away_odds = odds.get(game_away)
 
         if home_odds and away_odds:
             st.subheader("Betting Analytics")
@@ -590,10 +597,7 @@ if data and "games" in data and len(data["games"]) > 0:
                 if saved_key not in st.session_state:
                     st.session_state[saved_key] = False
 
-                if st.button(
-                    f"Save Bet Pick: {best_bet}",
-                    key=button_key
-                ):
+                if st.button(f"Save Bet Pick: {best_bet}", key=button_key):
                     save_bet_pick(
                         game,
                         active_date,
@@ -615,15 +619,15 @@ if data and "games" in data and len(data["games"]) > 0:
         else:
             if live_odds_mode:
                 st.warning("No sportsbook odds found for this matchup.")
-
-                with st.expander("Debug odds matching"):
-                    st.write("Prediction matchup:")
-                    st.write(game["away_team"], "@", game["home_team"])
-
-                    st.write("Available Odds API matchups:")
-                    st.write(list(odds_map.keys())[:20])
             else:
-                st.info("Betting analytics need a live or stored odds line.")
+                st.warning("Stored historical odds not found for this exact matchup.")
+
+                with st.expander("Debug historical odds matching"):
+                    st.write("Prediction matchup:")
+                    st.write(game_away, "@", game_home)
+
+                    st.write("Available historical odds matchups:")
+                    st.write(list(odds_map.keys()))
 
         st.divider()
 
@@ -655,7 +659,6 @@ else:
     )
 
     updated_df = bet_history.copy()
-
     updated_df = updated_df.apply(auto_grade_bet, axis=1)
     save_bet_history(updated_df)
 
@@ -722,14 +725,11 @@ else:
     st.subheader("Bankroll Growth")
 
     chart_df = updated_df.copy()
-
     chart_df["timestamp"] = pd.to_datetime(chart_df["timestamp"])
     chart_df = chart_df.sort_values("timestamp")
     chart_df["cumulative_profit"] = chart_df["profit_loss"].cumsum()
 
-    st.line_chart(
-        chart_df.set_index("timestamp")["cumulative_profit"]
-    )
+    st.line_chart(chart_df.set_index("timestamp")["cumulative_profit"])
 
     st.subheader("Saved Bet Picks")
 
@@ -739,15 +739,12 @@ else:
         if result == "win":
             return ["background-color: #d4edda"] * len(row)
 
-        elif result == "loss":
+        if result == "loss":
             return ["background-color: #f8d7da"] * len(row)
 
         return ["background-color: #fff3cd"] * len(row)
 
-    styled_df = updated_df.style.apply(
-        highlight_results,
-        axis=1
-    )
+    styled_df = updated_df.style.apply(highlight_results, axis=1)
 
     st.write(
         styled_df.to_html(),
