@@ -64,8 +64,7 @@ TEAM_NAME_FIXES = {
 
 
 def normalize_team_name(name):
-    fixed = TEAM_NAME_FIXES.get(str(name).strip(), str(name).strip())
-    return fixed
+    return TEAM_NAME_FIXES.get(str(name).strip(), str(name).strip())
 
 
 def parse_game_date(date_text):
@@ -116,16 +115,31 @@ def get_odds():
             if not bookmakers:
                 continue
 
-            markets = bookmakers[0].get("markets", [])
-            if not markets:
-                continue
-
-            outcomes = markets[0].get("outcomes", [])
             current_odds = {}
 
-            for outcome in outcomes:
-                fixed_name = normalize_team_name(outcome["name"]).lower()
-                current_odds[fixed_name] = outcome["price"]
+            for bookmaker in bookmakers:
+                bookmaker_name = bookmaker.get("title", "Unknown Sportsbook")
+                markets = bookmaker.get("markets", [])
+
+                if not markets:
+                    continue
+
+                outcomes = markets[0].get("outcomes", [])
+
+                for outcome in outcomes:
+                    fixed_name = normalize_team_name(outcome["name"]).lower()
+                    price = float(outcome["price"])
+
+                    if fixed_name not in current_odds:
+                        current_odds[fixed_name] = {
+                            "price": price,
+                            "bookmaker": bookmaker_name
+                        }
+                    elif price > current_odds[fixed_name]["price"]:
+                        current_odds[fixed_name] = {
+                            "price": price,
+                            "bookmaker": bookmaker_name
+                        }
 
             odds_map[(home_team, away_team)] = current_odds
 
@@ -146,13 +160,7 @@ def get_historical_odds(game_date):
         st.warning(f"Historical odds file error: {e}")
         return {}
 
-    required_cols = [
-        "game_date",
-        "home_team",
-        "away_team",
-        "home_odds",
-        "away_odds"
-    ]
+    required_cols = ["game_date", "home_team", "away_team", "home_odds", "away_odds"]
 
     for col in required_cols:
         if col not in df.columns:
@@ -169,8 +177,14 @@ def get_historical_odds(game_date):
         away_team = normalize_team_name(row["away_team"]).lower()
 
         odds_map[(home_team, away_team)] = {
-            home_team: float(row["home_odds"]),
-            away_team: float(row["away_odds"])
+            home_team: {
+                "price": float(row["home_odds"]),
+                "bookmaker": "Historical Odds"
+            },
+            away_team: {
+                "price": float(row["away_odds"]),
+                "bookmaker": "Historical Odds"
+            }
         }
 
     return odds_map
@@ -189,23 +203,18 @@ def calculate_model_edge(model_prob, implied_prob):
 def classify_edge(edge):
     if edge >= 0.10:
         return "Elite Edge"
-
     if edge >= 0.06:
         return "Strong Edge"
-
     if edge >= 0.03:
         return "Playable Edge"
-
     if edge > 0:
         return "Small Edge"
-
     return "No Edge"
 
 
 def calibrate_probability(probability, strength=0.75, min_prob=0.05, max_prob=0.95):
     probability = max(min(probability, max_prob), min_prob)
-    calibrated = 0.5 + ((probability - 0.5) * strength)
-    return calibrated
+    return 0.5 + ((probability - 0.5) * strength)
 
 
 def kelly_fraction(probability, decimal_odds):
@@ -436,17 +445,14 @@ if data and "games" in data and len(data["games"]) > 0:
             confidence_label = "Elite"
             betting_note = "Strong model position"
             confidence_color = "green"
-        
         elif confidence >= 0.65:
             confidence_label = "Good"
             betting_note = "Moderate confidence"
             confidence_color = "orange"
-        
         elif confidence >= 0.55:
             confidence_label = "Risky"
             betting_note = "Weak betting profile"
             confidence_color = "red"
-        
         else:
             confidence_label = "Avoid"
             betting_note = "No predictive edge"
@@ -467,6 +473,7 @@ if data and "games" in data and len(data["games"]) > 0:
             """,
             unsafe_allow_html=True
         )
+
         st.header(game["prediction"])
         st.progress(confidence)
         st.info(betting_note)
@@ -523,8 +530,14 @@ if data and "games" in data and len(data["games"]) > 0:
                 odds = value
                 break
 
-        home_odds = odds.get(game_home)
-        away_odds = odds.get(game_away)
+        home_odds_data = odds.get(game_home)
+        away_odds_data = odds.get(game_away)
+
+        home_odds = home_odds_data["price"] if home_odds_data else None
+        away_odds = away_odds_data["price"] if away_odds_data else None
+
+        home_bookmaker = home_odds_data["bookmaker"] if home_odds_data else "N/A"
+        away_bookmaker = away_odds_data["bookmaker"] if away_odds_data else "N/A"
 
         if home_odds and away_odds:
             st.subheader("Betting Analytics")
@@ -574,6 +587,7 @@ if data and "games" in data and len(data["games"]) > 0:
 
             with analytics_col1:
                 st.metric(f"{game['home_team']} Odds", f"{home_odds:.2f}")
+                st.caption(f"Best book: {home_bookmaker}")
                 st.metric("Implied Probability", f"{home_implied * 100:.1f}%")
                 st.metric("Model Edge", f"{home_edge * 100:.1f}%")
                 st.caption(home_edge_label)
@@ -582,6 +596,7 @@ if data and "games" in data and len(data["games"]) > 0:
 
             with analytics_col2:
                 st.metric(f"{game['away_team']} Odds", f"{away_odds:.2f}")
+                st.caption(f"Best book: {away_bookmaker}")
                 st.metric("Implied Probability", f"{away_implied * 100:.1f}%")
                 st.metric("Model Edge", f"{away_edge * 100:.1f}%")
                 st.caption(away_edge_label)
@@ -590,15 +605,13 @@ if data and "games" in data and len(data["games"]) > 0:
 
             best_bet = None
             best_ev = 0
-            best_edge = 0
-            best_kelly = 0
             best_confidence = confidence
-            
+
             MIN_EV = 0.05
             MIN_EDGE = 0.03
             MIN_KELLY = 0.01
             MIN_CONFIDENCE = 0.60
-            
+
             if home_ev > away_ev:
                 candidate_bet = game["home_team"]
                 candidate_ev = home_ev
@@ -609,19 +622,17 @@ if data and "games" in data and len(data["games"]) > 0:
                 candidate_ev = away_ev
                 candidate_edge = away_edge
                 candidate_kelly = away_kelly
-            
+
             passes_filter = (
                 candidate_ev >= MIN_EV
                 and candidate_edge >= MIN_EDGE
                 and candidate_kelly >= MIN_KELLY
                 and best_confidence >= MIN_CONFIDENCE
             )
-            
+
             if passes_filter:
                 best_bet = candidate_bet
                 best_ev = candidate_ev
-                best_edge = candidate_edge
-                best_kelly = candidate_kelly
 
             if best_bet:
                 st.success(
@@ -661,13 +672,13 @@ if data and "games" in data and len(data["games"]) > 0:
 
             else:
                 st.error("🚫 NO BET — failed professional value filter")
-            
+
                 with st.expander("Why this game was rejected"):
                     st.write(f"Required EV: at least {MIN_EV * 100:.1f}%")
                     st.write(f"Required Edge: at least {MIN_EDGE * 100:.1f}%")
                     st.write(f"Required Kelly: at least {MIN_KELLY * 100:.1f}%")
                     st.write(f"Required Confidence: at least {MIN_CONFIDENCE * 100:.1f}%")
-            
+
                     st.write("---")
                     st.write(f"Best Candidate: {candidate_bet}")
                     st.write(f"Candidate EV: {candidate_ev * 100:.1f}%")
@@ -684,7 +695,6 @@ if data and "games" in data and len(data["games"]) > 0:
                 with st.expander("Debug historical odds matching"):
                     st.write("Prediction matchup:")
                     st.write(game_away, "@", game_home)
-
                     st.write("Available historical odds matchups:")
                     st.write(list(odds_map.keys()))
 
