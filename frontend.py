@@ -159,7 +159,42 @@ def get_historical_odds(game_date):
     except Exception as e:
         st.warning(f"Historical odds file error: {e}")
         return {}
+        
+def save_live_odds_to_history(game_date, odds_map):
+    rows = []
 
+    for (home_team, away_team), odds in odds_map.items():
+        home_data = odds.get(home_team)
+        away_data = odds.get(away_team)
+
+        if not home_data or not away_data:
+            continue
+
+        rows.append({
+            "game_date": game_date,
+            "home_team": home_team.title(),
+            "away_team": away_team.title(),
+            "home_odds": home_data["price"],
+            "away_odds": away_data["price"]
+        })
+
+    if not rows:
+        return
+
+    new_df = pd.DataFrame(rows)
+
+    if os.path.isfile("historical_odds.csv"):
+        old_df = pd.read_csv("historical_odds.csv")
+        final_df = pd.concat([old_df, new_df], ignore_index=True)
+        final_df = final_df.drop_duplicates(
+            subset=["game_date", "home_team", "away_team"],
+            keep="last"
+        )
+    else:
+        final_df = new_df
+
+    final_df.to_csv("historical_odds.csv", index=False)
+    
     required_cols = ["game_date", "home_team", "away_team", "home_odds", "away_odds"]
 
     for col in required_cols:
@@ -441,7 +476,11 @@ live_odds_mode = should_fetch_live_odds(active_date)
 
 if data and "games" in data and len(data["games"]) > 0:
     if live_odds_mode:
-        odds_map = get_odds()
+    odds_map = get_odds()
+
+    if odds_map:
+        save_live_odds_to_history(active_date, odds_map)
+        st.success("Live odds saved into historical odds file.")
     else:
         odds_map = get_historical_odds(active_date)
 
