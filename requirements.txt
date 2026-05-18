@@ -3,4 +3,8 @@ uvicorn
 pandas
 numpy
 scikit-learn
+joblib
+pyarrow
 requests
+nba_api
+xgboost
