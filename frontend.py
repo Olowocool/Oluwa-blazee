@@ -432,20 +432,41 @@ if data and "games" in data and len(data["games"]) > 0:
             game["away_win_probability"]
         )
 
-        if confidence >= 0.70:
-            confidence_label = "Strong Favorite"
-            betting_note = "High-confidence model pick"
-        elif confidence >= 0.60:
-            confidence_label = "Lean"
-            betting_note = "Moderate model edge"
-        elif confidence >= 0.55:
-            confidence_label = "Slight Lean"
-            betting_note = "Small edge, use caution"
-        else:
-            confidence_label = "Avoid"
-            betting_note = "Too close to call"
+        if confidence >= 0.75:
+        confidence_label = "Elite"
+        betting_note = "Strong model position"
+        confidence_color = "green"
+    
+    elif confidence >= 0.65:
+        confidence_label = "Good"
+        betting_note = "Moderate confidence"
+        confidence_color = "orange"
+    
+    elif confidence >= 0.55:
+        confidence_label = "Risky"
+        betting_note = "Weak betting profile"
+        confidence_color = "red"
+    
+    else:
+        confidence_label = "Avoid"
+        betting_note = "No predictive edge"
+        confidence_color = "red"
 
-        st.caption(f"Predicted Winner — {confidence_label}")
+        st.markdown(
+            f"""
+            <div style="
+                padding:10px;
+                border-radius:10px;
+                background-color:{confidence_color};
+                color:white;
+                font-weight:bold;
+                width:fit-content;
+            ">
+                Predicted Winner — {confidence_label}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         st.header(game["prediction"])
         st.progress(confidence)
         st.info(betting_note)
