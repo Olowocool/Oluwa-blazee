@@ -569,13 +569,38 @@ if data and "games" in data and len(data["games"]) > 0:
 
             best_bet = None
             best_ev = 0
-
-            if home_ev > away_ev and home_ev > 0.05:
-                best_bet = game["home_team"]
-                best_ev = home_ev
-            elif away_ev > home_ev and away_ev > 0.05:
-                best_bet = game["away_team"]
-                best_ev = away_ev
+            best_edge = 0
+            best_kelly = 0
+            best_confidence = confidence
+            
+            MIN_EV = 0.05
+            MIN_EDGE = 0.03
+            MIN_KELLY = 0.01
+            MIN_CONFIDENCE = 0.60
+            
+            if home_ev > away_ev:
+                candidate_bet = game["home_team"]
+                candidate_ev = home_ev
+                candidate_edge = home_edge
+                candidate_kelly = home_kelly
+            else:
+                candidate_bet = game["away_team"]
+                candidate_ev = away_ev
+                candidate_edge = away_edge
+                candidate_kelly = away_kelly
+            
+            passes_filter = (
+                candidate_ev >= MIN_EV
+                and candidate_edge >= MIN_EDGE
+                and candidate_kelly >= MIN_KELLY
+                and best_confidence >= MIN_CONFIDENCE
+            )
+            
+            if passes_filter:
+                best_bet = candidate_bet
+                best_ev = candidate_ev
+                best_edge = candidate_edge
+                best_kelly = candidate_kelly
 
             if best_bet:
                 st.success(
