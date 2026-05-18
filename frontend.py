@@ -135,7 +135,6 @@ def get_odds():
                             "price": price,
                             "bookmaker": bookmaker_name
                         }
-
                     elif price > current_odds[fixed_name]["price"]:
                         current_odds[fixed_name] = {
                             "price": price,
@@ -149,6 +148,25 @@ def get_odds():
     except Exception as e:
         st.warning(f"Odds fetch failed: {e}")
         return {}
+
+
+def get_latest_closing_odds(home_team, away_team):
+    odds_map = get_odds()
+
+    if not isinstance(odds_map, dict):
+        return None
+
+    target_home = normalize_team_name(home_team).lower()
+    target_away = normalize_team_name(away_team).lower()
+
+    for (home, away), value in odds_map.items():
+        if (
+            normalize_team_name(home).lower() == target_home
+            and normalize_team_name(away).lower() == target_away
+        ):
+            return value
+
+    return None
 
 
 def get_historical_odds(game_date):
@@ -516,6 +534,26 @@ def save_bet_history(df):
 
 def auto_grade_bet(row):
     try:
+        latest_odds = get_latest_closing_odds(
+            row["home_team"],
+            row["away_team"]
+        )
+
+        if latest_odds:
+            home_key = normalize_team_name(row["home_team"]).lower()
+            away_key = normalize_team_name(row["away_team"]).lower()
+            best_bet_key = normalize_team_name(row["best_bet"]).lower()
+
+            if best_bet_key == home_key:
+                closing_data = latest_odds.get(home_key)
+            elif best_bet_key == away_key:
+                closing_data = latest_odds.get(away_key)
+            else:
+                closing_data = None
+
+            if closing_data:
+                row["closing_odds"] = closing_data["price"]
+
         response = requests.get(
             f"{API_URL}/score_result",
             params={
