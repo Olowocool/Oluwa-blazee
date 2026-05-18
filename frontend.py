@@ -639,7 +639,20 @@ if data and "games" in data and len(data["games"]) > 0:
                     st.success("Bet pick saved successfully!")
 
             else:
-                st.warning("No strong value bet detected.")
+                st.error("🚫 NO BET — failed professional value filter")
+            
+                with st.expander("Why this game was rejected"):
+                    st.write(f"Required EV: at least {MIN_EV * 100:.1f}%")
+                    st.write(f"Required Edge: at least {MIN_EDGE * 100:.1f}%")
+                    st.write(f"Required Kelly: at least {MIN_KELLY * 100:.1f}%")
+                    st.write(f"Required Confidence: at least {MIN_CONFIDENCE * 100:.1f}%")
+            
+                    st.write("---")
+                    st.write(f"Best Candidate: {candidate_bet}")
+                    st.write(f"Candidate EV: {candidate_ev * 100:.1f}%")
+                    st.write(f"Candidate Edge: {candidate_edge * 100:.1f}%")
+                    st.write(f"Candidate Kelly: {candidate_kelly * 100:.1f}%")
+                    st.write(f"Model Confidence: {best_confidence * 100:.1f}%")
 
         else:
             if live_odds_mode:
