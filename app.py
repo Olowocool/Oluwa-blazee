@@ -5,6 +5,7 @@ import joblib
 import pandas as pd
 import numpy as np
 import json
+import os
 
 from injury_impact import calculate_matchup_injury_adjustment
 
@@ -34,6 +35,9 @@ def version():
     return {
         "version": "injury-fields-v3",
         "message": "updated app.py is live",
+        "deployed_commit": os.getenv("RENDER_GIT_COMMIT", "unknown"),
+        "deployed_branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
+        "render_service": os.getenv("RENDER_SERVICE_NAME", "local"),
         "routes": [
             "/teams",
             "/predict_matchup",
