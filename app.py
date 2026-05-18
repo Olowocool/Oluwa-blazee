@@ -29,6 +29,21 @@ def root():
     return {"message": "backend live"}
 
 
+@app.get("/version")
+def version():
+    return {
+        "version": "injury-fields-v3",
+        "message": "updated app.py is live",
+        "routes": [
+            "/teams",
+            "/predict_matchup",
+            "/predict_today",
+            "/score_result",
+            "/debug_injuries"
+        ]
+    }
+
+
 @app.get("/teams")
 def teams():
     team_names = sorted(
@@ -291,9 +306,3 @@ def debug_injuries():
         output[team] = calculate_matchup_injury_adjustment(team, team)
 
     return output
-    @app.get("/version")
-    def version():
-        return {
-            "version": "injury-fields-v2",
-            "message": "updated app.py is live"
-        }
