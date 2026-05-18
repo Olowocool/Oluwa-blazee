@@ -586,7 +586,7 @@ if data and "games" in data and len(data["games"]) > 0:
         game_home = normalize_team_name(game["home_team"]).lower()
         game_away = normalize_team_name(game["away_team"]).lower()
 
-        for (home, away), value in odds_map.items():
+    for (home, away), value in odds_map.items():
             odds_home = normalize_team_name(home).lower()
             odds_away = normalize_team_name(away).lower()
 
