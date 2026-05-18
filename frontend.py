@@ -476,11 +476,11 @@ live_odds_mode = should_fetch_live_odds(active_date)
 
 if data and "games" in data and len(data["games"]) > 0:
     if live_odds_mode:
-    odds_map = get_odds()
-
-    if odds_map:
-        save_live_odds_to_history(active_date, odds_map)
-        st.success("Live odds saved into historical odds file.")
+        odds_map = get_odds()
+    
+        if odds_map:
+            save_live_odds_to_history(active_date, odds_map)
+            st.success("Live odds saved into historical odds file.")
     else:
         odds_map = get_historical_odds(active_date)
 
