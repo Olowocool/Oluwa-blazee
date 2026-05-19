@@ -15,6 +15,7 @@ from model_quality import (
     calculate_rest_days,
     quality_adjust_probability
 )
+
 app = FastAPI(title="NBA Basketball Prediction Backend")
 
 app.add_middleware(
@@ -47,8 +48,8 @@ def root():
 @app.get("/version")
 def version():
     return {
-        "version": "basketball-model-v3-fixed",
-        "message": "real NBA model backend is live"
+        "version": "basketball-model-v4-quality-upgrade",
+        "message": "NBA model quality upgrade is live"
     }
 
 
@@ -121,47 +122,34 @@ def predict_matchup(payload: dict):
 
     raw_prob = model.predict_proba(X)[0][1]
 
-    home_recent_form = calculate_recent_form(
-        home_games
-    )
-    
-    away_recent_form = calculate_recent_form(
-        away_games
-    )
-    
+    home_recent_form = calculate_recent_form(home_games)
+    away_recent_form = calculate_recent_form(away_games)
+
     home_strength = calculate_home_away_strength(
         home_games,
         home_team
     )
-    
+
     away_strength = calculate_home_away_strength(
         away_games,
         away_team
     )
-    
-    home_rest_days = calculate_rest_days(
-        home_games
+
+    home_rest_days = calculate_rest_days(home_games)
+    away_rest_days = calculate_rest_days(away_games)
+
+    injury_adjustment = injury_data["injury_diff"] * 0.004
+
+    prob = quality_adjust_probability(
+        raw_prob=raw_prob,
+        home_recent_form=home_recent_form,
+        away_recent_form=away_recent_form,
+        home_rest_days=home_rest_days,
+        away_rest_days=away_rest_days,
+        injury_adjustment=injury_adjustment
     )
-    
-    away_rest_days = calculate_rest_days(
-        away_games
-    )
-    
-    injury_adjustment = (
-        injury_data["injury_diff"] * 0.004
-    )
 
-prob = quality_adjust_probability(
-    raw_prob=raw_prob,
-
-    home_recent_form=home_recent_form,
-    away_recent_form=away_recent_form,
-
-    home_rest_days=home_rest_days,
-    away_rest_days=away_rest_days,
-
-    injury_adjustment=injury_adjustment
-)
+    prob = max(0.05, min(0.95, prob))
 
     home_probability = round(float(prob), 4)
     away_probability = round(float(1 - prob), 4)
@@ -171,43 +159,56 @@ prob = quality_adjust_probability(
     return {
         "home_team": home_team,
         "away_team": away_team,
+
         "home_win_probability": home_probability,
         "away_win_probability": away_probability,
+
         "prediction": best_bet,
         "best_bet": best_bet,
         "confidence": round(float(max(prob, 1 - prob)), 4),
 
+        "raw_home_win_probability": round(float(raw_prob), 4),
+
+        "home_recent_win_rate": round(
+            float(home_recent_form["recent_win_rate"]),
+            4
+        ),
+        "away_recent_win_rate": round(
+            float(away_recent_form["recent_win_rate"]),
+            4
+        ),
+
+        "home_recent_margin": round(
+            float(home_recent_form["recent_margin"]),
+            2
+        ),
+        "away_recent_margin": round(
+            float(away_recent_form["recent_margin"]),
+            2
+        ),
+
+        "home_rest_days": home_rest_days,
+        "away_rest_days": away_rest_days,
+
+        "home_strength": round(
+            float(home_strength["home_strength"]),
+            4
+        ),
+        "away_strength": round(
+            float(away_strength["away_strength"]),
+            4
+        ),
+
         "home_injury_penalty": injury_data["home_injury_penalty"],
         "away_injury_penalty": injury_data["away_injury_penalty"],
         "injury_diff": injury_data["injury_diff"],
-        "injury_probability_adjustment": round(float(injury_adjustment), 4),
-        "raw_home_win_probability": round(float(raw_prob), 4),
+        "injury_probability_adjustment": round(
+            float(injury_adjustment),
+            4
+        ),
 
         "home_injuries": injury_data.get("home_injuries", []),
         "away_injuries": injury_data.get("away_injuries", [])
-        "home_recent_win_rate":
-        round(float(home_recent_form["recent_win_rate"]), 4),
-        
-        "away_recent_win_rate":
-        round(float(away_recent_form["recent_win_rate"]), 4),
-        
-        "home_recent_margin":
-        round(float(home_recent_form["recent_margin"]), 2),
-        
-        "away_recent_margin":
-        round(float(away_recent_form["recent_margin"]), 2),
-        
-        "home_rest_days":
-        home_rest_days,
-        
-        "away_rest_days":
-        away_rest_days,
-        
-        "home_strength":
-        round(float(home_strength["home_strength"]), 4),
-        
-        "away_strength":
-        round(float(away_strength["away_strength"]), 4),
     }
 
 
