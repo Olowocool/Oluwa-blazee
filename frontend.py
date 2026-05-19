@@ -8,7 +8,7 @@ from datetime import date, datetime
 API_URL = "https://oluwa-blazee-new.onrender.com"
 STAKE = 100
 
-TEST_MODE = True
+TEST_MODE = False
 
 
 def load_odds_api_key():
