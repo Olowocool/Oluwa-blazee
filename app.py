@@ -26,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MODEL_PATH = "models/basketball_xgb_calibrated_v3.joblib"
+MODEL_PATH = "basketball_xgb_calibrated_v2.joblib"
 TEAM_MAP_PATH = "team_map.json"
 DATA_PATH = "outputs/training_dataset.parquet"
 
