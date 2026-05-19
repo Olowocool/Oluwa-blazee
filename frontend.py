@@ -8,6 +8,8 @@ from datetime import date, datetime
 API_URL = "https://oluwa-blazee-new.onrender.com"
 STAKE = 100
 
+TEST_MODE = True
+
 
 def load_odds_api_key():
     env_key = os.getenv("ODDS_API_KEY")
@@ -869,6 +871,9 @@ if data and "games" in data and len(data["games"]) > 0:
                 and candidate_kelly >= MIN_KELLY
                 and best_confidence >= MIN_CONFIDENCE
             )
+            
+            if TEST_MODE:
+                passes_filter = True
 
             if passes_filter:
                 best_bet = candidate_bet
