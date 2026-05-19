@@ -1088,3 +1088,241 @@ else:
         styled_df.to_html(),
         unsafe_allow_html=True
     )
+# =========================
+# BACKTESTING DASHBOARD
+# =========================
+
+st.title("Backtesting Dashboard")
+
+def load_prediction_history():
+    if not os.path.isfile("prediction_history.csv"):
+        return None
+
+    df = pd.read_csv("prediction_history.csv")
+
+    required_cols = [
+        "game_date",
+        "home_team",
+        "away_team",
+        "prediction",
+        "home_probability",
+        "away_probability"
+    ]
+
+    for col in required_cols:
+        if col not in df.columns:
+            return None
+
+    df["home_probability"] = pd.to_numeric(df["home_probability"], errors="coerce")
+    df["away_probability"] = pd.to_numeric(df["away_probability"], errors="coerce")
+
+    df["confidence"] = df[["home_probability", "away_probability"]].max(axis=1)
+
+    return df
+
+
+def backtest_prediction_row(row):
+    try:
+        response = requests.get(
+            f"{API_URL}/score_result",
+            params={
+                "date": row["game_date"],
+                "home_team": row["home_team"],
+                "away_team": row["away_team"],
+                "best_bet": row["prediction"]
+            },
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return "Pending"
+
+        data = response.json()
+
+        if data.get("status") == "completed":
+            return data.get("result", "Pending")
+
+        return "Pending"
+
+    except Exception:
+        return "Pending"
+
+
+prediction_history = load_prediction_history()
+bet_history_for_backtest = load_bet_history()
+
+if prediction_history is None or prediction_history.empty:
+    st.info("No prediction history found yet. Load predictions first.")
+
+else:
+    st.subheader("Model Accuracy Backtest")
+
+    backtest_df = prediction_history.copy()
+
+    backtest_df["result"] = backtest_df.apply(backtest_prediction_row, axis=1)
+
+    completed_predictions = backtest_df[
+        backtest_df["result"].isin(["Win", "Loss"])
+    ]
+
+    if completed_predictions.empty:
+        st.info("No completed prediction results available yet.")
+
+    else:
+        total_predictions = len(completed_predictions)
+        correct_predictions = len(
+            completed_predictions[completed_predictions["result"] == "Win"]
+        )
+
+        model_accuracy = (
+            correct_predictions / total_predictions * 100
+            if total_predictions > 0
+            else 0
+        )
+
+        high_conf_df = completed_predictions[
+            completed_predictions["confidence"] >= 0.70
+        ]
+
+        high_conf_total = len(high_conf_df)
+        high_conf_wins = len(high_conf_df[high_conf_df["result"] == "Win"])
+
+        high_conf_win_rate = (
+            high_conf_wins / high_conf_total * 100
+            if high_conf_total > 0
+            else 0
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Total Tested Predictions", total_predictions)
+
+        with col2:
+            st.metric("Model Accuracy", f"{model_accuracy:.1f}%")
+
+        with col3:
+            st.metric("High-Confidence Win Rate", f"{high_conf_win_rate:.1f}%")
+
+        st.subheader("Confidence Breakdown")
+
+        completed_predictions["confidence_bucket"] = pd.cut(
+            completed_predictions["confidence"],
+            bins=[0, 0.55, 0.65, 0.70, 1],
+            labels=["Low", "Medium", "Good", "High"]
+        )
+
+        confidence_summary = completed_predictions.groupby("confidence_bucket").agg(
+            total_games=("result", "count"),
+            wins=("result", lambda x: (x == "Win").sum())
+        )
+
+        confidence_summary["win_rate"] = (
+            confidence_summary["wins"] / confidence_summary["total_games"] * 100
+        )
+
+        st.dataframe(confidence_summary)
+
+
+st.subheader("Betting Filter Performance")
+
+if bet_history_for_backtest is None or bet_history_for_backtest.empty:
+    st.info("No saved bet picks yet. Save real filtered bets to test ROI.")
+
+else:
+    bet_df = bet_history_for_backtest.copy()
+
+    bet_df["expected_value"] = pd.to_numeric(
+        bet_df["expected_value"],
+        errors="coerce"
+    )
+
+    bet_df["kelly"] = pd.to_numeric(
+        bet_df["kelly"],
+        errors="coerce"
+    )
+
+    bet_df["profit_loss"] = pd.to_numeric(
+        bet_df["profit_loss"],
+        errors="coerce"
+    )
+
+    settled_bets = bet_df[
+        bet_df["result"].str.lower().isin(["win", "loss"])
+    ]
+
+    if settled_bets.empty:
+        st.info("No settled saved bets yet.")
+
+    else:
+        total_bets = len(settled_bets)
+        wins = len(settled_bets[settled_bets["result"].str.lower() == "win"])
+        losses = len(settled_bets[settled_bets["result"].str.lower() == "loss"])
+
+        win_rate = wins / total_bets * 100 if total_bets > 0 else 0
+        total_profit = settled_bets["profit_loss"].sum()
+        total_staked = total_bets * STAKE
+        roi = total_profit / total_staked * 100 if total_staked > 0 else 0
+
+        positive_ev_bets = settled_bets[settled_bets["expected_value"] > 0]
+        negative_ev_bets = settled_bets[settled_bets["expected_value"] <= 0]
+
+        positive_ev_roi = (
+            positive_ev_bets["profit_loss"].sum() / (len(positive_ev_bets) * STAKE) * 100
+            if len(positive_ev_bets) > 0
+            else 0
+        )
+
+        negative_ev_roi = (
+            negative_ev_bets["profit_loss"].sum() / (len(negative_ev_bets) * STAKE) * 100
+            if len(negative_ev_bets) > 0
+            else 0
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Filtered Bets Tested", total_bets)
+            st.metric("Wins", wins)
+
+        with col2:
+            st.metric("Losses", losses)
+            st.metric("Win Rate", f"{win_rate:.1f}%")
+
+        with col3:
+            st.metric("ROI", f"{roi:.1f}%")
+            st.metric("Profit/Loss", f"${total_profit:.2f}")
+
+        st.subheader("Does the Value Filter Improve Results?")
+
+        col4, col5 = st.columns(2)
+
+        with col4:
+            st.metric("Positive EV ROI", f"{positive_ev_roi:.1f}%")
+
+        with col5:
+            st.metric("Negative/Weak EV ROI", f"{negative_ev_roi:.1f}%")
+
+        if positive_ev_roi > negative_ev_roi:
+            st.success("✅ Value filter is improving results.")
+        else:
+            st.warning("⚠️ Value filter is not yet proving stronger. More settled bets needed.")
+
+        st.subheader("Backtested Bets Table")
+
+        st.dataframe(
+            settled_bets[
+                [
+                    "game_date",
+                    "home_team",
+                    "away_team",
+                    "best_bet",
+                    "odds",
+                    "expected_value",
+                    "kelly",
+                    "result",
+                    "profit_loss",
+                    "clv"
+                ]
+            ]
+        )
