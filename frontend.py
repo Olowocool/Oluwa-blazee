@@ -1208,7 +1208,6 @@ else:
 
 st.title("Backtesting Dashboard")
 
-
 def load_prediction_history():
     if not os.path.isfile("prediction_history.csv"):
         return None
@@ -1230,7 +1229,6 @@ def load_prediction_history():
 
     df["home_probability"] = pd.to_numeric(df["home_probability"], errors="coerce")
     df["away_probability"] = pd.to_numeric(df["away_probability"], errors="coerce")
-
     df["confidence"] = df[["home_probability", "away_probability"]].max(axis=1)
 
     return df
@@ -1246,7 +1244,7 @@ def backtest_prediction_row(row):
                 "away_team": row["away_team"],
                 "best_bet": row["prediction"]
             },
-            timeout=30
+            timeout=20
         )
 
         if response.status_code != 200:
@@ -1270,75 +1268,76 @@ if prediction_history is None or prediction_history.empty:
     st.info("No prediction history found yet. Load predictions first.")
 
 else:
-    st.subheader("Model Accuracy Backtest")
+    st.info("Backtesting is now button-based to keep the app fast.")
 
-    backtest_df = prediction_history.copy()
+    if st.button("Run Model Accuracy Backtest"):
+        st.subheader("Model Accuracy Backtest")
 
-    backtest_df["result"] = backtest_df.apply(backtest_prediction_row, axis=1)
+        backtest_df = prediction_history.copy()
+        backtest_df["result"] = backtest_df.apply(backtest_prediction_row, axis=1)
 
-    completed_predictions = backtest_df[
-        backtest_df["result"].isin(["Win", "Loss"])
-    ]
-
-    if completed_predictions.empty:
-        st.info("No completed prediction results available yet.")
-
-    else:
-        total_predictions = len(completed_predictions)
-        correct_predictions = len(
-            completed_predictions[completed_predictions["result"] == "Win"]
-        )
-
-        model_accuracy = (
-            correct_predictions / total_predictions * 100
-            if total_predictions > 0
-            else 0
-        )
-
-        high_conf_df = completed_predictions[
-            completed_predictions["confidence"] >= 0.70
+        completed_predictions = backtest_df[
+            backtest_df["result"].isin(["Win", "Loss"])
         ]
 
-        high_conf_total = len(high_conf_df)
-        high_conf_wins = len(high_conf_df[high_conf_df["result"] == "Win"])
+        if completed_predictions.empty:
+            st.info("No completed prediction results available yet.")
 
-        high_conf_win_rate = (
-            high_conf_wins / high_conf_total * 100
-            if high_conf_total > 0
-            else 0
-        )
+        else:
+            total_predictions = len(completed_predictions)
+            correct_predictions = len(
+                completed_predictions[completed_predictions["result"] == "Win"]
+            )
 
-        col1, col2, col3 = st.columns(3)
+            model_accuracy = (
+                correct_predictions / total_predictions * 100
+                if total_predictions > 0
+                else 0
+            )
 
-        with col1:
-            st.metric("Total Tested Predictions", total_predictions)
+            high_conf_df = completed_predictions[
+                completed_predictions["confidence"] >= 0.70
+            ]
 
-        with col2:
-            st.metric("Model Accuracy", f"{model_accuracy:.1f}%")
+            high_conf_total = len(high_conf_df)
+            high_conf_wins = len(high_conf_df[high_conf_df["result"] == "Win"])
 
-        with col3:
-            st.metric("High-Confidence Win Rate", f"{high_conf_win_rate:.1f}%")
+            high_conf_win_rate = (
+                high_conf_wins / high_conf_total * 100
+                if high_conf_total > 0
+                else 0
+            )
 
-        st.subheader("Confidence Breakdown")
+            col1, col2, col3 = st.columns(3)
 
-        completed_predictions["confidence_bucket"] = pd.cut(
-            completed_predictions["confidence"],
-            bins=[0, 0.55, 0.65, 0.70, 1],
-            labels=["Low", "Medium", "Good", "High"]
-        )
+            with col1:
+                st.metric("Total Tested Predictions", total_predictions)
 
-        confidence_summary = completed_predictions.groupby(
-            "confidence_bucket"
-        ).agg(
-            total_games=("result", "count"),
-            wins=("result", lambda x: (x == "Win").sum())
-        )
+            with col2:
+                st.metric("Model Accuracy", f"{model_accuracy:.1f}%")
 
-        confidence_summary["win_rate"] = (
-            confidence_summary["wins"] / confidence_summary["total_games"] * 100
-        )
+            with col3:
+                st.metric("High-Confidence Win Rate", f"{high_conf_win_rate:.1f}%")
 
-        st.dataframe(confidence_summary)
+            completed_predictions["confidence_bucket"] = pd.cut(
+                completed_predictions["confidence"],
+                bins=[0, 0.55, 0.65, 0.70, 1],
+                labels=["Low", "Medium", "Good", "High"]
+            )
+
+            confidence_summary = completed_predictions.groupby(
+                "confidence_bucket"
+            ).agg(
+                total_games=("result", "count"),
+                wins=("result", lambda x: (x == "Win").sum())
+            )
+
+            confidence_summary["win_rate"] = (
+                confidence_summary["wins"] / confidence_summary["total_games"] * 100
+            )
+
+            st.subheader("Confidence Breakdown")
+            st.dataframe(confidence_summary, use_container_width=True)
 
 
 st.subheader("Betting Filter Performance")
@@ -1349,20 +1348,9 @@ if bet_history_for_backtest is None or bet_history_for_backtest.empty:
 else:
     bet_df = bet_history_for_backtest.copy()
 
-    bet_df["expected_value"] = pd.to_numeric(
-        bet_df["expected_value"],
-        errors="coerce"
-    )
-
-    bet_df["kelly"] = pd.to_numeric(
-        bet_df["kelly"],
-        errors="coerce"
-    )
-
-    bet_df["profit_loss"] = pd.to_numeric(
-        bet_df["profit_loss"],
-        errors="coerce"
-    )
+    bet_df["expected_value"] = pd.to_numeric(bet_df["expected_value"], errors="coerce")
+    bet_df["kelly"] = pd.to_numeric(bet_df["kelly"], errors="coerce")
+    bet_df["profit_loss"] = pd.to_numeric(bet_df["profit_loss"], errors="coerce")
 
     settled_bets = bet_df[
         bet_df["result"].str.lower().isin(["win", "loss"])
@@ -1410,8 +1398,6 @@ else:
             st.metric("ROI", f"{roi:.1f}%")
             st.metric("Profit/Loss", f"${total_profit:.2f}")
 
-        st.subheader("Does the Value Filter Improve Results?")
-
         col4, col5 = st.columns(2)
 
         with col4:
@@ -1423,9 +1409,7 @@ else:
         if positive_ev_roi > negative_ev_roi:
             st.success("✅ Value filter is improving results.")
         else:
-            st.warning("⚠️ Value filter is not yet proving stronger. More settled bets needed.")
-
-        st.subheader("Backtested Bets Table")
+            st.warning("⚠️ More settled bets needed.")
 
         st.dataframe(
             settled_bets[
