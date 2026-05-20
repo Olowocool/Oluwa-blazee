@@ -15,6 +15,7 @@ from feature_engineering import build_feature_vector
 from ensemble_consensus import consensus_prediction
 from auto_learning import summarize_learning, build_learning_dataset
 from auto_update_results import update_bet_results
+from uncertainty_engine import classify_uncertainty
 API_URL = "https://oluwa-blazee-new.onrender.com"
 STAKE = 100
 TEST_MODE = False
@@ -904,6 +905,31 @@ if data and "games" in data and len(data["games"]) > 0:
     
         st.info(
             ensemble_result["consensus_grade"]
+            uncertainty_result = classify_uncertainty(
+                ensemble_probability=ensemble_result["ensemble_probability"],
+                disagreement=ensemble_result["disagreement"],
+                probability_range=ensemble_result["probability_range"],
+                expected_value=0
+            )
+            
+            st.subheader("Uncertainty Detection")
+            
+            st.metric(
+                "Risk Score",
+                uncertainty_result["risk_score"]
+            )
+            
+            st.metric(
+                "Uncertainty Level",
+                uncertainty_result["uncertainty_level"]
+            )
+            
+            if uncertainty_result["recommendation"] == "Stable":
+                st.success("Stable betting profile")
+            elif uncertainty_result["recommendation"] == "Caution":
+                st.warning("Caution — moderate uncertainty")
+            else:
+                st.error(f"{uncertainty_result['recommendation']}")
         )
     
         with st.expander("Individual Model Probabilities"):
