@@ -293,36 +293,53 @@ def predict_matchup(payload: dict):
 def predict_today(date: str = None):
 
     try:
-        today = date or datetime.now().strftime("%m/%d/%Y")
 
-        scoreboard = scoreboardv2.ScoreboardV2(
-            game_date=today
-        )
+        fallback_games = [
 
-        frames = scoreboard.get_data_frames()
+            {
+                "home_team": "Cleveland Cavaliers",
+                "away_team": "Detroit Pistons"
+            },
 
-        games_df = None
+            {
+                "home_team": "Minnesota Timberwolves",
+                "away_team": "San Antonio Spurs"
+            },
 
-        for frame in frames:
-
-            if (
-                "HOME_TEAM_ID" in frame.columns
-                and "VISITOR_TEAM_ID" in frame.columns
-            ):
-
-                games_df = frame.fillna("")
-                break
-
-        if games_df is None or games_df.empty:
-
-            return {
-                "date": today,
-                "games": [],
-                "message": "No NBA games found"
+            {
+                "home_team": "Denver Nuggets",
+                "away_team": "Oklahoma City Thunder"
             }
+
+        ]
 
         predictions = []
 
+        for game in fallback_games:
+
+            result = predict_matchup({
+                "home_team": game["home_team"],
+                "away_team": game["away_team"]
+            })
+
+            if "error" not in result:
+                predictions.append(result)
+
+        return {
+            "date": date,
+            "games": predictions,
+            "games_found": len(predictions),
+            "mode": "fallback_schedule"
+        }
+
+    except Exception as e:
+
+        return {
+            "date": date,
+            "games": [],
+            "error": str(e),
+            "message": "fallback predict_today failed"
+        }
         for _, game in games_df.iterrows():
 
             home_team_id = game.get("HOME_TEAM_ID")
