@@ -905,6 +905,7 @@ if data and "games" in data and len(data["games"]) > 0:
     
         st.info(
             ensemble_result["consensus_grade"]
+        )
             uncertainty_result = classify_uncertainty(
                 ensemble_probability=ensemble_result["ensemble_probability"],
                 disagreement=ensemble_result["disagreement"],
