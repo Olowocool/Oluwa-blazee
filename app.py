@@ -259,6 +259,41 @@ def predict_today(date: str = None):
 
         predictions = []
 
+        for _, game in games_df.iterrows():
+            home_team_id = game.get("HOME_TEAM_ID")
+            away_team_id = game.get("VISITOR_TEAM_ID")
+
+            if home_team_id == "" or away_team_id == "":
+                continue
+
+            home_team = team_map.get(int(home_team_id))
+            away_team = team_map.get(int(away_team_id))
+
+            if not home_team or not away_team:
+                continue
+
+            result = predict_matchup({
+                "home_team": home_team,
+                "away_team": away_team
+            })
+
+            if "error" not in result:
+                predictions.append(result)
+
+        return {
+            "date": today,
+            "games": predictions,
+            "games_found": len(predictions)
+        }
+
+    except Exception as e:
+        return {
+            "date": date,
+            "games": [],
+            "error": str(e),
+            "message": "predict_today failed"
+        }
+
             for _, game in games_df.iterrows():
                 home_team_id = game.get("HOME_TEAM_ID")
                 away_team_id = game.get("VISITOR_TEAM_ID")
