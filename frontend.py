@@ -949,6 +949,10 @@ elif data:
     st.warning("No games returned from API.")
 
 
+# =========================
+# AUTOMATED BET TRACKING SYSTEM
+# =========================
+
 st.title("Bet Performance Dashboard")
 
 bet_history = load_bet_history()
@@ -957,79 +961,136 @@ if bet_history is None or bet_history.empty:
     st.info("No saved bet picks yet.")
 
 else:
-    bet_history["expected_value"] = pd.to_numeric(
-        bet_history["expected_value"],
+    st.subheader("Automated Bet Tracking")
+
+    if st.button("Auto Grade All Bets"):
+        updated_df = bet_history.copy()
+        updated_df = updated_df.apply(auto_grade_bet, axis=1)
+
+        updated_df["profit_loss"] = updated_df.apply(
+            calculate_profit_loss,
+            axis=1
+        )
+
+        updated_df["clv"] = updated_df.apply(
+            lambda row: calculate_clv(row["odds"], row["closing_odds"]),
+            axis=1
+        )
+
+        save_bet_history(updated_df)
+
+        st.success("All bets graded and dashboard updated.")
+
+    updated_df = load_bet_history()
+
+    updated_df["expected_value"] = pd.to_numeric(
+        updated_df["expected_value"],
         errors="coerce"
     )
 
-    bet_history["kelly"] = pd.to_numeric(
-        bet_history["kelly"],
+    updated_df["kelly"] = pd.to_numeric(
+        updated_df["kelly"],
         errors="coerce"
     )
 
-    bet_history["profit_loss"] = pd.to_numeric(
-        bet_history["profit_loss"],
+    updated_df["profit_loss"] = pd.to_numeric(
+        updated_df["profit_loss"],
         errors="coerce"
     )
 
-    updated_df = bet_history.copy()
-    updated_df = updated_df.apply(auto_grade_bet, axis=1)
-
-    updated_df["clv"] = updated_df.apply(
-        lambda row: calculate_clv(row["odds"], row["closing_odds"]),
-        axis=1
+    updated_df["clv"] = pd.to_numeric(
+        updated_df["clv"],
+        errors="coerce"
     )
 
-    save_bet_history(updated_df)
+    total_picks = len(updated_df)
 
-    total_bets = len(updated_df)
-    wins = len(updated_df[updated_df["result"].str.lower() == "win"])
-    losses = len(updated_df[updated_df["result"].str.lower() == "loss"])
-    settled_bets = wins + losses
+    wins = len(
+        updated_df[updated_df["result"].str.lower() == "win"]
+    )
 
-    win_rate = (wins / settled_bets * 100) if settled_bets > 0 else 0
+    losses = len(
+        updated_df[updated_df["result"].str.lower() == "loss"]
+    )
+
+    pending = len(
+        updated_df[updated_df["result"].str.lower() == "pending"]
+    )
+
+    settled = wins + losses
+
+    win_rate = (
+        wins / settled * 100
+        if settled > 0
+        else 0
+    )
+
     total_profit = updated_df["profit_loss"].sum()
-    total_staked = settled_bets * STAKE
-    roi = (total_profit / total_staked * 100) if total_staked > 0 else 0
+
+    total_staked = settled * STAKE
+
+    roi = (
+        total_profit / total_staked * 100
+        if total_staked > 0
+        else 0
+    )
 
     avg_ev = updated_df["expected_value"].mean() * 100
     avg_kelly = updated_df["kelly"].mean() * 100
-
-    numeric_clv = pd.to_numeric(updated_df["clv"], errors="coerce")
-    avg_clv = numeric_clv.mean() * 100 if not numeric_clv.dropna().empty else 0
+    avg_clv = updated_df["clv"].mean() * 100
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Total Picks", total_bets)
-        st.metric("Wins", wins)
+        st.metric("Total Picks", total_picks)
+        st.metric("Settled Bets", settled)
 
     with col2:
+        st.metric("Wins", wins)
         st.metric("Losses", losses)
-        st.metric("Win Rate", f"{win_rate:.1f}%")
 
     with col3:
-        st.metric("Profit/Loss", f"${total_profit:.2f}")
-        st.metric("ROI", f"{roi:.1f}%")
+        st.metric("Pending", pending)
+        st.metric("Win Rate", f"{win_rate:.1f}%")
 
     col4, col5, col6 = st.columns(3)
 
     with col4:
-        st.metric("Average EV", f"{avg_ev:.1f}%")
+        st.metric("Profit/Loss", f"${total_profit:.2f}")
+        st.metric("ROI", f"{roi:.1f}%")
 
     with col5:
+        st.metric("Average EV", f"{avg_ev:.1f}%")
         st.metric("Average Kelly", f"{avg_kelly:.1f}%")
 
     with col6:
         st.metric("Average CLV", f"{avg_clv:.1f}%")
 
-    st.subheader("Update Bet Results + CLV")
+        if avg_clv > 0:
+            st.success("Positive CLV")
+        elif avg_clv < 0:
+            st.warning("Negative CLV")
+        else:
+            st.info("No CLV data yet")
+
+    st.subheader("Bankroll Growth")
+
+    chart_df = updated_df.copy()
+    chart_df["timestamp"] = pd.to_datetime(
+        chart_df["timestamp"],
+        errors="coerce"
+    )
+
+    chart_df = chart_df.sort_values("timestamp")
+    chart_df["cumulative_profit"] = chart_df["profit_loss"].cumsum()
+
+    st.line_chart(
+        chart_df.set_index("timestamp")["cumulative_profit"]
+    )
+
+    st.subheader("Manual Result Override")
 
     for index, row in updated_df.iterrows():
-        current_result = row["result"]
-
-        if current_result not in ["Pending", "Win", "Loss"]:
-            current_result = "Pending"
 
         st.write(
             f"{row['game_date']} — {row['best_bet']} "
@@ -1042,6 +1103,11 @@ else:
             key=f"closing_odds_{index}"
         )
 
+        current_result = row.get("result", "Pending")
+
+        if current_result not in ["Pending", "Win", "Loss"]:
+            current_result = "Pending"
+
         updated_df.at[index, "result"] = st.selectbox(
             "Result",
             ["Pending", "Win", "Loss"],
@@ -1049,8 +1115,11 @@ else:
             key=f"result_{index}"
         )
 
-    if st.button("Save Updated Results"):
-        updated_df["profit_loss"] = updated_df.apply(calculate_profit_loss, axis=1)
+    if st.button("Save Manual Updates"):
+        updated_df["profit_loss"] = updated_df.apply(
+            calculate_profit_loss,
+            axis=1
+        )
 
         updated_df["clv"] = updated_df.apply(
             lambda row: calculate_clv(row["odds"], row["closing_odds"]),
@@ -1058,35 +1127,44 @@ else:
         )
 
         save_bet_history(updated_df)
-        st.success("Bet results and CLV updated successfully!")
 
-    st.subheader("Bankroll Growth")
-
-    chart_df = updated_df.copy()
-    chart_df["timestamp"] = pd.to_datetime(chart_df["timestamp"])
-    chart_df = chart_df.sort_values("timestamp")
-    chart_df["cumulative_profit"] = chart_df["profit_loss"].cumsum()
-
-    st.line_chart(chart_df.set_index("timestamp")["cumulative_profit"])
+        st.success("Manual updates saved.")
 
     st.subheader("Saved Bet Picks")
 
-    def highlight_results(row):
-        result = str(row["result"]).lower()
+    display_cols = [
+        "game_date",
+        "home_team",
+        "away_team",
+        "best_bet",
+        "odds",
+        "closing_odds",
+        "clv",
+        "model_probability",
+        "expected_value",
+        "kelly",
+        "stake",
+        "result",
+        "profit_loss"
+    ]
 
-        if result == "win":
-            return ["background-color: #d4edda"] * len(row)
+    available_cols = [
+        col for col in display_cols
+        if col in updated_df.columns
+    ]
 
-        if result == "loss":
-            return ["background-color: #f8d7da"] * len(row)
+    st.dataframe(
+        updated_df[available_cols],
+        use_container_width=True
+    )
 
-        return ["background-color: #fff3cd"] * len(row)
+    csv_data = updated_df.to_csv(index=False).encode("utf-8")
 
-    styled_df = updated_df.style.apply(highlight_results, axis=1)
-
-    st.write(
-        styled_df.to_html(),
-        unsafe_allow_html=True
+    st.download_button(
+        label="Download Bet History CSV",
+        data=csv_data,
+        file_name="bet_history.csv",
+        mime="text/csv"
     )
 # =========================
 # BACKTESTING DASHBOARD
