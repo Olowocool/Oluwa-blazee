@@ -4,7 +4,13 @@ import csv
 import os
 import pandas as pd
 from datetime import date, datetime
-
+from retrain_model import retrain_pipeline
+from model_manager import (
+    register_model,
+    get_model_versions,
+    get_best_model,
+    rollback_model
+)
 from auto_learning import summarize_learning, build_learning_dataset
 from auto_update_results import update_bet_results
 API_URL = "https://oluwa-blazee-new.onrender.com"
@@ -1471,3 +1477,117 @@ if os.path.isfile("learning_dataset.csv"):
         file_name="learning_dataset.csv",
         mime="text/csv"
     )
+st.title("Model Control Center")
+
+st.info(
+    "Manage retraining, model versions, and rollback operations."
+)
+
+# =========================
+# RETRAIN MODEL
+# =========================
+
+if st.button("Retrain Betting Model"):
+
+    with st.spinner("Training new model..."):
+
+        try:
+
+            retrain_result = retrain_pipeline()
+
+            if retrain_result["status"] == "success":
+
+                accuracy = retrain_result[
+                    "training_accuracy"
+                ]
+
+                register_result = register_model(
+                    retrain_result["model_output"],
+                    accuracy,
+                    notes="Dashboard retraining"
+                )
+
+                st.success(
+                    f"New model trained successfully. Accuracy: {accuracy:.2f}%"
+                )
+
+                st.json(retrain_result)
+
+                st.success(
+                    f"Model version saved: {register_result['version']}"
+                )
+
+            else:
+
+                st.error("Retraining failed.")
+
+        except Exception as e:
+
+            st.error(f"Retraining error: {e}")
+
+
+# =========================
+# MODEL REGISTRY
+# =========================
+
+st.subheader("Saved Model Versions")
+
+model_versions = get_model_versions()
+
+if not model_versions:
+
+    st.info("No saved models yet.")
+
+else:
+
+    registry_df = pd.DataFrame(model_versions)
+
+    st.dataframe(
+        registry_df,
+        use_container_width=True
+    )
+
+    best_model = get_best_model()
+
+    if best_model:
+
+        st.success(
+            f"Best Model: {best_model['version']} "
+            f"| Accuracy: {best_model['accuracy']}%"
+        )
+
+
+# =========================
+# MODEL ROLLBACK
+# =========================
+
+if model_versions:
+
+    rollback_options = [
+        model["version"]
+        for model in model_versions
+    ]
+
+    selected_version = st.selectbox(
+        "Rollback To Model Version",
+        rollback_options
+    )
+
+    if st.button("Activate Selected Model"):
+
+        rollback_result = rollback_model(
+            selected_version
+        )
+
+        if rollback_result["status"] == "success":
+
+            st.success(
+                f"Active model switched to: "
+                f"{rollback_result['active_model']}"
+            )
+
+        else:
+
+            st.error(
+                rollback_result["message"]
+            )
