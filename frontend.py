@@ -910,7 +910,7 @@ if data and "games" in data and len(data["games"]) > 0:
             ensemble_probability=ensemble_result["ensemble_probability"],
             disagreement=ensemble_result["disagreement"],
             probability_range=ensemble_result["probability_range"],
-            expected_value=0
+            expected_value=abs(candidate_ev)
         )
             
         st.subheader("Uncertainty Detection")
