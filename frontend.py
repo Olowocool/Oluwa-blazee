@@ -600,27 +600,168 @@ date_input = st.text_input(
     value="05/15/2026"
 )
 
+# =========================
+# LIVE ODDS + LIVE SCHEDULE SYNC
+# =========================
+
+def canonical_team_name(name):
+
+    name = normalize_team_name(name)
+
+    lookup = {
+        team.lower(): team
+        for team in TEAM_LOGOS.keys()
+    }
+
+    return lookup.get(name.lower(), name)
+
+
+def build_predictions_from_live_odds(odds_map):
+
+    predictions = []
+
+    for (home_team, away_team), odds in odds_map.items():
+
+        home_team_clean = canonical_team_name(home_team)
+        away_team_clean = canonical_team_name(away_team)
+
+        try:
+
+            response = requests.post(
+                f"{API_URL}/predict_matchup",
+
+                json={
+                    "home_team": home_team_clean,
+                    "away_team": away_team_clean
+                },
+
+                timeout=60
+            )
+
+            if response.status_code == 200:
+
+                result = response.json()
+
+                if "error" not in result:
+                    predictions.append(result)
+
+        except Exception:
+            continue
+
+    return predictions
+
+
 if st.button("Load Daily Predictions"):
+
     try:
-        response = requests.get(
-            f"{API_URL}/predict_today",
-            params={"date": date_input},
-            timeout=60
+
+        live_odds_mode = should_fetch_live_odds(
+            date_input
         )
 
-        if response.status_code != 200:
-            st.error(f"Prediction API failed with status {response.status_code}")
-            st.write(response.text)
-            st.stop()
+        if live_odds_mode:
 
-        data = response.json()
-        st.session_state["daily_data"] = data
-        st.session_state["last_loaded_date"] = date_input
+            odds_map = get_odds()
+
+            if not isinstance(odds_map, dict):
+                odds_map = {}
+
+            if odds_map:
+
+                save_live_odds_to_history(
+                    date_input,
+                    odds_map
+                )
+
+                predictions = (
+                    build_predictions_from_live_odds(
+                        odds_map
+                    )
+                )
+
+                st.session_state["daily_data"] = {
+
+                    "date": date_input,
+
+                    "games": predictions,
+
+                    "source":
+                    "odds_api_synced_schedule"
+                }
+
+                st.session_state[
+                    "last_loaded_date"
+                ] = date_input
+
+                st.success(
+                    "Predictions synced with live Odds API schedule."
+                )
+
+            else:
+
+                st.warning(
+                    "No live Odds API games found. Falling back to backend schedule."
+                )
+
+                response = requests.get(
+                    f"{API_URL}/predict_today",
+
+                    params={
+                        "date": date_input
+                    },
+
+                    timeout=60
+                )
+
+                data = response.json()
+
+                st.session_state[
+                    "daily_data"
+                ] = data
+
+                st.session_state[
+                    "last_loaded_date"
+                ] = date_input
+
+        else:
+
+            response = requests.get(
+                f"{API_URL}/predict_today",
+
+                params={
+                    "date": date_input
+                },
+
+                timeout=60
+            )
+
+            if response.status_code != 200:
+
+                st.error(
+                    f"Prediction API failed with status {response.status_code}"
+                )
+
+                st.write(response.text)
+
+                st.stop()
+
+            data = response.json()
+
+            st.session_state[
+                "daily_data"
+            ] = data
+
+            st.session_state[
+                "last_loaded_date"
+            ] = date_input
 
     except Exception as e:
-        st.error(f"Prediction request failed: {e}")
-        st.stop()
 
+        st.error(
+            f"Prediction request failed: {e}"
+        )
+
+        st.stop()
 
 data = st.session_state["daily_data"]
 active_date = st.session_state["last_loaded_date"] or date_input
