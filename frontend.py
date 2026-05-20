@@ -4,6 +4,7 @@ import csv
 import os
 import pandas as pd
 from datetime import date, datetime
+from auto_learning import summarize_learning, build_learning_dataset
 
 API_URL = "https://oluwa-blazee-new.onrender.com"
 STAKE = 100
@@ -1545,3 +1546,28 @@ else:
                 ]
             ]
         )
+st.title("Auto Learning Pipeline")
+
+if st.button("Build Learning Dataset"):
+    summary = summarize_learning()
+
+    if summary["status"] == "success":
+        st.success("Learning dataset created successfully.")
+        st.json(summary)
+    else:
+        st.info(summary["message"])
+
+if os.path.isfile("learning_dataset.csv"):
+    learning_df = pd.read_csv("learning_dataset.csv")
+
+    st.subheader("Learning Dataset Preview")
+    st.dataframe(learning_df.tail(20), use_container_width=True)
+
+    csv_data = learning_df.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Download Learning Dataset",
+        data=csv_data,
+        file_name="learning_dataset.csv",
+        mime="text/csv"
+    )
