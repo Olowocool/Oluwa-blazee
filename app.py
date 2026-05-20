@@ -122,8 +122,8 @@ def predict_matchup(payload: dict):
 
     raw_prob = model.predict_proba(X)[0][1]
 
-    home_recent_form = calculate_recent_form(home_games)
-    away_recent_form = calculate_recent_form(away_games)
+    home_recent_form = calculate_recent_form(home_games, home_team)
+    away_recent_form = calculate_recent_form(away_games, away_team)
 
     home_strength = calculate_home_away_strength(
         home_games,
