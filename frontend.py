@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import date, datetime
 
 from auto_learning import summarize_learning, build_learning_dataset
-
+from auto_update_results import update_bet_results
 API_URL = "https://oluwa-blazee-new.onrender.com"
 STAKE = 100
 TEST_MODE = False
@@ -1004,7 +1004,23 @@ if data and "games" in data and len(data["games"]) > 0:
 elif data:
     st.warning("No games returned from API.")
 
+st.title("Autonomous Update System")
 
+if st.button("Run Auto Result Sync"):
+
+    with st.spinner("Updating completed games..."):
+
+        result = update_bet_results()
+
+    if result["status"] == "success":
+
+        st.success(
+            f"Updated {result['updated_rows']} completed bets."
+        )
+
+    else:
+
+        st.info(result["message"])
 st.title("Bet Performance Dashboard")
 
 bet_history = load_bet_history()
