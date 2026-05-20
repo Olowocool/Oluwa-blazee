@@ -11,6 +11,7 @@ from model_manager import (
     get_best_model,
     rollback_model
 )
+from ensemble_consensus import consensus_prediction
 from auto_learning import summarize_learning, build_learning_dataset
 from auto_update_results import update_bet_results
 API_URL = "https://oluwa-blazee-new.onrender.com"
@@ -800,6 +801,37 @@ if data and "games" in data and len(data["games"]) > 0:
             "Probability Adjustment",
             f"{game.get('injury_probability_adjustment', 0) * 100:.1f}%"
         )
+        ensemble_input = {
+        "home_probability": game["home_win_probability"],
+        "away_probability": game["away_win_probability"],
+        "model_confidence": confidence
+    }
+    
+    ensemble_result = consensus_prediction(ensemble_input)
+    
+    if ensemble_result.get("status") == "success":
+        st.subheader("Ensemble Consensus")
+    
+        st.metric(
+            "Ensemble Probability",
+            f"{ensemble_result['ensemble_probability'] * 100:.1f}%"
+        )
+    
+        st.metric(
+            "Model Disagreement",
+            f"{ensemble_result['disagreement'] * 100:.1f}%"
+        )
+    
+        st.info(
+            ensemble_result["consensus_grade"]
+        )
+    
+        with st.expander("Individual Model Probabilities"):
+            st.json(
+                ensemble_result["model_probabilities"]
+            )
+    else:
+        st.info("No trained ensemble model available yet.")
 
         odds = {}
 
