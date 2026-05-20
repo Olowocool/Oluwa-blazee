@@ -1239,16 +1239,42 @@ else:
             f"({row['away_team']} @ {row['home_team']})"
         )
 
-        current_closing_odds = row.get("closing_odds", "")
+        st.subheader("Manual Result Override")
 
-        if pd.isna(current_closing_odds):
-            current_closing_odds = ""
-        
-        updated_df.loc[index, "closing_odds"] = st.text_input(
-            "Closing Odds",
-            value=str(current_closing_odds),
-            key=f"closing_odds_{index}"
-        )
+for index, row in updated_df.iterrows():
+
+    st.write(
+        f"{row['game_date']} — {row['best_bet']} "
+        f"({row['away_team']} @ {row['home_team']})"
+    )
+
+    current_closing_odds = row.get("closing_odds", "")
+
+    if pd.isna(current_closing_odds) or str(current_closing_odds).lower() == "nan":
+        current_closing_odds = ""
+
+    closing_input = st.text_input(
+        "Closing Odds",
+        value=str(current_closing_odds),
+        key=f"closing_odds_{index}"
+    )
+
+    updated_df["closing_odds"] = updated_df["closing_odds"].astype("object")
+    updated_df.loc[index, "closing_odds"] = closing_input
+
+    current_result = row.get("result", "Pending")
+
+    if current_result not in ["Pending", "Win", "Loss"]:
+        current_result = "Pending"
+
+    result_input = st.selectbox(
+        "Result",
+        ["Pending", "Win", "Loss"],
+        index=["Pending", "Win", "Loss"].index(current_result),
+        key=f"result_{index}"
+    )
+
+    updated_df.loc[index, "result"] = result_input
 
         current_result = row.get("result", "Pending")
 
