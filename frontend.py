@@ -4,11 +4,11 @@ import csv
 import os
 import pandas as pd
 from datetime import date, datetime
+
 from auto_learning import summarize_learning, build_learning_dataset
 
 API_URL = "https://oluwa-blazee-new.onrender.com"
 STAKE = 100
-
 TEST_MODE = False
 
 
@@ -70,6 +70,12 @@ def normalize_team_name(name):
     return TEAM_NAME_FIXES.get(str(name).strip(), str(name).strip())
 
 
+def canonical_team_name(name):
+    name = normalize_team_name(name)
+    lookup = {team.lower(): team for team in TEAM_LOGOS.keys()}
+    return lookup.get(name.lower(), name)
+
+
 def parse_game_date(date_text):
     try:
         return datetime.strptime(date_text, "%m/%d/%Y").date()
@@ -81,7 +87,6 @@ def should_fetch_live_odds(date_text):
     game_date = parse_game_date(date_text)
     if game_date is None:
         return True
-
     return game_date >= date.today()
 
 
@@ -138,6 +143,7 @@ def get_odds():
                             "price": price,
                             "bookmaker": bookmaker_name
                         }
+
                     elif price > current_odds[fixed_name]["price"]:
                         current_odds[fixed_name] = {
                             "price": price,
@@ -182,13 +188,7 @@ def get_historical_odds(game_date):
         st.warning(f"Historical odds file error: {e}")
         return {}
 
-    required_cols = [
-        "game_date",
-        "home_team",
-        "away_team",
-        "home_odds",
-        "away_odds"
-    ]
+    required_cols = ["game_date", "home_team", "away_team", "home_odds", "away_odds"]
 
     for col in required_cols:
         if col not in df.columns:
@@ -295,48 +295,26 @@ def save_live_odds_to_history(game_date, odds_map):
             ]
 
             if not existing_match.empty:
-                opening_home_odds = existing_match.iloc[0].get(
-                    "opening_home_odds",
-                    home_data["price"]
-                )
-                opening_away_odds = existing_match.iloc[0].get(
-                    "opening_away_odds",
-                    away_data["price"]
-                )
+                opening_home_odds = existing_match.iloc[0].get("opening_home_odds", home_data["price"])
+                opening_away_odds = existing_match.iloc[0].get("opening_away_odds", away_data["price"])
 
                 if pd.isna(opening_home_odds) or float(opening_home_odds) <= 0:
-                    opening_home_odds = existing_match.iloc[0].get(
-                        "home_odds",
-                        home_data["price"]
-                    )
+                    opening_home_odds = existing_match.iloc[0].get("home_odds", home_data["price"])
 
                 if pd.isna(opening_away_odds) or float(opening_away_odds) <= 0:
-                    opening_away_odds = existing_match.iloc[0].get(
-                        "away_odds",
-                        away_data["price"]
-                    )
+                    opening_away_odds = existing_match.iloc[0].get("away_odds", away_data["price"])
 
-        home_line_move = calculate_line_movement(
-            opening_home_odds,
-            home_data["price"]
-        )
-
-        away_line_move = calculate_line_movement(
-            opening_away_odds,
-            away_data["price"]
-        )
+        home_line_move = calculate_line_movement(opening_home_odds, home_data["price"])
+        away_line_move = calculate_line_movement(opening_away_odds, away_data["price"])
 
         rows.append({
             "game_date": game_date,
             "home_team": home_team.title(),
             "away_team": away_team.title(),
-
             "opening_home_odds": opening_home_odds,
             "opening_away_odds": opening_away_odds,
-
             "home_odds": home_data["price"],
             "away_odds": away_data["price"],
-
             "home_line_move_pct": round(home_line_move, 2),
             "away_line_move_pct": round(away_line_move, 2)
         })
@@ -381,7 +359,7 @@ def classify_edge(edge):
 
 
 def calibrate_probability(probability, strength=0.75, min_prob=0.05, max_prob=0.95):
-    probability = max(min(probability, max_prob), min_prob)
+    probability = max(min(float(probability), max_prob), min_prob)
     return 0.5 + ((probability - 0.5) * strength)
 
 
@@ -394,35 +372,6 @@ def kelly_fraction(probability, decimal_odds):
 
     kelly = ((b * probability) - q) / b
     return max(kelly, 0)
-
-
-def calculate_profit_loss(row):
-    result = str(row.get("result", "Pending")).lower()
-    odds = float(row.get("odds", 0))
-    stake = float(row.get("stake", STAKE))
-
-    if result == "win":
-        return (odds - 1) * stake
-
-    if result == "loss":
-        return -stake
-
-    return 0
-
-
-def calculate_clv(saved_odds, closing_odds):
-    try:
-        saved_odds = float(saved_odds)
-        closing_odds = float(closing_odds)
-
-        if saved_odds <= 0 or closing_odds <= 0:
-            return ""
-
-        clv = (saved_odds / closing_odds) - 1
-        return round(clv, 4)
-
-    except Exception:
-        return ""
 
 
 def save_prediction_log(game, game_date):
@@ -495,6 +444,43 @@ def save_bet_pick(game, game_date, best_bet, odds, model_prob, expected_value, k
         ])
 
 
+def calculate_profit_loss(row):
+    result = str(row.get("result", "Pending")).lower()
+
+    try:
+        odds = float(row.get("odds", 0))
+    except Exception:
+        odds = 0
+
+    try:
+        stake = float(row.get("stake", STAKE))
+    except Exception:
+        stake = STAKE
+
+    if result == "win":
+        return (odds - 1) * stake
+
+    if result == "loss":
+        return -stake
+
+    return 0
+
+
+def calculate_clv(saved_odds, closing_odds):
+    try:
+        saved_odds = float(saved_odds)
+        closing_odds = float(closing_odds)
+
+        if saved_odds <= 0 or closing_odds <= 0:
+            return ""
+
+        clv = (saved_odds / closing_odds) - 1
+        return round(clv, 4)
+
+    except Exception:
+        return ""
+
+
 def load_bet_history():
     if not os.path.isfile("bet_history.csv"):
         return None
@@ -515,6 +501,8 @@ def load_bet_history():
 
     if "clv" not in df.columns:
         df["clv"] = ""
+
+    df["closing_odds"] = df["closing_odds"].astype("object")
 
     df["stake"] = pd.to_numeric(df["stake"], errors="coerce")
     df["stake"] = df["stake"].fillna(STAKE)
@@ -587,60 +575,24 @@ def auto_grade_bet(row):
         return row
 
 
-if "daily_data" not in st.session_state:
-    st.session_state["daily_data"] = None
-
-if "last_loaded_date" not in st.session_state:
-    st.session_state["last_loaded_date"] = None
-
-
-st.title("NBA Games")
-
-date_input = st.text_input(
-    "Game Date (MM/DD/YYYY)",
-    value="05/15/2026"
-)
-
-# =========================
-# LIVE ODDS + LIVE SCHEDULE SYNC
-# =========================
-
-def canonical_team_name(name):
-
-    name = normalize_team_name(name)
-
-    lookup = {
-        team.lower(): team
-        for team in TEAM_LOGOS.keys()
-    }
-
-    return lookup.get(name.lower(), name)
-
-
 def build_predictions_from_live_odds(odds_map):
-
     predictions = []
 
     for (home_team, away_team), odds in odds_map.items():
-
         home_team_clean = canonical_team_name(home_team)
         away_team_clean = canonical_team_name(away_team)
 
         try:
-
             response = requests.post(
                 f"{API_URL}/predict_matchup",
-
                 json={
                     "home_team": home_team_clean,
                     "away_team": away_team_clean
                 },
-
                 timeout=60
             )
 
             if response.status_code == 200:
-
                 result = response.json()
 
                 if "error" not in result:
@@ -652,117 +604,79 @@ def build_predictions_from_live_odds(odds_map):
     return predictions
 
 
+if "daily_data" not in st.session_state:
+    st.session_state["daily_data"] = None
+
+if "last_loaded_date" not in st.session_state:
+    st.session_state["last_loaded_date"] = None
+
+
+st.title("NBA Games")
+
+date_input = st.text_input(
+    "Game Date (MM/DD/YYYY)",
+    value="05/21/2026"
+)
+
+
 if st.button("Load Daily Predictions"):
-
     try:
-
-        live_odds_mode = should_fetch_live_odds(
-            date_input
-        )
+        live_odds_mode = should_fetch_live_odds(date_input)
 
         if live_odds_mode:
-
             odds_map = get_odds()
 
             if not isinstance(odds_map, dict):
                 odds_map = {}
 
             if odds_map:
+                save_live_odds_to_history(date_input, odds_map)
 
-                save_live_odds_to_history(
-                    date_input,
-                    odds_map
-                )
-
-                predictions = (
-                    build_predictions_from_live_odds(
-                        odds_map
-                    )
-                )
+                predictions = build_predictions_from_live_odds(odds_map)
 
                 st.session_state["daily_data"] = {
-
                     "date": date_input,
-
                     "games": predictions,
-
-                    "source":
-                    "odds_api_synced_schedule"
+                    "source": "odds_api_synced_schedule"
                 }
 
-                st.session_state[
-                    "last_loaded_date"
-                ] = date_input
+                st.session_state["last_loaded_date"] = date_input
 
-                st.success(
-                    "Predictions synced with live Odds API schedule."
-                )
+                st.success("Predictions synced with live Odds API schedule.")
 
             else:
-
-                st.warning(
-                    "No live Odds API games found. Falling back to backend schedule."
-                )
+                st.warning("No live Odds API games found. Falling back to backend schedule.")
 
                 response = requests.get(
                     f"{API_URL}/predict_today",
-
-                    params={
-                        "date": date_input
-                    },
-
+                    params={"date": date_input},
                     timeout=60
                 )
 
                 data = response.json()
-
-                st.session_state[
-                    "daily_data"
-                ] = data
-
-                st.session_state[
-                    "last_loaded_date"
-                ] = date_input
+                st.session_state["daily_data"] = data
+                st.session_state["last_loaded_date"] = date_input
 
         else:
-
             response = requests.get(
                 f"{API_URL}/predict_today",
-
-                params={
-                    "date": date_input
-                },
-
+                params={"date": date_input},
                 timeout=60
             )
 
             if response.status_code != 200:
-
-                st.error(
-                    f"Prediction API failed with status {response.status_code}"
-                )
-
+                st.error(f"Prediction API failed with status {response.status_code}")
                 st.write(response.text)
-
                 st.stop()
 
             data = response.json()
-
-            st.session_state[
-                "daily_data"
-            ] = data
-
-            st.session_state[
-                "last_loaded_date"
-            ] = date_input
+            st.session_state["daily_data"] = data
+            st.session_state["last_loaded_date"] = date_input
 
     except Exception as e:
-
-        st.error(
-            f"Prediction request failed: {e}"
-        )
-
+        st.error(f"Prediction request failed: {e}")
         st.stop()
+
 
 data = st.session_state["daily_data"]
 active_date = st.session_state["last_loaded_date"] or date_input
@@ -1013,7 +927,7 @@ if data and "games" in data and len(data["games"]) > 0:
                 and candidate_kelly >= MIN_KELLY
                 and best_confidence >= MIN_CONFIDENCE
             )
-            
+
             if TEST_MODE:
                 passes_filter = True
 
@@ -1091,10 +1005,6 @@ elif data:
     st.warning("No games returned from API.")
 
 
-# =========================
-# AUTOMATED BET TRACKING SYSTEM
-# =========================
-
 st.title("Bet Performance Dashboard")
 
 bet_history = load_bet_history()
@@ -1109,10 +1019,7 @@ else:
         updated_df = bet_history.copy()
         updated_df = updated_df.apply(auto_grade_bet, axis=1)
 
-        updated_df["profit_loss"] = updated_df.apply(
-            calculate_profit_loss,
-            axis=1
-        )
+        updated_df["profit_loss"] = updated_df.apply(calculate_profit_loss, axis=1)
 
         updated_df["clv"] = updated_df.apply(
             lambda row: calculate_clv(row["odds"], row["closing_odds"]),
@@ -1124,6 +1031,8 @@ else:
         st.success("All bets graded and dashboard updated.")
 
     updated_df = load_bet_history()
+
+    updated_df["closing_odds"] = updated_df["closing_odds"].astype("object")
 
     updated_df["expected_value"] = pd.to_numeric(
         updated_df["expected_value"],
@@ -1147,35 +1056,16 @@ else:
 
     total_picks = len(updated_df)
 
-    wins = len(
-        updated_df[updated_df["result"].str.lower() == "win"]
-    )
-
-    losses = len(
-        updated_df[updated_df["result"].str.lower() == "loss"]
-    )
-
-    pending = len(
-        updated_df[updated_df["result"].str.lower() == "pending"]
-    )
+    wins = len(updated_df[updated_df["result"].str.lower() == "win"])
+    losses = len(updated_df[updated_df["result"].str.lower() == "loss"])
+    pending = len(updated_df[updated_df["result"].str.lower() == "pending"])
 
     settled = wins + losses
 
-    win_rate = (
-        wins / settled * 100
-        if settled > 0
-        else 0
-    )
-
+    win_rate = wins / settled * 100 if settled > 0 else 0
     total_profit = updated_df["profit_loss"].sum()
-
     total_staked = settled * STAKE
-
-    roi = (
-        total_profit / total_staked * 100
-        if total_staked > 0
-        else 0
-    )
+    roi = total_profit / total_staked * 100 if total_staked > 0 else 0
 
     avg_ev = updated_df["expected_value"].mean() * 100
     avg_kelly = updated_df["kelly"].mean() * 100
@@ -1230,60 +1120,44 @@ else:
         chart_df.set_index("timestamp")["cumulative_profit"]
     )
 
-        st.subheader("Manual Result Override")
+    st.subheader("Manual Result Override")
 
-        for index, row in updated_df.iterrows():
-        
-            st.write(
-                f"{row['game_date']} — {row['best_bet']} "
-                f"({row['away_team']} @ {row['home_team']})"
-            )
-        
-            current_closing_odds = row.get("closing_odds", "")
-        
-            if pd.isna(current_closing_odds) or str(current_closing_odds).lower() == "nan":
-                current_closing_odds = ""
-        
-            closing_input = st.text_input(
-                "Closing Odds",
-                value=str(current_closing_odds),
-                key=f"closing_odds_{index}"
-            )
-        
-            updated_df["closing_odds"] = updated_df["closing_odds"].astype("object")
-            updated_df.loc[index, "closing_odds"] = closing_input
-        
-            current_result = row.get("result", "Pending")
-        
-            if current_result not in ["Pending", "Win", "Loss"]:
-                current_result = "Pending"
-        
-            result_input = st.selectbox(
-                "Result",
-                ["Pending", "Win", "Loss"],
-                index=["Pending", "Win", "Loss"].index(current_result),
-                key=f"result_{index}"
-            )
-        
-            updated_df.loc[index, "result"] = result_input
+    for index, row in updated_df.iterrows():
+        st.write(
+            f"{row['game_date']} — {row['best_bet']} "
+            f"({row['away_team']} @ {row['home_team']})"
+        )
+
+        current_closing_odds = row.get("closing_odds", "")
+
+        if pd.isna(current_closing_odds) or str(current_closing_odds).lower() == "nan":
+            current_closing_odds = ""
+
+        closing_input = st.text_input(
+            "Closing Odds",
+            value=str(current_closing_odds),
+            key=f"closing_odds_{index}"
+        )
+
+        updated_df["closing_odds"] = updated_df["closing_odds"].astype("object")
+        updated_df.loc[index, "closing_odds"] = closing_input
 
         current_result = row.get("result", "Pending")
 
         if current_result not in ["Pending", "Win", "Loss"]:
             current_result = "Pending"
 
-        updated_df.at[index, "result"] = st.selectbox(
+        result_input = st.selectbox(
             "Result",
             ["Pending", "Win", "Loss"],
             index=["Pending", "Win", "Loss"].index(current_result),
             key=f"result_{index}"
         )
 
+        updated_df.loc[index, "result"] = result_input
+
     if st.button("Save Manual Updates"):
-        updated_df["profit_loss"] = updated_df.apply(
-            calculate_profit_loss,
-            axis=1
-        )
+        updated_df["profit_loss"] = updated_df.apply(calculate_profit_loss, axis=1)
 
         updated_df["clv"] = updated_df.apply(
             lambda row: calculate_clv(row["odds"], row["closing_odds"]),
@@ -1330,11 +1204,10 @@ else:
         file_name="bet_history.csv",
         mime="text/csv"
     )
-# =========================
-# BACKTESTING DASHBOARD
-# =========================
+
 
 st.title("Backtesting Dashboard")
+
 
 def load_prediction_history():
     if not os.path.isfile("prediction_history.csv"):
@@ -1454,7 +1327,9 @@ else:
             labels=["Low", "Medium", "Good", "High"]
         )
 
-        confidence_summary = completed_predictions.groupby("confidence_bucket").agg(
+        confidence_summary = completed_predictions.groupby(
+            "confidence_bucket"
+        ).agg(
             total_games=("result", "count"),
             wins=("result", lambda x: (x == "Win").sum())
         )
@@ -1566,8 +1441,11 @@ else:
                     "profit_loss",
                     "clv"
                 ]
-            ]
+            ],
+            use_container_width=True
         )
+
+
 st.title("Auto Learning Pipeline")
 
 if st.button("Build Learning Dataset"):
