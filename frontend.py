@@ -1065,11 +1065,19 @@ if data and "games" in data and len(data["games"]) > 0:
                 candidate_edge = away_edge
                 candidate_kelly = away_kelly
 
+            uncertainty_level = "Low"
+
+            try:
+                uncertainty_level = uncertainty_result.get("uncertainty_level", "Low")
+            except Exception:
+                uncertainty_level = "Low"
+            
             passes_filter = (
                 candidate_ev >= MIN_EV
                 and candidate_edge >= MIN_EDGE
                 and candidate_kelly >= MIN_KELLY
                 and best_confidence >= MIN_CONFIDENCE
+                and uncertainty_level not in ["High", "Extreme"]
             )
 
             if TEST_MODE:
@@ -1130,6 +1138,7 @@ if data and "games" in data and len(data["games"]) > 0:
                     st.write(f"Candidate Edge: {candidate_edge * 100:.1f}%")
                     st.write(f"Candidate Kelly: {candidate_kelly * 100:.1f}%")
                     st.write(f"Model Confidence: {best_confidence * 100:.1f}%")
+                    st.write(f"Uncertainty Level: {uncertainty_level}")
 
         else:
             if live_odds_mode:
