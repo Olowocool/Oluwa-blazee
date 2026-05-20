@@ -11,6 +11,7 @@ from model_manager import (
     get_best_model,
     rollback_model
 )
+from feature_engineering import build_feature_vector
 from ensemble_consensus import consensus_prediction
 from auto_learning import summarize_learning, build_learning_dataset
 from auto_update_results import update_bet_results
@@ -801,11 +802,90 @@ if data and "games" in data and len(data["games"]) > 0:
             "Probability Adjustment",
             f"{game.get('injury_probability_adjustment', 0) * 100:.1f}%"
         )
-        ensemble_input = {
-        "home_probability": game["home_win_probability"],
-        "away_probability": game["away_win_probability"],
-        "model_confidence": confidence
-    }
+        feature_input = {
+
+            # Base probabilities
+        
+            "home_probability":
+            game["home_win_probability"],
+        
+            "away_probability":
+            game["away_win_probability"],
+        
+            # Rest days
+        
+            "home_rest_days":
+            game.get("home_rest_days", 2),
+        
+            "away_rest_days":
+            game.get("away_rest_days", 2),
+        
+            # Home / away splits
+        
+            "home_home_win_pct":
+            game.get("home_home_win_pct", 0.55),
+        
+            "away_away_win_pct":
+            game.get("away_away_win_pct", 0.45),
+        
+            # Recent form
+        
+            "home_recent_wins":
+            game.get("home_recent_wins", 5),
+        
+            "away_recent_wins":
+            game.get("away_recent_wins", 5),
+        
+            # Ratings
+        
+            "home_off_rating":
+            game.get("home_off_rating", 112),
+        
+            "home_def_rating":
+            game.get("home_def_rating", 110),
+        
+            "away_off_rating":
+            game.get("away_off_rating", 110),
+        
+            "away_def_rating":
+            game.get("away_def_rating", 112),
+        
+            # Pace
+        
+            "home_pace":
+            game.get("home_pace", 100),
+        
+            "away_pace":
+            game.get("away_pace", 100),
+        
+            # Travel
+        
+            "home_travel_km":
+            game.get("home_travel_km", 0),
+        
+            "away_travel_km":
+            game.get("away_travel_km", 0),
+        
+            # Market movement
+        
+            "home_line_move_pct":
+            abs(home_line_move_pct),
+        
+            "away_line_move_pct":
+            abs(away_line_move_pct),
+        
+            # Sharp support
+        
+            "sharp_books_support":
+            game.get("sharp_books_support", 3),
+        
+            "total_books":
+            game.get("total_books", 5)
+        }
+        
+        ensemble_input = build_feature_vector(
+            feature_input
+        )
     
     ensemble_result = consensus_prediction(ensemble_input)
     
