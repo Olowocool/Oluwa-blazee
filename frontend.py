@@ -1239,9 +1239,14 @@ else:
             f"({row['away_team']} @ {row['home_team']})"
         )
 
-        updated_df.at[index, "closing_odds"] = st.text_input(
+        current_closing_odds = row.get("closing_odds", "")
+
+        if pd.isna(current_closing_odds):
+            current_closing_odds = ""
+        
+        updated_df.loc[index, "closing_odds"] = st.text_input(
             "Closing Odds",
-            value=str(row.get("closing_odds", "")),
+            value=str(current_closing_odds),
             key=f"closing_odds_{index}"
         )
 
