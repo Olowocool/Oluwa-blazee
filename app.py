@@ -239,23 +239,62 @@ def predict_today(date: str = None):
         scoreboard = scoreboardv2.ScoreboardV2(game_date=today)
         frames = scoreboard.get_data_frames()
 
-        if len(frames) == 0:
+        games_df = None
+
+        for frame in frames:
+            if (
+                "HOME_TEAM_ID" in frame.columns
+                and "VISITOR_TEAM_ID" in frame.columns
+            ):
+                games_df = frame.fillna("")
+                break
+
+        if games_df is None or games_df.empty:
             return {
                 "date": today,
                 "games": [],
-                "message": "No NBA schedule data returned"
-            }
-
-        games_df = frames[0].fillna("")
-
-        if games_df.empty:
-            return {
-                "date": today,
-                "games": [],
-                "message": "No NBA games found"
+                "message": "No NBA games found from scoreboard frames",
+                "frames_available": [list(f.columns) for f in frames]
             }
 
         predictions = []
+
+            for _, game in games_df.iterrows():
+                home_team_id = game.get("HOME_TEAM_ID")
+                away_team_id = game.get("VISITOR_TEAM_ID")
+    
+                if home_team_id == "" or away_team_id == "":
+                    continue
+    
+                home_team = team_map.get(int(home_team_id))
+                away_team = team_map.get(int(away_team_id))
+    
+                if not home_team or not away_team:
+                    continue
+    
+                result = predict_matchup({
+                    "home_team": home_team,
+                    "away_team": away_team
+                })
+    
+                if "error" not in result:
+                    predictions.append(result)
+    
+            return {
+                "date": today,
+                "games": predictions,
+                "games_found": len(predictions)
+            }
+    
+        except Exception as e:
+            return {
+                "date": date,
+                "games": [],
+                "error": str(e),
+                "message": "predict_today failed"
+            }
+    
+            predictions = []
 
         for _, game in games_df.iterrows():
             home_team_id = game.get("HOME_TEAM_ID")
