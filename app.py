@@ -6,6 +6,7 @@ import joblib
 import pandas as pd
 import numpy as np
 import json
+import os
 
 from injury_impact import calculate_matchup_injury_adjustment
 
@@ -26,13 +27,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MODEL_PATH = "basketball_xgb_calibrated_v2.joblib"
+MODEL_CANDIDATES = [
+    "models/basketball_xgb_calibrated_v3.joblib",
+    "models/basketball_xgb_calibrated_v2.joblib",
+    "basketball_xgb_calibrated_v3.joblib",
+    "basketball_xgb_calibrated_v2.joblib",
+]
+
 TEAM_MAP_PATH = "team_map.json"
 DATA_PATH = "outputs/training_dataset.parquet"
 
-artifact = joblib.load(MODEL_PATH)
-model = artifact["model"]
-feature_cols = artifact["feature_cols"]
+model = None
+feature_cols = []
+model_status = "not_loaded"
+model_error = ""
+
+for path in MODEL_CANDIDATES:
+    try:
+        if os.path.isfile(path):
+            artifact = joblib.load(path)
+            model = artifact["model"]
+            feature_cols = artifact["feature_cols"]
+            model_status = f"loaded: {path}"
+            break
+    except Exception as e:
+        model_error = f"{path}: {str(e)}"
 
 with open(TEAM_MAP_PATH, "r") as f:
     team_map = {int(k): v for k, v in json.load(f).items()}
@@ -48,8 +67,10 @@ def root():
 @app.get("/version")
 def version():
     return {
-        "version": "basketball-model-v4-quality-upgrade",
-        "message": "NBA model quality upgrade is live"
+        "version": "basketball-model-v4-safe-quality-upgrade",
+        "model_status": model_status,
+        "model_error": model_error,
+        "message": "backend is live even if model file fails"
     }
 
 
@@ -59,6 +80,45 @@ def teams():
         set(history["home_team_name"]).union(set(history["away_team_name"]))
     )
     return {"teams": team_names}
+
+
+def build_feature_row(latest_home, latest_away):
+    row = {}
+
+    for col in feature_cols:
+        if col.startswith("home_") and col in latest_home:
+            row[col] = latest_home[col]
+
+        elif col.startswith("away_") and col in latest_away:
+            row[col] = latest_away[col]
+
+        elif col.startswith("diff_"):
+            base = col.replace("diff_", "")
+            home_col = "home_" + base
+            away_col = "away_" + base
+            row[col] = latest_home.get(home_col, 0) - latest_away.get(away_col, 0)
+
+        elif col == "home_court":
+            row[col] = 1
+
+        else:
+            row[col] = 0
+
+    row["home_court"] = 1
+    return row
+
+
+def fallback_probability(home_recent_form, away_recent_form, home_rest_days, away_rest_days, injury_adjustment):
+    base_prob = 0.5
+
+    return quality_adjust_probability(
+        raw_prob=base_prob,
+        home_recent_form=home_recent_form,
+        away_recent_form=away_recent_form,
+        home_rest_days=home_rest_days,
+        away_rest_days=away_rest_days,
+        injury_adjustment=injury_adjustment
+    )
 
 
 @app.post("/predict_matchup")
@@ -85,60 +145,39 @@ def predict_matchup(payload: dict):
     latest_home = home_games.sort_values("date").iloc[-1]
     latest_away = away_games.sort_values("date").iloc[-1]
 
-    row = {}
-
-    for col in feature_cols:
-        if col.startswith("home_") and col in latest_home:
-            row[col] = latest_home[col]
-
-        elif col.startswith("away_") and col in latest_away:
-            row[col] = latest_away[col]
-
-        elif col.startswith("diff_"):
-            base = col.replace("diff_", "")
-            home_col = "home_" + base
-            away_col = "away_" + base
-            row[col] = latest_home.get(home_col, 0) - latest_away.get(away_col, 0)
-
-        elif col == "home_court":
-            row[col] = 1
-
-        else:
-            row[col] = 0
-
-    row["home_court"] = 1
-
     injury_data = calculate_matchup_injury_adjustment(home_team, away_team)
-
-    X = pd.DataFrame([row])
-
-    for col in feature_cols:
-        if col not in X.columns:
-            X[col] = 0
-
-    X = X[feature_cols]
-    X = X.replace([np.inf, -np.inf], 0)
-    X = X.fillna(0)
-
-    raw_prob = model.predict_proba(X)[0][1]
 
     home_recent_form = calculate_recent_form(home_games, home_team)
     away_recent_form = calculate_recent_form(away_games, away_team)
 
-    home_strength = calculate_home_away_strength(
-        home_games,
-        home_team
-    )
-
-    away_strength = calculate_home_away_strength(
-        away_games,
-        away_team
-    )
+    home_strength = calculate_home_away_strength(home_games, home_team)
+    away_strength = calculate_home_away_strength(away_games, away_team)
 
     home_rest_days = calculate_rest_days(home_games)
     away_rest_days = calculate_rest_days(away_games)
 
     injury_adjustment = injury_data["injury_diff"] * 0.004
+
+    if model is not None and feature_cols:
+        try:
+            row = build_feature_row(latest_home, latest_away)
+
+            X = pd.DataFrame([row])
+
+            for col in feature_cols:
+                if col not in X.columns:
+                    X[col] = 0
+
+            X = X[feature_cols]
+            X = X.replace([np.inf, -np.inf], 0)
+            X = X.fillna(0)
+
+            raw_prob = float(model.predict_proba(X)[0][1])
+
+        except Exception:
+            raw_prob = 0.5
+    else:
+        raw_prob = 0.5
 
     prob = quality_adjust_probability(
         raw_prob=raw_prob,
@@ -167,45 +206,25 @@ def predict_matchup(payload: dict):
         "best_bet": best_bet,
         "confidence": round(float(max(prob, 1 - prob)), 4),
 
+        "model_status": model_status,
         "raw_home_win_probability": round(float(raw_prob), 4),
 
-        "home_recent_win_rate": round(
-            float(home_recent_form["recent_win_rate"]),
-            4
-        ),
-        "away_recent_win_rate": round(
-            float(away_recent_form["recent_win_rate"]),
-            4
-        ),
+        "home_recent_win_rate": round(float(home_recent_form["recent_win_rate"]), 4),
+        "away_recent_win_rate": round(float(away_recent_form["recent_win_rate"]), 4),
 
-        "home_recent_margin": round(
-            float(home_recent_form["recent_margin"]),
-            2
-        ),
-        "away_recent_margin": round(
-            float(away_recent_form["recent_margin"]),
-            2
-        ),
+        "home_recent_margin": round(float(home_recent_form["recent_margin"]), 2),
+        "away_recent_margin": round(float(away_recent_form["recent_margin"]), 2),
 
         "home_rest_days": home_rest_days,
         "away_rest_days": away_rest_days,
 
-        "home_strength": round(
-            float(home_strength["home_strength"]),
-            4
-        ),
-        "away_strength": round(
-            float(away_strength["away_strength"]),
-            4
-        ),
+        "home_strength": round(float(home_strength["home_strength"]), 4),
+        "away_strength": round(float(away_strength["away_strength"]), 4),
 
         "home_injury_penalty": injury_data["home_injury_penalty"],
         "away_injury_penalty": injury_data["away_injury_penalty"],
         "injury_diff": injury_data["injury_diff"],
-        "injury_probability_adjustment": round(
-            float(injury_adjustment),
-            4
-        ),
+        "injury_probability_adjustment": round(float(injury_adjustment), 4),
 
         "home_injuries": injury_data.get("home_injuries", []),
         "away_injuries": injury_data.get("away_injuries", [])
