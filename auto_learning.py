@@ -24,29 +24,6 @@ def build_learning_dataset():
         return pd.DataFrame()
 
     learning_df = predictions.copy()
-    if not bets.empty:
-
-    merge_cols = [
-        "game_date",
-        "home_team",
-        "away_team"
-    ]
-
-    learning_df = learning_df.merge(
-        bets,
-        on=merge_cols,
-        how="left",
-        suffixes=("_prediction", "_bet")
-    )
-    if "result" in learning_df.columns:
-
-        learning_df["target_win"] = learning_df["result"].apply(
-            lambda x: 1 if str(x).lower() == "win" else 0
-        )
-    
-    else:
-    
-        learning_df["target_win"] = 0
 
     if not bets.empty:
         merge_cols = ["game_date", "home_team", "away_team"]
@@ -72,7 +49,10 @@ def build_learning_dataset():
 
     for col in numeric_cols:
         if col in learning_df.columns:
-            learning_df[col] = pd.to_numeric(learning_df[col], errors="coerce")
+            learning_df[col] = pd.to_numeric(
+                learning_df[col],
+                errors="coerce"
+            )
 
     if "home_probability" in learning_df.columns and "away_probability" in learning_df.columns:
         learning_df["model_confidence"] = learning_df[
