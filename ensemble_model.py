@@ -1,147 +1,139 @@
 import os
-import joblib
+import requests
 import pandas as pd
-import numpy as np
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.calibration import CalibratedClassifierCV
-from xgboost import XGBClassifier
+from auto_learning import summarize_learning
+
+API_URL = "https://oluwa-blazee-new.onrender.com"
+BET_HISTORY_FILE = "bet_history.csv"
 
 
-LEARNING_DATASET = "learning_dataset.csv"
-OUTPUT_MODEL = "ensemble_model.joblib"
+def safe_read_csv(path):
+    if not os.path.isfile(path):
+        return pd.DataFrame()
 
-DEV_TRAINING_MODE = False
+    try:
+        return pd.read_csv(path)
+    except Exception:
+        return pd.DataFrame()
 
 
-def train_ensemble():
-    if not os.path.isfile(LEARNING_DATASET):
-        raise FileNotFoundError("learning_dataset.csv not found.")
+def calculate_profit_loss(result, odds, stake):
+    try:
+        odds = float(odds)
+        stake = float(stake)
+    except Exception:
+        return 0
 
-    df = pd.read_csv(LEARNING_DATASET)
+    result = str(result).lower()
 
-    if "target_win" not in df.columns:
-        if "result" in df.columns:
-            df["target_win"] = df["result"].apply(
-                lambda x: 1 if str(x).lower() == "win" else 0
-            )
-        else:
-            df["target_win"] = 0
+    if result == "win":
+        return (odds - 1) * stake
 
-    feature_candidates = [
-        "home_probability",
-        "away_probability",
-        "model_confidence",
-        "odds",
-        "expected_value",
-        "kelly",
-        "clv",
-        "profit_loss"
-    ]
+    if result == "loss":
+        return -stake
 
-    usable_features = [col for col in feature_candidates if col in df.columns]
+    return 0
 
-    if not usable_features:
-        raise ValueError("No usable training features found.")
 
-    for col in usable_features:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-        df[col] = df[col].fillna(0)
+def calculate_clv(saved_odds, closing_odds):
+    try:
+        saved_odds = float(saved_odds)
+        closing_odds = float(closing_odds)
 
-    df["target_win"] = pd.to_numeric(df["target_win"], errors="coerce")
-    df["target_win"] = df["target_win"].fillna(0)
+        if saved_odds <= 0 or closing_odds <= 0:
+            return ""
 
-    if DEV_TRAINING_MODE:
-        if len(df) < 10:
-            df = pd.concat([df] * 10, ignore_index=True)
+        return round((saved_odds / closing_odds) - 1, 4)
 
-        df.loc[df.index[::2], "target_win"] = 1
-        df.loc[df.index[1::2], "target_win"] = 0
+    except Exception:
+        return ""
 
-    if len(df) < 5:
-        raise ValueError("Not enough learning rows to train ensemble yet.")
 
-    if df["target_win"].nunique() < 2:
-        raise ValueError("Need both wins and losses before ensemble training.")
-
-    X = df[usable_features]
-    y = df["target_win"]
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.25,
-        random_state=42,
-        stratify=y
-    )
-
-    models = {
-        "logistic_regression": LogisticRegression(max_iter=2000),
-        "random_forest": RandomForestClassifier(
-            n_estimators=150,
-            max_depth=5,
-            random_state=42
-        ),
-        "xgboost": XGBClassifier(
-            n_estimators=150,
-            learning_rate=0.05,
-            max_depth=3,
-            eval_metric="logloss",
-            random_state=42
-        )
-    }
-
-    trained_models = {}
-    accuracies = {}
-    prediction_sets = []
-
-    for name, model in models.items():
-        calibrated_model = CalibratedClassifierCV(
-            estimator=model,
-            method="sigmoid",
-            cv=2
+def fetch_game_result(row):
+    try:
+        response = requests.get(
+            f"{API_URL}/score_result",
+            params={
+                "date": row["game_date"],
+                "home_team": row["home_team"],
+                "away_team": row["away_team"],
+                "best_bet": row["best_bet"]
+            },
+            timeout=30
         )
 
-        calibrated_model.fit(X_train, y_train)
+        if response.status_code != 200:
+            return None
 
-        probs = calibrated_model.predict_proba(X_test)[:, 1]
-        preds = (probs >= 0.5).astype(int)
+        data = response.json()
 
-        trained_models[name] = calibrated_model
-        accuracies[name] = round(accuracy_score(y_test, preds) * 100, 2)
-        prediction_sets.append(probs)
+        if data.get("status") != "completed":
+            return None
 
-    ensemble_probs = np.mean(prediction_sets, axis=0)
-    ensemble_preds = (ensemble_probs >= 0.5).astype(int)
+        return data.get("result")
 
-    ensemble_accuracy = round(
-        accuracy_score(y_test, ensemble_preds) * 100,
-        2
-    )
+    except Exception:
+        return None
 
-    artifact = {
-        "models": trained_models,
-        "feature_cols": usable_features,
-        "individual_accuracies": accuracies,
-        "ensemble_accuracy": ensemble_accuracy,
-        "dev_training_mode": DEV_TRAINING_MODE
-    }
 
-    joblib.dump(artifact, OUTPUT_MODEL)
+def update_bet_results():
+    df = safe_read_csv(BET_HISTORY_FILE)
+
+    if df.empty:
+        return {
+            "status": "empty",
+            "message": "No bet history found."
+        }
+
+    for col in ["result", "profit_loss", "closing_odds", "clv", "stake"]:
+        if col not in df.columns:
+            if col == "result":
+                df[col] = "Pending"
+            elif col == "stake":
+                df[col] = 100
+            else:
+                df[col] = ""
+
+    updated_rows = 0
+
+    for index, row in df.iterrows():
+        current_result = str(row.get("result", "Pending")).lower()
+
+        if current_result in ["win", "loss"]:
+            continue
+
+        latest_result = fetch_game_result(row)
+
+        if latest_result is None:
+            continue
+
+        df.loc[index, "result"] = latest_result
+
+        df.loc[index, "profit_loss"] = calculate_profit_loss(
+            latest_result,
+            row.get("odds", 0),
+            row.get("stake", 100)
+        )
+
+        df.loc[index, "clv"] = calculate_clv(
+            row.get("odds", 0),
+            row.get("closing_odds", "")
+        )
+
+        updated_rows += 1
+
+    df.to_csv(BET_HISTORY_FILE, index=False)
+
+    learning_summary = summarize_learning()
 
     return {
         "status": "success",
-        "rows_used": len(df),
-        "feature_cols": usable_features,
-        "individual_accuracies": accuracies,
-        "ensemble_accuracy": ensemble_accuracy,
-        "output_model": OUTPUT_MODEL,
-        "dev_training_mode": DEV_TRAINING_MODE
+        "updated_rows": updated_rows,
+        "total_rows": len(df),
+        "learning_summary": learning_summary
     }
 
 
 if __name__ == "__main__":
-    print(train_ensemble())
+    print(update_bet_results())
