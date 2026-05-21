@@ -70,6 +70,8 @@ def build_learning_dataset():
         learning_df["target_win"] = learning_df["result"].apply(
             lambda x: 1 if str(x).lower() == "win" else 0
         )
+    else:
+        learning_df["target_win"] = 0
 
     if "profit_loss" in learning_df.columns:
         learning_df["profitable_bet"] = learning_df["profit_loss"].apply(
