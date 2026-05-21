@@ -14,6 +14,10 @@ from xgboost import XGBClassifier
 LEARNING_DATASET = "learning_dataset.csv"
 OUTPUT_MODEL = "ensemble_model.joblib"
 
+# Temporary testing mode.
+# Change to False when you have enough real settled Win/Loss bets.
+DEV_TRAINING_MODE = True
+
 
 def train_ensemble():
     if not os.path.isfile(LEARNING_DATASET):
@@ -40,7 +44,10 @@ def train_ensemble():
         "profit_loss"
     ]
 
-    usable_features = [col for col in feature_candidates if col in df.columns]
+    usable_features = [
+        col for col in feature_candidates
+        if col in df.columns
+    ]
 
     if not usable_features:
         raise ValueError("No usable training features found.")
@@ -48,10 +55,14 @@ def train_ensemble():
     for col in usable_features:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df["target_win"] = pd.to_numeric(df["target_win"], errors="coerce")
-    df = df.dropna(subset=usable_features + ["target_win"])
+    df["target_win"] = pd.to_numeric(
+        df["target_win"],
+        errors="coerce"
+    )
 
-    DEV_TRAINING_MODE = True
+    df = df.dropna(
+        subset=usable_features + ["target_win"]
+    )
 
     if len(df) < 5:
         if DEV_TRAINING_MODE:
@@ -60,25 +71,32 @@ def train_ensemble():
             raise ValueError("Not enough learning rows to train ensemble yet.")
 
     if df["target_win"].nunique() < 2:
-    if DEV_TRAINING_MODE:
-        df.loc[df.index[::2], "target_win"] = 1
-        df.loc[df.index[1::2], "target_win"] = 0
-    else:
-        raise ValueError("Need both wins and losses before ensemble training.")
+        if DEV_TRAINING_MODE:
+            df.loc[df.index[::2], "target_win"] = 1
+            df.loc[df.index[1::2], "target_win"] = 0
+        else:
+            raise ValueError("Need both wins and losses before ensemble training.")
 
     X = df[usable_features]
     y = df["target_win"]
 
+    test_size = 0.2
+
+    if len(df) < 10:
+        test_size = 0.3
+
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
-        test_size=0.2,
+        test_size=test_size,
         random_state=42,
         stratify=y
     )
 
     models = {
-        "logistic_regression": LogisticRegression(max_iter=2000),
+        "logistic_regression": LogisticRegression(
+            max_iter=2000
+        ),
         "random_forest": RandomForestClassifier(
             n_estimators=300,
             max_depth=6,
@@ -100,10 +118,17 @@ def train_ensemble():
     prediction_sets = []
 
     for name, model in models.items():
+        cv_value = 3
+
+        class_counts = y_train.value_counts()
+
+        if class_counts.min() < 3:
+            cv_value = 2
+
         calibrated_model = CalibratedClassifierCV(
             estimator=model,
             method="sigmoid",
-            cv=3
+            cv=cv_value
         )
 
         calibrated_model.fit(X_train, y_train)
@@ -112,18 +137,27 @@ def train_ensemble():
         preds = (probs >= 0.5).astype(int)
 
         trained_models[name] = calibrated_model
-        accuracies[name] = round(accuracy_score(y_test, preds) * 100, 2)
+        accuracies[name] = round(
+            accuracy_score(y_test, preds) * 100,
+            2
+        )
+
         prediction_sets.append(probs)
 
     ensemble_probs = np.mean(prediction_sets, axis=0)
     ensemble_preds = (ensemble_probs >= 0.5).astype(int)
-    ensemble_accuracy = round(accuracy_score(y_test, ensemble_preds) * 100, 2)
+
+    ensemble_accuracy = round(
+        accuracy_score(y_test, ensemble_preds) * 100,
+        2
+    )
 
     artifact = {
         "models": trained_models,
         "feature_cols": usable_features,
         "individual_accuracies": accuracies,
-        "ensemble_accuracy": ensemble_accuracy
+        "ensemble_accuracy": ensemble_accuracy,
+        "dev_training_mode": DEV_TRAINING_MODE
     }
 
     joblib.dump(artifact, OUTPUT_MODEL)
@@ -134,7 +168,8 @@ def train_ensemble():
         "feature_cols": usable_features,
         "individual_accuracies": accuracies,
         "ensemble_accuracy": ensemble_accuracy,
-        "output_model": OUTPUT_MODEL
+        "output_model": OUTPUT_MODEL,
+        "dev_training_mode": DEV_TRAINING_MODE
     }
 
 
