@@ -1050,10 +1050,10 @@ if data and "games" in data and len(data["games"]) > 0:
             best_ev = 0
             best_confidence = confidence
 
-            MIN_EV = 0.05
-            MIN_EDGE = 0.03
+            MIN_EV = 0.02
+            MIN_EDGE = 0.01
             MIN_KELLY = 0.01
-            MIN_CONFIDENCE = 0.60
+            MIN_CONFIDENCE = 0.52
 
             if home_ev > away_ev:
                 candidate_bet = game["home_team"]
