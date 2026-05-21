@@ -5,6 +5,7 @@ import os
 import pandas as pd
 from datetime import date, datetime
 from retrain_model import retrain_pipeline
+from ensemble_model import train_ensemble
 from model_manager import (
     register_model,
     get_model_versions,
@@ -1627,7 +1628,32 @@ if os.path.isfile("learning_dataset.csv"):
         mime="text/csv"
     )
 st.title("Model Control Center")
+st.subheader("Ensemble AI Training")
 
+if st.button("Train Ensemble Model"):
+
+    with st.spinner("Training ensemble system..."):
+
+        try:
+
+            result = train_ensemble()
+
+            if result["status"] == "success":
+
+                st.success(
+                    f"Ensemble trained successfully. "
+                    f"Accuracy: {result['ensemble_accuracy']}%"
+                )
+
+                st.json(result)
+
+            else:
+
+                st.error("Ensemble training failed.")
+
+        except Exception as e:
+
+            st.error(f"Training error: {e}")
 st.info(
     "Manage retraining, model versions, and rollback operations."
 )
