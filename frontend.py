@@ -5,7 +5,7 @@ import os
 import pandas as pd
 from datetime import date, datetime
 from retrain_model import retrain_pipeline
-from ensemble_model import train_ensemble
+from train_ensemble_model import train_ensemble_model
 from model_manager import (
     register_model,
     get_model_versions,
@@ -1636,7 +1636,7 @@ if st.button("Train Ensemble Model"):
 
         try:
 
-            result = train_ensemble()
+            result = train_ensemble_model()
 
             if result["status"] == "success":
 
