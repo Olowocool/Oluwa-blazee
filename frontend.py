@@ -1139,6 +1139,8 @@ if data and "games" in data and len(data["games"]) > 0:
                     st.write(f"Candidate Kelly: {candidate_kelly * 100:.1f}%")
                     st.write(f"Model Confidence: {best_confidence * 100:.1f}%")
                     st.write(f"Uncertainty Level: {uncertainty_level}")
+                    if uncertainty_level in ["High", "Extreme"]:
+                        st.error("Rejected because uncertainty risk is too high.")
 
         else:
             if live_odds_mode:
