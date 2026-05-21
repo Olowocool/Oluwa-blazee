@@ -14,7 +14,7 @@ from xgboost import XGBClassifier
 LEARNING_DATASET = "learning_dataset.csv"
 OUTPUT_MODEL = "ensemble_model.joblib"
 
-DEV_TRAINING_MODE = True
+DEV_TRAINING_MODE = False
 
 
 def train_ensemble():
