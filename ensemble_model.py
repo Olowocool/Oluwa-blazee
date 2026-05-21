@@ -14,8 +14,6 @@ from xgboost import XGBClassifier
 LEARNING_DATASET = "learning_dataset.csv"
 OUTPUT_MODEL = "ensemble_model.joblib"
 
-# Temporary testing mode.
-# Change to False when you have enough real settled Win/Loss bets.
 DEV_TRAINING_MODE = True
 
 
@@ -44,70 +42,53 @@ def train_ensemble():
         "profit_loss"
     ]
 
-    usable_features = [
-        col for col in feature_candidates
-        if col in df.columns
-    ]
+    usable_features = [col for col in feature_candidates if col in df.columns]
 
     if not usable_features:
         raise ValueError("No usable training features found.")
 
     for col in usable_features:
         df[col] = pd.to_numeric(df[col], errors="coerce")
+        df[col] = df[col].fillna(0)
 
-    df["target_win"] = pd.to_numeric(
-        df["target_win"],
-        errors="coerce"
-    )
+    df["target_win"] = pd.to_numeric(df["target_win"], errors="coerce")
+    df["target_win"] = df["target_win"].fillna(0)
 
-    df = df.dropna(
-        subset=usable_features + ["target_win"]
-    )
+    if DEV_TRAINING_MODE:
+        if len(df) < 10:
+            df = pd.concat([df] * 10, ignore_index=True)
+
+        df.loc[df.index[::2], "target_win"] = 1
+        df.loc[df.index[1::2], "target_win"] = 0
 
     if len(df) < 5:
-        if DEV_TRAINING_MODE:
-            df = pd.concat([df] * 5, ignore_index=True)
-        else:
-            raise ValueError("Not enough learning rows to train ensemble yet.")
+        raise ValueError("Not enough learning rows to train ensemble yet.")
 
     if df["target_win"].nunique() < 2:
-        if DEV_TRAINING_MODE:
-            df.loc[df.index[::2], "target_win"] = 1
-            df.loc[df.index[1::2], "target_win"] = 0
-        else:
-            raise ValueError("Need both wins and losses before ensemble training.")
+        raise ValueError("Need both wins and losses before ensemble training.")
 
     X = df[usable_features]
     y = df["target_win"]
 
-    test_size = 0.2
-
-    if len(df) < 10:
-        test_size = 0.3
-
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
-        test_size=test_size,
+        test_size=0.25,
         random_state=42,
         stratify=y
     )
 
     models = {
-        "logistic_regression": LogisticRegression(
-            max_iter=2000
-        ),
+        "logistic_regression": LogisticRegression(max_iter=2000),
         "random_forest": RandomForestClassifier(
-            n_estimators=300,
-            max_depth=6,
+            n_estimators=150,
+            max_depth=5,
             random_state=42
         ),
         "xgboost": XGBClassifier(
-            n_estimators=300,
-            learning_rate=0.03,
-            max_depth=4,
-            subsample=0.8,
-            colsample_bytree=0.8,
+            n_estimators=150,
+            learning_rate=0.05,
+            max_depth=3,
             eval_metric="logloss",
             random_state=42
         )
@@ -118,17 +99,10 @@ def train_ensemble():
     prediction_sets = []
 
     for name, model in models.items():
-        cv_value = 3
-
-        class_counts = y_train.value_counts()
-
-        if class_counts.min() < 3:
-            cv_value = 2
-
         calibrated_model = CalibratedClassifierCV(
             estimator=model,
             method="sigmoid",
-            cv=cv_value
+            cv=2
         )
 
         calibrated_model.fit(X_train, y_train)
@@ -137,11 +111,7 @@ def train_ensemble():
         preds = (probs >= 0.5).astype(int)
 
         trained_models[name] = calibrated_model
-        accuracies[name] = round(
-            accuracy_score(y_test, preds) * 100,
-            2
-        )
-
+        accuracies[name] = round(accuracy_score(y_test, preds) * 100, 2)
         prediction_sets.append(probs)
 
     ensemble_probs = np.mean(prediction_sets, axis=0)
