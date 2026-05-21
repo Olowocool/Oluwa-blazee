@@ -870,10 +870,10 @@ if data and "games" in data and len(data["games"]) > 0:
             # Market movement
         
             "home_line_move_pct":
-            abs(home_line_move_pct),
-        
+            abs(game.get("home_line_move_pct", 0)),
+            
             "away_line_move_pct":
-            abs(away_line_move_pct),
+            abs(game.get("away_line_move_pct", 0)),
         
             # Sharp support
         
