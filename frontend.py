@@ -1614,6 +1614,11 @@ if st.button("Build Learning Dataset"):
         st.info(summary["message"])
 
 if os.path.isfile("learning_dataset.csv"):
+    import os
+    os.makedirs("data", exist_ok=True)
+    import shutil
+    shutil.copy("learning_dataset.csv", "data/learning_dataset.csv")
+    
     learning_df = pd.read_csv("learning_dataset.csv")
 
     st.subheader("Learning Dataset Preview")
