@@ -6,7 +6,7 @@ def train_ensemble_model():
 
     df = pd.read_csv("data/learning_dataset.csv")
 
-    df = df.dropna()
+    df = df.fillna(0)
 
     X = df.drop(columns=["result"])
     y = df["result"]
