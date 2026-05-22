@@ -1654,7 +1654,8 @@ if st.button("Train Ensemble Model"):
 
             else:
 
-                st.error("Ensemble training failed.")
+                st.error(result.get("message", "Ensemble training failed."))
+                st.json(result)
 
         except Exception as e:
 
