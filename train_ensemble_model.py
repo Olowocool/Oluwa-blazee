@@ -45,7 +45,20 @@ def train_ensemble_model():
 
     df = df.fillna(0)
 
+    leakage_columns = [
+        "profit_loss",
+        "target_win",
+        "stake",
+        "clv",
+        "closing_odds"
+    ]
+    
     X = df.select_dtypes(include=["number"])
+    
+    X = X.drop(
+        columns=[col for col in leakage_columns if col in X.columns],
+        errors="ignore"
+    )
     y = df["result"]
 
     if X.empty:
@@ -54,10 +67,10 @@ def train_ensemble_model():
             "message": "No numeric training features found."
         }
 
-    if len(df) < 2:
+    if len(df) < 20:
         return {
             "status": "error",
-            "message": "At least 2 settled bets are needed before training."
+            "At least 20 settled bets are needed before production training."
         }
 
     if y.nunique() < 2:
