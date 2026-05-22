@@ -8,7 +8,7 @@ def train_ensemble_model():
 
     df = df.fillna(0)
 
-    X = df.drop(columns=["result"])
+    X = df.select_dtypes(include=["number"])
     y = df["result"]
 
     model = RandomForestClassifier(
