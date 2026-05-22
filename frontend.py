@@ -889,61 +889,64 @@ if data and "games" in data and len(data["games"]) > 0:
             feature_input
         )
     
-    ensemble_result = consensus_prediction(ensemble_input)
-    
-    if ensemble_result.get("status") == "success":
-        st.subheader("Ensemble Consensus")
-    
-        st.metric(
-            "Ensemble Probability",
-            f"{ensemble_result['ensemble_probability'] * 100:.1f}%"
-        )
-    
-        st.metric(
-            "Model Disagreement",
-            f"{ensemble_result['disagreement'] * 100:.1f}%"
-        )
-    
-        st.info(
-            ensemble_result["consensus_grade"]
-        )
-        uncertainty_result = classify_uncertainty(
-            ensemble_probability=ensemble_result["ensemble_probability"],
-            disagreement=ensemble_result["disagreement"],
-            probability_range=ensemble_result["probability_range"],
-            expected_value=0
-        )
-            
-        st.subheader("Uncertainty Detection")
-            
-        st.metric(
-            "Risk Score",
-            uncertainty_result["risk_score"]
-        )
-            
-        st.metric(
-            "Uncertainty Level",
-            uncertainty_result["uncertainty_level"]
-        )
-            
-        if uncertainty_result["recommendation"] == "Stable":
-            st.success("Stable betting profile")
-        elif uncertainty_result["recommendation"] == "Caution":
-            st.warning("Caution — moderate uncertainty")
-        else:
-            st.error(f"{uncertainty_result['recommendation']}")
-            
-        with st.expander("Individual Model Probabilities"):
-            st.json(
-                ensemble_result["model_probabilities"]
+        ensemble_result = consensus_prediction(ensemble_input)
+
+        uncertainty_result = {"uncertainty_level": "Low"}
+
+        if ensemble_result.get("status") == "success":
+            st.subheader("Ensemble Consensus")
+
+            st.metric(
+                "Ensemble Probability",
+                f"{ensemble_result['ensemble_probability'] * 100:.1f}%"
             )
-    else:
-        st.info("No trained ensemble model available yet.")
 
-    odds = {}
+            st.metric(
+                "Model Disagreement",
+                f"{ensemble_result['disagreement'] * 100:.1f}%"
+            )
 
-    game_home = normalize_team_name(game["home_team"]).lower()
-    game_away = normalize_team_name(game["away_team"]).lower()
+            st.info(
+                ensemble_result["consensus_grade"]
+            )
+
+            uncertainty_result = classify_uncertainty(
+                ensemble_probability=ensemble_result["ensemble_probability"],
+                disagreement=ensemble_result["disagreement"],
+                probability_range=ensemble_result["probability_range"],
+                expected_value=0
+            )
+
+            st.subheader("Uncertainty Detection")
+
+            st.metric(
+                "Risk Score",
+                uncertainty_result["risk_score"]
+            )
+
+            st.metric(
+                "Uncertainty Level",
+                uncertainty_result["uncertainty_level"]
+            )
+
+            if uncertainty_result["recommendation"] == "Stable":
+                st.success("Stable betting profile")
+            elif uncertainty_result["recommendation"] == "Caution":
+                st.warning("Caution — moderate uncertainty")
+            else:
+                st.error(f"{uncertainty_result['recommendation']}")
+
+            with st.expander("Individual Model Probabilities"):
+                st.json(
+                    ensemble_result["model_probabilities"]
+                )
+        else:
+            st.info("No trained ensemble model available yet.")
+
+        odds = {}
+
+        game_home = normalize_team_name(game["home_team"]).lower()
+        game_away = normalize_team_name(game["away_team"]).lower()
 
         if not isinstance(odds_map, dict):
             odds_map = {}
@@ -1072,7 +1075,7 @@ if data and "games" in data and len(data["games"]) > 0:
                 uncertainty_level = uncertainty_result.get("uncertainty_level", "Low")
             except Exception:
                 uncertainty_level = "Low"
-            
+
             passes_filter = (
                 candidate_ev >= MIN_EV
                 and candidate_edge >= MIN_EDGE
@@ -1654,8 +1657,7 @@ if st.button("Train Ensemble Model"):
 
             else:
 
-                st.error(result.get("message", "Ensemble training failed."))
-                st.json(result)
+                st.error("Ensemble training failed.")
 
         except Exception as e:
 
@@ -1772,3 +1774,4 @@ if model_versions:
             st.error(
                 rollback_result["message"]
             )
+
