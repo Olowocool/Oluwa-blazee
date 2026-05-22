@@ -454,6 +454,64 @@ def save_bet_pick(game, game_date, best_bet, odds, model_prob, expected_value, k
         ])
 
 
+
+
+def save_manual_training_pick(game_date, home_team, away_team, best_bet, odds, result):
+    file_exists = os.path.isfile("bet_history.csv")
+
+    try:
+        odds = float(odds)
+    except Exception:
+        odds = 2.0
+
+    result = str(result).strip()
+    if result not in ["Pending", "Win", "Loss"]:
+        result = "Pending"
+
+    profit_loss = 0
+    if result == "Win":
+        profit_loss = (odds - 1) * STAKE
+    elif result == "Loss":
+        profit_loss = -STAKE
+
+    with open("bet_history.csv", "a", newline="") as file:
+        writer = csv.writer(file)
+
+        if not file_exists:
+            writer.writerow([
+                "timestamp",
+                "game_date",
+                "home_team",
+                "away_team",
+                "best_bet",
+                "odds",
+                "model_probability",
+                "expected_value",
+                "kelly",
+                "stake",
+                "result",
+                "profit_loss",
+                "closing_odds",
+                "clv"
+            ])
+
+        writer.writerow([
+            datetime.now().isoformat(),
+            game_date,
+            home_team,
+            away_team,
+            best_bet,
+            odds,
+            0.55,
+            0.03,
+            0.01,
+            STAKE,
+            result,
+            profit_loss,
+            "",
+            ""
+        ])
+
 def calculate_profit_loss(row):
     result = str(row.get("result", "Pending")).lower()
 
@@ -627,6 +685,12 @@ date_input = st.text_input(
     "Game Date (MM/DD/YYYY)",
     value="05/21/2026"
 )
+
+# Clear previously loaded games when the date changes.
+if st.session_state.get("last_input_date") != date_input:
+    st.session_state["daily_data"] = None
+    st.session_state["last_loaded_date"] = None
+    st.session_state["last_input_date"] = date_input
 
 
 if st.button("Load Daily Predictions"):
@@ -1130,6 +1194,31 @@ if data and "games" in data and len(data["games"]) > 0:
             else:
                 st.error("🚫 NO BET — failed professional value filter")
 
+                st.info("For testing/training, you can still save the best candidate below. This is not a professional value bet.")
+
+                if candidate_bet == game["home_team"]:
+                    test_selected_odds = home_odds
+                    test_selected_prob = calibrated_home_prob
+                    test_selected_kelly = home_kelly
+                else:
+                    test_selected_odds = away_odds
+                    test_selected_prob = calibrated_away_prob
+                    test_selected_kelly = away_kelly
+
+                test_button_key = f"test_save_{game['home_team']}_{game['away_team']}_{candidate_bet}"
+
+                if st.button(f"Save Candidate Pick for Training: {candidate_bet}", key=test_button_key):
+                    save_bet_pick(
+                        game,
+                        active_date,
+                        candidate_bet,
+                        test_selected_odds,
+                        test_selected_prob,
+                        candidate_ev,
+                        test_selected_kelly
+                    )
+                    st.success("Candidate pick saved. Go to Manual Result Override and set Win or Loss.")
+
                 with st.expander("Why this game was rejected"):
                     st.write(f"Required EV: at least {MIN_EV * 100:.1f}%")
                     st.write(f"Required Edge: at least {MIN_EDGE * 100:.1f}%")
@@ -1604,6 +1693,30 @@ else:
             use_container_width=True
         )
 
+
+
+st.title("Quick Add Training Games")
+st.info("Use this only to create enough Win/Loss examples for testing the model. For real production training, use real settled bets.")
+
+with st.form("manual_training_pick_form"):
+    manual_game_date = st.text_input("Training Game Date", value=active_date)
+    manual_home_team = st.text_input("Home Team", value="San Antonio Spurs")
+    manual_away_team = st.text_input("Away Team", value="Oklahoma City Thunder")
+    manual_best_bet = st.text_input("Picked Team", value="Oklahoma City Thunder")
+    manual_odds = st.number_input("Odds", min_value=1.01, value=2.00, step=0.01)
+    manual_result = st.selectbox("Result", ["Win", "Loss", "Pending"])
+    manual_submit = st.form_submit_button("Add Manual Training Pick")
+
+if manual_submit:
+    save_manual_training_pick(
+        manual_game_date,
+        manual_home_team,
+        manual_away_team,
+        manual_best_bet,
+        manual_odds,
+        manual_result
+    )
+    st.success("Manual training pick added. Now click Build Learning Dataset.")
 
 st.title("Auto Learning Pipeline")
 
