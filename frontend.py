@@ -940,10 +940,10 @@ if data and "games" in data and len(data["games"]) > 0:
     else:
         st.info("No trained ensemble model available yet.")
 
-        odds = {}
+    odds = {}
 
-        game_home = normalize_team_name(game["home_team"]).lower()
-        game_away = normalize_team_name(game["away_team"]).lower()
+    game_home = normalize_team_name(game["home_team"]).lower()
+    game_away = normalize_team_name(game["away_team"]).lower()
 
         if not isinstance(odds_map, dict):
             odds_map = {}
