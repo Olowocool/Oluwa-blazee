@@ -1751,30 +1751,31 @@ if os.path.isfile("learning_dataset.csv"):
 st.title("Model Control Center")
 st.subheader("Ensemble AI Training")
 
-if st.button("Train Ensemble Model"):
+    if st.button("Train Ensemble Model"):
 
-    with st.spinner("Training ensemble system..."):
-
-        try:
-
-            result = train_ensemble_model()
-
-            if result["status"] == "success":
-
-                st.success(
-                    f"Ensemble trained successfully. "
-                    f"Accuracy: {result['ensemble_accuracy']}%"
-                )
-
-                st.json(result)
-
-            else:
-
-                st.error("Ensemble training failed.")
-
-        except Exception as e:
-
-            st.error(f"Training error: {e}")
+        with st.spinner("Training ensemble system..."):
+    
+            try:
+                result = train_ensemble_model()
+    
+                if result.get("status") == "success":
+                    st.success(
+                        f"Ensemble trained successfully. "
+                        f"Accuracy: {result.get('ensemble_accuracy')}%"
+                    )
+                    st.json(result)
+    
+                else:
+                    st.error(
+                        result.get(
+                            "message",
+                            "Ensemble training failed. No detailed message returned."
+                        )
+                    )
+                    st.json(result)
+    
+            except Exception as e:
+                st.error(f"Training error: {e}")
 st.info(
     "Manage retraining, model versions, and rollback operations."
 )
