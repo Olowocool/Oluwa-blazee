@@ -1795,7 +1795,64 @@ if os.path.isfile("learning_dataset.csv"):
     )
 st.title("Model Control Center")
 st.subheader("Model Evaluation Dashboard")
+st.subheader("Historical NBA Data Engine")
 
+if st.button("Create Historical Training File"):
+    result = create_historical_training_file()
+
+    if result["status"] == "success":
+        st.success(result["message"])
+        st.json(result)
+    else:
+        st.error(result["message"])
+
+
+st.write("Add Historical Game Manually")
+
+hist_col1, hist_col2 = st.columns(2)
+
+with hist_col1:
+    hist_game_date = st.text_input("Historical Game Date", value="05/21/2026")
+    hist_home_team = st.text_input("Historical Home Team", value="San Antonio Spurs")
+    hist_away_team = st.text_input("Historical Away Team", value="Oklahoma City Thunder")
+    hist_selected_team = st.text_input("Selected Team", value="Oklahoma City Thunder")
+
+with hist_col2:
+    hist_odds = st.number_input("Historical Odds", value=2.10)
+    hist_model_probability = st.number_input("Model Probability", value=0.60)
+    hist_expected_value = st.number_input("Expected Value", value=0.10)
+    hist_kelly = st.number_input("Kelly", value=0.05)
+    hist_result = st.selectbox("Historical Result", ["Win", "Loss"])
+
+
+if st.button("Add Historical Game"):
+    result = add_historical_game(
+        hist_game_date,
+        hist_home_team,
+        hist_away_team,
+        hist_selected_team,
+        hist_odds,
+        hist_model_probability,
+        hist_expected_value,
+        hist_kelly,
+        hist_result
+    )
+
+    if result["status"] == "success":
+        st.success(result["message"])
+        st.json(result)
+    else:
+        st.error(result["message"])
+
+
+if st.button("Merge Historical Data Into Bet History"):
+    result = merge_historical_into_bet_history()
+
+    if result["status"] == "success":
+        st.success(result["message"])
+        st.json(result)
+    else:
+        st.error(result["message"])
 if st.button("Evaluate Ensemble Model"):
     result = evaluate_ensemble_model()
 
