@@ -842,6 +842,36 @@ if data and "games" in data and len(data["games"]) > 0:
         st.header(game["prediction"])
         st.progress(confidence)
         st.info(betting_note)
+        base_confidence_result = classify_confidence(
+            model_probability=confidence,
+            expected_value=0,
+            kelly=0,
+            disagreement=0,
+            line_movement_diff=0,
+            sharp_support_pct=0
+        )
+        
+        st.subheader("Confidence Engine")
+        
+        conf_col1, conf_col2, conf_col3 = st.columns(3)
+        
+        with conf_col1:
+            st.metric(
+                "Confidence Score",
+                base_confidence_result["confidence_score"]
+            )
+        
+        with conf_col2:
+            st.metric(
+                "Confidence Tier",
+                base_confidence_result["confidence_tier"]
+            )
+        
+        with conf_col3:
+            st.metric(
+                "Recommended Action",
+                base_confidence_result["recommended_action"]
+            )
 
         save_prediction_log(game, active_date)
 
