@@ -15,47 +15,35 @@ def build_advanced_features(df):
     df = df.copy()
 
     for idx, row in df.iterrows():
+        home_stats = get_team_stats(row.get("home_team", ""))
+        away_stats = get_team_stats(row.get("away_team", ""))
 
-        home_stats = get_team_stats(
-            row.get("home_team", "")
-        )
-    
-        away_stats = get_team_stats(
-            row.get("away_team", "")
-        )
-    
         df.loc[idx, "home_off_rating"] = home_stats["off_rating"]
         df.loc[idx, "away_off_rating"] = away_stats["off_rating"]
-    
+
         df.loc[idx, "home_def_rating"] = home_stats["def_rating"]
         df.loc[idx, "away_def_rating"] = away_stats["def_rating"]
-    
+
         df.loc[idx, "home_pace"] = home_stats["pace"]
         df.loc[idx, "away_pace"] = away_stats["pace"]
-    
+
         df.loc[idx, "home_recent_wins"] = home_stats["recent_wins"]
         df.loc[idx, "away_recent_wins"] = away_stats["recent_wins"]
-    
-        df.loc[idx, "home_rest_days"] = 2
-        df.loc[idx, "away_rest_days"] = 2
-    
-        df.loc[idx, "home_injury_penalty"] = 0
-        df.loc[idx, "away_injury_penalty"] = 0
-    
-        df.loc[idx, "home_line_move_pct"] = 0
-        df.loc[idx, "away_line_move_pct"] = 0
-    
-        df.loc[idx, "sharp_books_support"] = 0
-        df.loc[idx, "total_books"] = 1
-    
-        df.loc[idx, "home_home_win_pct"] = 0.6
-        df.loc[idx, "away_away_win_pct"] = 0.4
 
-    for col, default in defaults.items():
-        if col not in df.columns:
-            df[col] = default
+        df.loc[idx, "home_rest_days"] = safe_float(row.get("home_rest_days", 2), 2)
+        df.loc[idx, "away_rest_days"] = safe_float(row.get("away_rest_days", 2), 2)
 
-        df[col] = df[col].apply(lambda x: safe_float(x, default))
+        df.loc[idx, "home_injury_penalty"] = safe_float(row.get("home_injury_penalty", 0), 0)
+        df.loc[idx, "away_injury_penalty"] = safe_float(row.get("away_injury_penalty", 0), 0)
+
+        df.loc[idx, "home_line_move_pct"] = safe_float(row.get("home_line_move_pct", 0), 0)
+        df.loc[idx, "away_line_move_pct"] = safe_float(row.get("away_line_move_pct", 0), 0)
+
+        df.loc[idx, "sharp_books_support"] = safe_float(row.get("sharp_books_support", 0), 0)
+        df.loc[idx, "total_books"] = safe_float(row.get("total_books", 1), 1)
+
+        df.loc[idx, "home_home_win_pct"] = safe_float(row.get("home_home_win_pct", 0.6), 0.6)
+        df.loc[idx, "away_away_win_pct"] = safe_float(row.get("away_away_win_pct", 0.4), 0.4)
 
     df["rest_days_diff"] = df["home_rest_days"] - df["away_rest_days"]
     df["off_rating_diff"] = df["home_off_rating"] - df["away_off_rating"]
