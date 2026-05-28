@@ -43,7 +43,6 @@ def train_ensemble_model():
 
     df = df.fillna(0)
     df = build_advanced_features(df)
-
     feature_columns = [
         "odds",
         "model_probability",
