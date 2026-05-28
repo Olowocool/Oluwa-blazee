@@ -56,6 +56,10 @@ def train_ensemble_model():
         "injury_diff",
         "line_movement_diff",
         "sharp_support_pct",
+        "home_back_to_back",
+        "away_back_to_back",
+        "rest_advantage",
+        "fatigue_edge",
         "home_venue_edge"
     ]
     
