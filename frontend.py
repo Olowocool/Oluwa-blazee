@@ -5,6 +5,11 @@ import os
 import pandas as pd
 from datetime import date, datetime
 from retrain_model import retrain_pipeline
+from historical_data_engine import (
+    create_historical_training_file,
+    add_historical_game,
+    merge_historical_into_bet_history
+)
 from model_evaluation import evaluate_ensemble_model
 from train_ensemble_model import train_ensemble_model
 from model_manager import (
