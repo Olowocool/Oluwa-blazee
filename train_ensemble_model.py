@@ -42,13 +42,25 @@ def train_ensemble_model():
         }
 
     df = df.fillna(0)
+    df = build_advanced_features(df)
 
-    X = df[[
+    feature_columns = [
         "odds",
         "model_probability",
         "expected_value",
-        "kelly"
-    ]]
+        "kelly",
+        "rest_days_diff",
+        "off_rating_diff",
+        "def_rating_diff",
+        "pace_diff",
+        "recent_form_diff",
+        "injury_diff",
+        "line_movement_diff",
+        "sharp_support_pct",
+        "home_venue_edge"
+    ]
+    
+    X = df[feature_columns].fillna(0)
 
     y = df["result"]
 
