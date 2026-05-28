@@ -1863,6 +1863,9 @@ if st.button("Evaluate Ensemble Model"):
         importance_df = pd.DataFrame(result["feature_importance"])
         st.subheader("Feature Importance")
         st.dataframe(importance_df, use_container_width=True)
+        st.bar_chart(
+            importance_df.set_index("feature")
+        )
 
         st.subheader("Confusion Matrix")
         st.write(result["confusion_matrix"])
