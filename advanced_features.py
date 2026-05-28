@@ -1,4 +1,5 @@
 import pandas as pd
+from team_stats_engine import get_team_stats
 
 
 def safe_float(value, default=0):
@@ -13,26 +14,42 @@ def safe_float(value, default=0):
 def build_advanced_features(df):
     df = df.copy()
 
-    defaults = {
-        "home_rest_days": 2,
-        "away_rest_days": 2,
-        "home_off_rating": 112,
-        "away_off_rating": 112,
-        "home_def_rating": 112,
-        "away_def_rating": 112,
-        "home_pace": 100,
-        "away_pace": 100,
-        "home_recent_wins": 5,
-        "away_recent_wins": 5,
-        "home_injury_penalty": 0,
-        "away_injury_penalty": 0,
-        "home_line_move_pct": 0,
-        "away_line_move_pct": 0,
-        "sharp_books_support": 0,
-        "total_books": 1,
-        "home_home_win_pct": 0.5,
-        "away_away_win_pct": 0.5,
-    }
+    for idx, row in df.iterrows():
+
+        home_stats = get_team_stats(
+            row.get("home_team", "")
+        )
+    
+        away_stats = get_team_stats(
+            row.get("away_team", "")
+        )
+    
+        df.loc[idx, "home_off_rating"] = home_stats["off_rating"]
+        df.loc[idx, "away_off_rating"] = away_stats["off_rating"]
+    
+        df.loc[idx, "home_def_rating"] = home_stats["def_rating"]
+        df.loc[idx, "away_def_rating"] = away_stats["def_rating"]
+    
+        df.loc[idx, "home_pace"] = home_stats["pace"]
+        df.loc[idx, "away_pace"] = away_stats["pace"]
+    
+        df.loc[idx, "home_recent_wins"] = home_stats["recent_wins"]
+        df.loc[idx, "away_recent_wins"] = away_stats["recent_wins"]
+    
+        df.loc[idx, "home_rest_days"] = 2
+        df.loc[idx, "away_rest_days"] = 2
+    
+        df.loc[idx, "home_injury_penalty"] = 0
+        df.loc[idx, "away_injury_penalty"] = 0
+    
+        df.loc[idx, "home_line_move_pct"] = 0
+        df.loc[idx, "away_line_move_pct"] = 0
+    
+        df.loc[idx, "sharp_books_support"] = 0
+        df.loc[idx, "total_books"] = 1
+    
+        df.loc[idx, "home_home_win_pct"] = 0.6
+        df.loc[idx, "away_away_win_pct"] = 0.4
 
     for col, default in defaults.items():
         if col not in df.columns:
