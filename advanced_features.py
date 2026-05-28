@@ -1,6 +1,7 @@
 import pandas as pd
 from injury_rest_engine import add_injury_rest_features
 from nba_stats_api import get_team_stats
+from market_intelligence_engine import generate_market_intelligence
 
 def safe_float(value, default=0):
     try:
