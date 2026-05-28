@@ -36,6 +36,8 @@ FEATURE_COLUMNS = [
     "away_back_to_back",
     "rest_advantage",
     "fatigue_edge",
+    "steam_move",
+    "reverse_line_movement",
 ]
 
 
