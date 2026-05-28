@@ -1,4 +1,5 @@
 import pandas as pd
+from injury_rest_engine import add_injury_rest_features
 from nba_stats_api import get_team_stats
 
 def safe_float(value, default=0):
@@ -12,6 +13,7 @@ def safe_float(value, default=0):
 
 def build_advanced_features(df):
     df = df.copy()
+    df = add_injury_rest_features(df)
 
     for idx, row in df.iterrows():
         home_stats = get_team_stats(row.get("home_team", ""))
