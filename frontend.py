@@ -1135,24 +1135,34 @@ if data and "games" in data and len(data["games"]) > 0:
                 candidate_ev = home_ev
                 candidate_edge = home_edge
                 candidate_kelly = home_kelly
-                confidence_result = classify_confidence(
-                    model_probability=best_confidence,
-                    expected_value=candidate_ev,
-                    kelly=candidate_kelly,
-                    disagreement=ensemble_result.get("disagreement", 0) if "ensemble_result" in locals() else 0,
-                    line_movement_diff=home_line_move if candidate_bet == game["home_team"] else away_line_move,
-                    sharp_support_pct=game.get("sharp_books_support", 0) / max(game.get("total_books", 1), 1)
-                )
-                
-                st.subheader("Confidence Engine")
-                st.metric("Confidence Score", confidence_result["confidence_score"])
-                st.metric("Confidence Tier", confidence_result["confidence_tier"])
-                st.info(f"Recommended Action: {confidence_result['recommended_action']}")
+                candidate_line_move = home_line_move
             else:
                 candidate_bet = game["away_team"]
                 candidate_ev = away_ev
                 candidate_edge = away_edge
                 candidate_kelly = away_kelly
+                candidate_line_move = away_line_move
+
+            confidence_result = classify_confidence(
+                model_probability=best_confidence,
+                expected_value=candidate_ev,
+                kelly=candidate_kelly,
+                disagreement=ensemble_result.get("disagreement", 0) if isinstance(ensemble_result, dict) else 0,
+                line_movement_diff=candidate_line_move,
+                sharp_support_pct=game.get("sharp_books_support", 0) / max(game.get("total_books", 1), 1)
+            )
+
+            st.subheader("Confidence Engine")
+            conf_col1, conf_col2, conf_col3 = st.columns(3)
+
+            with conf_col1:
+                st.metric("Confidence Score", confidence_result["confidence_score"])
+
+            with conf_col2:
+                st.metric("Confidence Tier", confidence_result["confidence_tier"])
+
+            with conf_col3:
+                st.metric("Recommended Action", confidence_result["recommended_action"])
 
             uncertainty_level = "Low"
 
@@ -1928,7 +1938,8 @@ if st.button("Train Ensemble Model"):
 
             else:
 
-                st.error("Ensemble training failed.")
+                st.error(result.get("message", "Ensemble training failed."))
+                st.json(result)
 
         except Exception as e:
 
