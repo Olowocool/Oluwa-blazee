@@ -23,6 +23,10 @@ FEATURE_COLUMNS = [
     "line_movement_diff",
     "sharp_support_pct",
     "home_venue_edge",
+    "home_back_to_back",
+    "away_back_to_back",
+    "rest_advantage",
+    "fatigue_edge",
 ]
 
 
