@@ -5,6 +5,7 @@ import os
 import pandas as pd
 from datetime import date, datetime
 from retrain_model import retrain_pipeline
+from model_evaluation import evaluate_ensemble_model
 from train_ensemble_model import train_ensemble_model
 from model_manager import (
     register_model,
@@ -1788,6 +1789,24 @@ if os.path.isfile("learning_dataset.csv"):
         mime="text/csv"
     )
 st.title("Model Control Center")
+st.subheader("Model Evaluation Dashboard")
+
+if st.button("Evaluate Ensemble Model"):
+    result = evaluate_ensemble_model()
+
+    if result["status"] == "success":
+        st.success(f"Cross-validation accuracy: {result['cv_mean_accuracy']}%")
+        st.json(result)
+
+        importance_df = pd.DataFrame(result["feature_importance"])
+        st.subheader("Feature Importance")
+        st.dataframe(importance_df, use_container_width=True)
+
+        st.subheader("Confusion Matrix")
+        st.write(result["confusion_matrix"])
+
+    else:
+        st.error(result["message"])
 st.subheader("Ensemble AI Training")
 
 if st.button("Train Ensemble Model"):
