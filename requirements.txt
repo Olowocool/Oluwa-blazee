@@ -8,3 +8,6 @@ pyarrow
 requests
 nba_api
 xgboost
+lxml
+html5lib
+beautifulsoup4
