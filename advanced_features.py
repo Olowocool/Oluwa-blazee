@@ -15,6 +15,7 @@ def safe_float(value, default=0):
 def build_advanced_features(df):
     df = df.copy()
     df = add_injury_rest_features(df)
+    df = generate_market_intelligence(df)
 
     for idx, row in df.iterrows():
         home_stats = get_team_stats(row.get("home_team", ""))
