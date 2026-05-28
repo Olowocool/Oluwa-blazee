@@ -5,6 +5,7 @@ import os
 import pandas as pd
 from datetime import date, datetime
 from retrain_model import retrain_pipeline
+from historical_backfill_engine import generate_historical_backfill
 from historical_data_engine import (
     create_historical_training_file,
     add_historical_game,
@@ -1796,7 +1797,26 @@ if os.path.isfile("learning_dataset.csv"):
 st.title("Model Control Center")
 st.subheader("Model Evaluation Dashboard")
 st.subheader("Historical NBA Data Engine")
+st.subheader("Historical Backfill Engine")
 
+backfill_rows = st.number_input(
+    "Number of historical rows to generate",
+    min_value=100,
+    max_value=5000,
+    value=500,
+    step=100
+)
+
+if st.button("Generate Historical Backfill Data"):
+    result = generate_historical_backfill(
+        rows=int(backfill_rows)
+    )
+
+    if result["status"] == "success":
+        st.success(result["message"])
+        st.json(result)
+    else:
+        st.error(result["message"])
 if st.button("Create Historical Training File"):
     result = create_historical_training_file()
 
