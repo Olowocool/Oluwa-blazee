@@ -1,6 +1,5 @@
 import pandas as pd
-from team_stats_engine import get_team_stats
-
+from nba_stats_api import get_team_stats
 
 def safe_float(value, default=0):
     try:
