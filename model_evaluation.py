@@ -69,7 +69,14 @@ def evaluate_ensemble_model():
         stratify=y
     )
 
-    predictions = model.predict(X_test)
+    try:
+        predictions = model.predict(X_test)
+    except ValueError as e:
+        return {
+            "status": "error",
+            "message": "Feature mismatch. Retrain the ensemble model first, then evaluate again.",
+            "details": str(e)
+        }
 
     cm = confusion_matrix(y_test, predictions, labels=["Win", "Loss"])
     report = classification_report(y_test, predictions, output_dict=True)
