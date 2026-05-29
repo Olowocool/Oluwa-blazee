@@ -891,20 +891,45 @@ if data and "games" in data and len(data["games"]) > 0:
 
         st.subheader("Injury Impact")
 
+        try:
+            raw_home_penalty = float(game.get("home_injury_penalty", 0))
+        except Exception:
+            raw_home_penalty = 0
+
+        try:
+            raw_away_penalty = float(game.get("away_injury_penalty", 0))
+        except Exception:
+            raw_away_penalty = 0
+
+        home_penalty = (
+            raw_home_penalty / 100
+            if abs(raw_home_penalty) > 1
+            else raw_home_penalty
+        )
+
+        away_penalty = (
+            raw_away_penalty / 100
+            if abs(raw_away_penalty) > 1
+            else raw_away_penalty
+        )
+
+        injury_diff = away_penalty - home_penalty
+        probability_adjustment = injury_diff * 100
+
         injury_col1, injury_col2, injury_col3 = st.columns(3)
 
         with injury_col1:
-            st.metric("Home Penalty", game.get("home_injury_penalty", 0))
+            st.metric("Home Penalty", round(home_penalty, 3))
 
         with injury_col2:
-            st.metric("Away Penalty", game.get("away_injury_penalty", 0))
+            st.metric("Away Penalty", round(away_penalty, 3))
 
         with injury_col3:
-            st.metric("Injury Diff", game.get("injury_diff", 0))
+            st.metric("Injury Diff", round(injury_diff, 3))
 
         st.metric(
             "Probability Adjustment",
-            f"{game.get('injury_probability_adjustment', 0) * 100:.1f}%"
+            f"{probability_adjustment:.1f}%"
         )
         feature_input = {
 
