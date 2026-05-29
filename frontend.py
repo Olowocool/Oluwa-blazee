@@ -1371,6 +1371,30 @@ with c4:
         "Last Model Update",
         health["last_model_update"]
     )
+    import os
+
+    st.subheader("Saved Model Versions")
+    
+    model_files = []
+    
+    if os.path.exists("models"):
+        model_files = sorted(
+            [
+                f
+                for f in os.listdir("models")
+                if f.startswith("ensemble_model_")
+                and f.endswith(".joblib")
+            ],
+            reverse=True
+        )
+    
+    if model_files:
+    
+        for model_file in model_files[:10]:
+            st.write(model_file)
+    
+    else:
+        st.info("No saved model versions found.")
 st.subheader("Full Daily Automation")
 
 if st.button("Run Full Daily Automation"):
