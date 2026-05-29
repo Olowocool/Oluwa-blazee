@@ -7,6 +7,7 @@ from datetime import date, datetime
 from retrain_model import retrain_pipeline
 from confidence_engine import classify_confidence
 from automation_runner import run_daily_automation
+from model_health import get_model_health
 from historical_backfill_engine import generate_historical_backfill
 from historical_data_engine import (
     create_historical_training_file,
@@ -1341,6 +1342,35 @@ elif data:
     st.warning("No games returned from API.")
 
 st.title("Autonomous Update System")
+st.subheader("Model Health Dashboard")
+
+health = get_model_health()
+
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+    st.metric(
+        "Training Rows",
+        health["training_rows"]
+    )
+
+with c2:
+    st.metric(
+        "Win Rate",
+        f"{health['win_rate']}%"
+    )
+
+with c3:
+    st.metric(
+        "ROI",
+        f"{health['roi']}%"
+    )
+
+with c4:
+    st.metric(
+        "Last Model Update",
+        health["last_model_update"]
+    )
 st.subheader("Full Daily Automation")
 
 if st.button("Run Full Daily Automation"):
