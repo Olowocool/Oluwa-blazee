@@ -6,6 +6,7 @@ import pandas as pd
 from datetime import date, datetime
 from retrain_model import retrain_pipeline
 from confidence_engine import classify_confidence
+from automation_runner import run_daily_automation
 from historical_backfill_engine import generate_historical_backfill
 from historical_data_engine import (
     create_historical_training_file,
