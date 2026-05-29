@@ -1341,6 +1341,14 @@ elif data:
     st.warning("No games returned from API.")
 
 st.title("Autonomous Update System")
+st.subheader("Full Daily Automation")
+
+if st.button("Run Full Daily Automation"):
+    with st.spinner("Running full automation pipeline..."):
+        automation_result = run_daily_automation()
+
+    st.success("Full automation completed.")
+    st.json(automation_result)
 
 if st.button("Run Auto Result Sync"):
 
