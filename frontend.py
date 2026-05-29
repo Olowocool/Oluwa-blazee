@@ -1373,11 +1373,14 @@ with c4:
     )
     import os
 
+    st.divider()
+
     st.subheader("Saved Model Versions")
     
     model_files = []
     
     if os.path.exists("models"):
+    
         model_files = sorted(
             [
                 f
@@ -1390,11 +1393,23 @@ with c4:
     
     if model_files:
     
-        for model_file in model_files[:10]:
-            st.write(model_file)
+        version_df = pd.DataFrame(
+            {
+                "Model Version": model_files
+            }
+        )
+    
+        st.dataframe(
+            version_df,
+            use_container_width=True,
+            hide_index=True
+        )
     
     else:
-        st.info("No saved model versions found.")
+    
+        st.info(
+            "No saved model versions found."
+        )
 st.subheader("Full Daily Automation")
 
 if st.button("Run Full Daily Automation"):
