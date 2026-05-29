@@ -2,6 +2,7 @@ from datetime import datetime
 
 from auto_update_results import update_bet_results
 from auto_learning import summarize_learning
+from model_versioning import save_model_version
 from train_ensemble_model import train_ensemble_model
 from model_evaluation import evaluate_ensemble_model
 
@@ -33,6 +34,11 @@ def run_daily_automation():
 
     try:
         training_result = train_ensemble_model()
+        version_result = save_model_version()
+
+        summary["steps"][
+            "model_version"
+        ] = version_result
         summary["steps"]["ensemble_training"] = training_result
     except Exception as e:
         summary["steps"]["ensemble_training"] = {
