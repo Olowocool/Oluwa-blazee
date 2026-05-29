@@ -1342,6 +1342,7 @@ elif data:
     st.warning("No games returned from API.")
 
 st.title("Autonomous Update System")
+
 st.subheader("Model Health Dashboard")
 
 health = get_model_health()
@@ -1351,65 +1352,61 @@ c1, c2, c3, c4 = st.columns(4)
 with c1:
     st.metric(
         "Training Rows",
-        health["training_rows"]
+        health.get("training_rows", 0)
     )
 
 with c2:
     st.metric(
         "Win Rate",
-        f"{health['win_rate']}%"
+        f"{health.get('win_rate', 0)}%"
     )
 
 with c3:
     st.metric(
         "ROI",
-        f"{health['roi']}%"
+        f"{health.get('roi', 0)}%"
     )
 
 with c4:
     st.metric(
         "Last Model Update",
-        health["last_model_update"]
+        health.get("last_model_update", "N/A")
     )
-    import os
 
-    st.divider()
+st.markdown("---")
 
-    st.subheader("Saved Model Versions")
-    
-    model_files = []
-    
-    if os.path.exists("models"):
-    
-        model_files = sorted(
-            [
-                f
-                for f in os.listdir("models")
-                if f.startswith("ensemble_model_")
-                and f.endswith(".joblib")
-            ],
-            reverse=True
-        )
-    
-    if model_files:
-    
-        version_df = pd.DataFrame(
-            {
-                "Model Version": model_files
-            }
-        )
-    
-        st.dataframe(
-            version_df,
-            use_container_width=True,
-            hide_index=True
-        )
-    
-    else:
-    
-        st.info(
-            "No saved model versions found."
-        )
+st.subheader("Saved Model Versions")
+
+model_files = []
+
+if os.path.exists("models"):
+    model_files = sorted(
+        [
+            f
+            for f in os.listdir("models")
+            if f.startswith("ensemble_model_")
+            and f.endswith(".joblib")
+        ],
+        reverse=True
+    )
+
+if model_files:
+    version_df = pd.DataFrame(
+        {
+            "Model Version": model_files
+        }
+    )
+
+    st.dataframe(
+        version_df,
+        use_container_width=True,
+        hide_index=True
+    )
+else:
+    st.info("No saved model versions found.")
+
+st.markdown("---")
+
 st.subheader("Full Daily Automation")
 
 if st.button("Run Full Daily Automation"):
@@ -1434,6 +1431,7 @@ if st.button("Run Auto Result Sync"):
     else:
 
         st.info(result["message"])
+
 st.title("Bet Performance Dashboard")
 
 bet_history = load_bet_history()
@@ -1556,38 +1554,51 @@ else:
         "home_team",
         "away_team",
         "best_bet",
-        "odds",
         "closing_odds",
-        "result",
+        "result"
     ]
 
     for col in editable_cols:
         if col not in updated_df.columns:
             updated_df[col] = ""
 
-    st.info("Edit results in the table below, then click Save Manual Updates once.")
+    manual_df = updated_df[editable_cols].copy()
 
-    edited_df = st.data_editor(
-        updated_df[editable_cols],
+    st.info(
+        "Edit closing odds and results directly in the table, then click Save Manual Updates."
+    )
+
+    edited_manual_df = st.data_editor(
+        manual_df,
         use_container_width=True,
+        hide_index=True,
         num_rows="fixed",
-        key="manual_result_editor",
         column_config={
             "result": st.column_config.SelectboxColumn(
                 "Result",
                 options=["Pending", "Win", "Loss"],
-                required=True,
+                required=True
             ),
             "closing_odds": st.column_config.TextColumn(
                 "Closing Odds"
-            ),
+            )
         },
+        key="manual_result_editor"
     )
 
     if st.button("Save Manual Updates"):
-        for edited_index, edited_row in edited_df.iterrows():
-            updated_df.loc[edited_index, "closing_odds"] = edited_row["closing_odds"]
-            updated_df.loc[edited_index, "result"] = edited_row["result"]
+        for edited_index, edited_row in edited_manual_df.iterrows():
+            original_index = manual_df.index[edited_index]
+
+            updated_df.loc[
+                original_index,
+                "closing_odds"
+            ] = edited_row["closing_odds"]
+
+            updated_df.loc[
+                original_index,
+                "result"
+            ] = edited_row["result"]
 
         updated_df["profit_loss"] = updated_df.apply(calculate_profit_loss, axis=1)
 
