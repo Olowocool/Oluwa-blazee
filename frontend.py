@@ -1473,41 +1473,44 @@ else:
 
     st.subheader("Manual Result Override")
 
-    for index, row in updated_df.iterrows():
-        st.write(
-            f"{row['game_date']} — {row['best_bet']} "
-            f"({row['away_team']} @ {row['home_team']})"
-        )
+    editable_cols = [
+        "game_date",
+        "home_team",
+        "away_team",
+        "best_bet",
+        "odds",
+        "closing_odds",
+        "result",
+    ]
 
-        current_closing_odds = row.get("closing_odds", "")
+    for col in editable_cols:
+        if col not in updated_df.columns:
+            updated_df[col] = ""
 
-        if pd.isna(current_closing_odds) or str(current_closing_odds).lower() == "nan":
-            current_closing_odds = ""
+    st.info("Edit results in the table below, then click Save Manual Updates once.")
 
-        closing_input = st.text_input(
-            "Closing Odds",
-            value=str(current_closing_odds),
-            key=f"closing_odds_{index}"
-        )
-
-        updated_df["closing_odds"] = updated_df["closing_odds"].astype("object")
-        updated_df.loc[index, "closing_odds"] = closing_input
-
-        current_result = row.get("result", "Pending")
-
-        if current_result not in ["Pending", "Win", "Loss"]:
-            current_result = "Pending"
-
-        result_input = st.selectbox(
-            "Result",
-            ["Pending", "Win", "Loss"],
-            index=["Pending", "Win", "Loss"].index(current_result),
-            key=f"result_{index}"
-        )
-
-        updated_df.loc[index, "result"] = result_input
+    edited_df = st.data_editor(
+        updated_df[editable_cols],
+        use_container_width=True,
+        num_rows="fixed",
+        key="manual_result_editor",
+        column_config={
+            "result": st.column_config.SelectboxColumn(
+                "Result",
+                options=["Pending", "Win", "Loss"],
+                required=True,
+            ),
+            "closing_odds": st.column_config.TextColumn(
+                "Closing Odds"
+            ),
+        },
+    )
 
     if st.button("Save Manual Updates"):
+        for edited_index, edited_row in edited_df.iterrows():
+            updated_df.loc[edited_index, "closing_odds"] = edited_row["closing_odds"]
+            updated_df.loc[edited_index, "result"] = edited_row["result"]
+
         updated_df["profit_loss"] = updated_df.apply(calculate_profit_loss, axis=1)
 
         updated_df["clv"] = updated_df.apply(
