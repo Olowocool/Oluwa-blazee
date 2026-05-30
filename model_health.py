@@ -48,15 +48,15 @@ def get_model_health():
                         2
                     )
 
-        if os.path.exists("learning_dataset.csv"):
+        if os.path.exists("bet_history.csv"):
 
-            learning_df = pd.read_csv(
-                "learning_dataset.csv"
-            )
-
-            result["training_rows"] = len(
-                learning_df
-            )
+            bet_df = pd.read_csv("bet_history.csv")
+        
+            settled = bet_df[
+                bet_df["result"].astype(str).isin(["Win", "Loss"])
+            ]
+        
+            result["training_rows"] = len(settled)
 
         if os.path.exists(
             "models/ensemble_model.joblib"
