@@ -8,6 +8,7 @@ from retrain_model import retrain_pipeline
 from confidence_engine import classify_confidence
 from automation_runner import run_daily_automation
 from model_health import get_model_health
+from model_rollback import restore_model_version
 from historical_backfill_engine import generate_historical_backfill
 from historical_data_engine import (
     create_historical_training_file,
@@ -1404,7 +1405,28 @@ if model_files:
     )
 else:
     st.info("No saved model versions found.")
+selected_model = st.selectbox(
+    "Select Model Version",
+    model_files
+)
 
+if st.button("Restore Selected Model"):
+
+    restore_result = restore_model_version(
+        selected_model
+    )
+
+    if restore_result["status"] == "success":
+
+        st.success(
+            f"Restored: {selected_model}"
+        )
+
+    else:
+
+        st.error(
+            restore_result["message"]
+        )
 st.markdown("---")
 
 st.subheader("Full Daily Automation")
