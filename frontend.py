@@ -1403,30 +1403,31 @@ if model_files:
         use_container_width=True,
         hide_index=True
     )
-else:
-    st.info("No saved model versions found.")
-selected_model = st.selectbox(
-    "Select Model Version",
-    model_files
-)
 
-if st.button("Restore Selected Model"):
-
-    restore_result = restore_model_version(
-        selected_model
+    selected_model = st.selectbox(
+        "Select Model Version",
+        model_files,
+        key="saved_model_version_select"
     )
 
-    if restore_result["status"] == "success":
+    if st.button("Restore Selected Model"):
+        restore_result = restore_model_version(selected_model)
 
-        st.success(
-            f"Restored: {selected_model}"
-        )
+        if restore_result.get("status") == "success":
+            st.success(
+                f"Restored model version: {selected_model}"
+            )
+        else:
+            st.error(
+                restore_result.get(
+                    "message",
+                    "Model restore failed."
+                )
+            )
+else:
+    st.info("No saved model versions found.")
+    st.info("No model available to restore yet. Run Full Daily Automation or Train Ensemble Model first.")
 
-    else:
-
-        st.error(
-            restore_result["message"]
-        )
 st.markdown("---")
 
 st.subheader("Full Daily Automation")
