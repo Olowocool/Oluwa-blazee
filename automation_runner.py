@@ -1,10 +1,15 @@
 from datetime import datetime
+import os
+import pandas as pd
 
 from auto_update_results import update_bet_results
 from auto_learning import summarize_learning
-from model_versioning import save_model_version
 from train_ensemble_model import train_ensemble_model
 from model_evaluation import evaluate_ensemble_model
+from model_versioning import save_model_version
+
+
+MIN_SETTLED_BETS_FOR_TRAINING = 100
 
 
 def run_daily_automation():
@@ -33,32 +38,52 @@ def run_daily_automation():
         }
 
     try:
-        bet_df = pd.read_csv("bet_history.csv")
+        if not os.path.exists("bet_history.csv"):
+            training_result = {
+                "status": "skipped",
+                "reason": "bet_history.csv not found."
+            }
+        else:
+            bet_df = pd.read_csv("bet_history.csv")
 
-    settled = bet_df[
-        bet_df["result"].isin(["Win", "Loss"])
-    ]
-    
-    training_rows = len(settled)
-    
-    if training_rows < 100:
-    
-        training_result = {
-            "status": "skipped",
-            "reason": "Not enough settled bets."
-        }
-    
-    else:
-    
-        training_result = train_ensemble_model()
-        version_result = save_model_version()
+            settled = bet_df[
+                bet_df["result"].astype(str).isin(["Win", "Loss"])
+            ]
 
-        summary["steps"][
-            "model_version"
-        ] = version_result
+            training_rows = len(settled)
+
+            if training_rows < MIN_SETTLED_BETS_FOR_TRAINING:
+                training_result = {
+                    "status": "skipped",
+                    "reason": (
+                        f"Only {training_rows} settled bets found. "
+                        f"Minimum required is {MIN_SETTLED_BETS_FOR_TRAINING}."
+                    )
+                }
+            else:
+                training_result = train_ensemble_model()
+
         summary["steps"]["ensemble_training"] = training_result
+
     except Exception as e:
         summary["steps"]["ensemble_training"] = {
+            "status": "error",
+            "message": str(e)
+        }
+
+    try:
+        if summary["steps"].get("ensemble_training", {}).get("status") == "success":
+            version_result = save_model_version()
+        else:
+            version_result = {
+                "status": "skipped",
+                "reason": "Model version saved only after successful training."
+            }
+
+        summary["steps"]["model_version"] = version_result
+
+    except Exception as e:
+        summary["steps"]["model_version"] = {
             "status": "error",
             "message": str(e)
         }
