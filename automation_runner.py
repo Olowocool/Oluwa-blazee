@@ -33,6 +33,23 @@ def run_daily_automation():
         }
 
     try:
+        bet_df = pd.read_csv("bet_history.csv")
+
+    settled = bet_df[
+        bet_df["result"].isin(["Win", "Loss"])
+    ]
+    
+    training_rows = len(settled)
+    
+    if training_rows < 100:
+    
+        training_result = {
+            "status": "skipped",
+            "reason": "Not enough settled bets."
+        }
+    
+    else:
+    
         training_result = train_ensemble_model()
         version_result = save_model_version()
 
