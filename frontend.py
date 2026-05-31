@@ -1395,17 +1395,6 @@ with c4:
 st.markdown("---")
 
 st.subheader("Saved Model Versions")
-import os
-
-st.write("Current working directory:")
-st.code(os.getcwd())
-
-st.write("Models folder exists:")
-st.write(os.path.exists("models"))
-
-if os.path.exists("models"):
-    st.write("Files in models:")
-    st.write(os.listdir("models"))
 
 model_files = []
 
