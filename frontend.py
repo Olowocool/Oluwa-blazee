@@ -8,6 +8,7 @@ from retrain_model import retrain_pipeline
 from confidence_engine import classify_confidence
 from automation_runner import run_daily_automation
 from model_health import get_model_health
+from odds_snapshot_engine import save_odds_snapshot
 from model_rollback import restore_model_version
 from historical_backfill_engine import generate_historical_backfill
 from historical_data_engine import (
@@ -724,6 +725,11 @@ if st.button("Load Daily Predictions"):
                     "games": predictions,
                     "source": "odds_api_synced_schedule"
                 }
+                try:
+                    snapshot_result = save_odds_snapshot(predictions)
+                    st.info(f"Saved {snapshot_result['saved_rows']} odds snapshots.")
+                except Exception as e:
+                    st.warning(f"Odds snapshot save skipped: {e}")
 
                 st.session_state["last_loaded_date"] = date_input
 
@@ -740,6 +746,12 @@ if st.button("Load Daily Predictions"):
 
                 data = response.json()
                 st.session_state["daily_data"] = data
+                try:
+                    if data and "games" in data:
+                        snapshot_result = save_odds_snapshot(data["games"])
+                        st.info(f"Saved {snapshot_result['saved_rows']} odds snapshots.")
+                except Exception as e:
+                    st.warning(f"Odds snapshot save skipped: {e}")
                 st.session_state["last_loaded_date"] = date_input
 
         else:
@@ -756,6 +768,12 @@ if st.button("Load Daily Predictions"):
 
             data = response.json()
             st.session_state["daily_data"] = data
+            try:
+                if data and "games" in data:
+                    snapshot_result = save_odds_snapshot(data["games"])
+                    st.info(f"Saved {snapshot_result['saved_rows']} odds snapshots.")
+            except Exception as e:
+                st.warning(f"Odds snapshot save skipped: {e}")
             st.session_state["last_loaded_date"] = date_input
 
     except Exception as e:
