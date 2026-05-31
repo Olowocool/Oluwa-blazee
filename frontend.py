@@ -727,6 +727,18 @@ if st.button("Load Daily Predictions"):
                 }
                 try:
                     snapshot_result = save_odds_snapshot(predictions)
+                
+                    st.success(
+                        f"Saved {snapshot_result['saved_rows']} odds snapshots."
+                    )
+                
+                except Exception as e:
+                
+                    st.warning(
+                        f"Odds snapshot error: {e}"
+                    )
+                try:
+                    snapshot_result = save_odds_snapshot(predictions)
                     st.info(f"Saved {snapshot_result['saved_rows']} odds snapshots.")
                 except Exception as e:
                     st.warning(f"Odds snapshot save skipped: {e}")
