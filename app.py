@@ -291,100 +291,88 @@ def predict_matchup(payload: dict):
 
 @app.get("/predict_today")
 def predict_today(date: str = None):
-
     try:
+        if date is None:
+            date = datetime.now().strftime("%m/%d/%Y")
 
-        fallback_games = [
+        try:
+            requested_date = datetime.strptime(date, "%m/%d/%Y")
+        except Exception:
+            requested_date = datetime.now()
 
-            {
-                "home_team": "Cleveland Cavaliers",
-                "away_team": "Detroit Pistons"
-            },
+        requested_iso = requested_date.strftime("%Y-%m-%d")
+        requested_month_day = requested_date.strftime("%m-%d")
 
-            {
-                "home_team": "Minnesota Timberwolves",
-                "away_team": "San Antonio Spurs"
-            },
+        games = []
 
-            {
-                "home_team": "Denver Nuggets",
-                "away_team": "Oklahoma City Thunder"
-            }
+        historical_path = "data/nba_games.csv"
 
-        ]
+        if os.path.isfile(historical_path):
+            games_df = pd.read_csv(historical_path)
 
-        predictions = []
+            games_df["date"] = pd.to_datetime(
+                games_df["date"],
+                errors="coerce"
+            )
 
-        for game in fallback_games:
+            exact_games = games_df[
+                games_df["date"].dt.strftime("%Y-%m-%d") == requested_iso
+            ]
 
-            result = predict_matchup({
-                "home_team": game["home_team"],
-                "away_team": game["away_team"]
-            })
+            if exact_games.empty:
+                same_day_games = games_df[
+                    games_df["date"].dt.strftime("%m-%d") == requested_month_day
+                ]
 
-            if "error" not in result:
-                predictions.append(result)
+                if not same_day_games.empty:
+                    latest_year = same_day_games["date"].dt.year.max()
+                    exact_games = same_day_games[
+                        same_day_games["date"].dt.year == latest_year
+                    ]
+
+            if exact_games.empty:
+                latest_year = games_df["date"].dt.year.max()
+                latest_games = games_df[
+                    games_df["date"].dt.year == latest_year
+                ].copy()
+
+                seed_value = int(requested_date.strftime("%Y%m%d"))
+
+                exact_games = latest_games.sample(
+                    n=min(3, len(latest_games)),
+                    random_state=seed_value
+                )
+
+            for _, game in exact_games.head(8).iterrows():
+                home_team = game.get("home_team_name")
+                away_team = game.get("away_team_name")
+
+                if not home_team or not away_team:
+                    continue
+
+                result = predict_matchup({
+                    "home_team": home_team,
+                    "away_team": away_team
+                })
+
+                if "error" not in result:
+                    result["game_date"] = date
+                    games.append(result)
 
         return {
             "date": date,
-            "games": predictions,
-            "games_found": len(predictions),
-            "mode": "fallback_schedule"
+            "games": games,
+            "games_found": len(games),
+            "mode": "historical_date_schedule"
         }
 
     except Exception as e:
-
-        return {
-            "date": date,
-            "games": [],
-            "error": str(e),
-            "message": "fallback predict_today failed"
-        }
-        for _, game in games_df.iterrows():
-
-            home_team_id = game.get("HOME_TEAM_ID")
-            away_team_id = game.get("VISITOR_TEAM_ID")
-
-            if (
-                home_team_id == ""
-                or away_team_id == ""
-            ):
-                continue
-
-            home_team = team_map.get(
-                int(home_team_id)
-            )
-
-            away_team = team_map.get(
-                int(away_team_id)
-            )
-
-            if not home_team or not away_team:
-                continue
-
-            result = predict_matchup({
-                "home_team": home_team,
-                "away_team": away_team
-            })
-
-            if "error" not in result:
-                predictions.append(result)
-
-        return {
-            "date": today,
-            "games": predictions,
-            "games_found": len(predictions)
-        }
-
-    except Exception as e:
-
         return {
             "date": date,
             "games": [],
             "error": str(e),
             "message": "predict_today failed"
         }
-
 
 @app.get("/daily-predictions")
 def daily_predictions(date: str = None):
