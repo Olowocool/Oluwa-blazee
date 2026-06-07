@@ -38,6 +38,23 @@ FEATURE_COLUMNS = [
     "fatigue_edge",
     "steam_move",
     "reverse_line_movement",
+    "home_ppg_last_5",
+    "away_ppg_last_5",
+    "home_ppg_last_10",
+    "away_ppg_last_10",
+    "home_points_allowed_last_5",
+    "away_points_allowed_last_5",
+    "home_points_allowed_last_10",
+    "away_points_allowed_last_10",
+    "home_net_points_last_10",
+    "away_net_points_last_10",
+    "home_avg_margin_last_10",
+    "away_avg_margin_last_10",
+    "ppg_diff_last_5",
+    "ppg_diff_last_10",
+    "points_allowed_diff_last_10",
+    "net_points_diff_last_10",
+    "avg_margin_diff_last_10",
 ]
 
 
