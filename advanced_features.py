@@ -1,4 +1,5 @@
 import pandas as pd
+from points_engine import add_points_features
 from injury_rest_engine import add_injury_rest_features
 from nba_stats_api import get_team_stats
 from market_intelligence_engine import generate_market_intelligence
@@ -14,6 +15,7 @@ def safe_float(value, default=0):
 
 def build_advanced_features(df):
     df = df.copy()
+    df = add_points_features(df)
     df = add_injury_rest_features(df)
     df = generate_market_intelligence(df)
 
