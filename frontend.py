@@ -4,6 +4,7 @@ import csv
 import os
 import pandas as pd
 from datetime import date, datetime
+from totals_model import predict_game_total
 from retrain_model import retrain_pipeline
 from confidence_engine import classify_confidence
 from automation_runner import run_daily_automation
@@ -1140,6 +1141,50 @@ if data and "games" in data and len(data["games"]) > 0:
         opening_away_odds = odds.get("opening_away_odds", away_odds)
 
         if home_odds and away_odds:
+            st.subheader("Totals / Over-Under Model")
+
+            bookmaker_total = st.number_input(
+                f"Bookmaker Total Line for {game['away_team']} @ {game['home_team']}",
+                min_value=150.0,
+                max_value=300.0,
+                value=220.5,
+                step=0.5,
+                key=f"total_line_{game['away_team']}_{game['home_team']}"
+            )
+            
+            totals_result = predict_game_total(
+                home_team=game["home_team"],
+                away_team=game["away_team"],
+                bookmaker_total=bookmaker_total
+            )
+            
+            t1, t2, t3 = st.columns(3)
+            
+            with t1:
+                st.metric(
+                    "Projected Total",
+                    totals_result["projected_total"]
+                )
+            
+            with t2:
+                st.metric(
+                    "Bookmaker Line",
+                    totals_result["bookmaker_total"]
+                )
+            
+            with t3:
+                st.metric(
+                    "Edge",
+                    totals_result["edge"]
+                )
+            
+            st.info(
+                f"Recommendation: {totals_result['recommendation']} — "
+                f"{totals_result['confidence_note']}"
+            )
+            
+            with st.expander("Totals Model Details"):
+                st.json(totals_result)
             st.subheader("Betting Analytics")
 
             calibrated_home_prob = calibrate_probability(
