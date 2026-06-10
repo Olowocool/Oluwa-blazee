@@ -3,6 +3,8 @@ import pandas as pd
 
 
 DATA_PATH = "outputs/training_dataset.parquet"
+LEAGUE_AVG_TOTAL = 224
+LEAGUE_AVG_TEAM_POINTS = 112
 
 
 def safe_float(value, default=0):
@@ -54,6 +56,7 @@ def team_recent_points(team_name, history, last_n=10):
 
     scored = []
     allowed = []
+    totals = []
 
     for _, row in games.iterrows():
         home_team = row.get("home_team_name")
@@ -70,13 +73,17 @@ def team_recent_points(team_name, history, last_n=10):
         if home_score <= 0 or away_score <= 0:
             continue
 
+        game_total = home_score + away_score
+
         if home_team == team_name:
             scored.append(home_score)
             allowed.append(away_score)
+            totals.append(game_total)
 
         elif away_team == team_name:
             scored.append(away_score)
             allowed.append(home_score)
+            totals.append(game_total)
 
     if not scored:
         return {
@@ -88,7 +95,23 @@ def team_recent_points(team_name, history, last_n=10):
     return {
         "points_for": sum(scored) / len(scored),
         "points_allowed": sum(allowed) / len(allowed),
-        "pace_score": (sum(scored) + sum(allowed)) / len(scored)
+        "pace_score": sum(totals) / len(totals)
+    }
+
+
+def calculate_pace_adjustment(home_pace_score, away_pace_score):
+    combined_pace = (
+        home_pace_score + away_pace_score
+    ) / 2
+
+    pace_gap = combined_pace - LEAGUE_AVG_TOTAL
+
+    pace_adjustment = pace_gap * 0.35
+
+    return {
+        "combined_pace_score": round(combined_pace, 1),
+        "pace_gap": round(pace_gap, 1),
+        "pace_adjustment": round(pace_adjustment, 1)
     }
 
 
@@ -113,10 +136,21 @@ def predict_game_total(home_team, away_team, bookmaker_total=None):
         + (away_5["points_for"] * 0.20)
     )
 
-    projected_total = projected_home_points + projected_away_points
+    raw_projected_total = (
+        projected_home_points + projected_away_points
+    )
+
+    pace_data = calculate_pace_adjustment(
+        home_pace_score=home_10["pace_score"],
+        away_pace_score=away_10["pace_score"]
+    )
+
+    projected_total = (
+        raw_projected_total
+        + pace_data["pace_adjustment"]
+    )
 
     confidence_note = "No betting line entered."
-
     recommendation = "No Bet"
     edge = None
 
@@ -149,17 +183,31 @@ def predict_game_total(home_team, away_team, bookmaker_total=None):
         "status": "success",
         "home_team": home_team,
         "away_team": away_team,
+
         "projected_home_points": round(projected_home_points, 1),
         "projected_away_points": round(projected_away_points, 1),
+
+        "raw_projected_total": round(raw_projected_total, 1),
+        "pace_adjustment": pace_data["pace_adjustment"],
+        "combined_pace_score": pace_data["combined_pace_score"],
+        "pace_gap": pace_data["pace_gap"],
+
         "projected_total": round(projected_total, 1),
         "bookmaker_total": bookmaker_total,
         "edge": round(edge, 1) if edge is not None else None,
+
         "recommendation": recommendation,
         "confidence_note": confidence_note,
+
         "home_last_5_ppg": round(home_5["points_for"], 1),
         "away_last_5_ppg": round(away_5["points_for"], 1),
+
         "home_last_10_ppg": round(home_10["points_for"], 1),
         "away_last_10_ppg": round(away_10["points_for"], 1),
+
         "home_points_allowed_last_10": round(home_10["points_allowed"], 1),
         "away_points_allowed_last_10": round(away_10["points_allowed"], 1),
+
+        "home_pace_score_last_10": round(home_10["pace_score"], 1),
+        "away_pace_score_last_10": round(away_10["pace_score"], 1),
     }
