@@ -20,12 +20,13 @@ def safe_mean(values, default=114):
 
 def load_history():
     possible_files = [
+        "data/historical_nba_scores.csv",
+        "historical_nba_scores.csv",
         "historical_games.csv",
-        "historical_training_data.csv",
         "data/historical_games.csv",
+        "historical_training_data.csv",
         "data/historical_training_data.csv",
     ]
-
     for file in possible_files:
         if os.path.isfile(file):
             try:
