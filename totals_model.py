@@ -1,5 +1,6 @@
 # totals_model.py
 
+import os
 import pandas as pd
 
 
@@ -17,10 +18,47 @@ def safe_mean(values, default=114):
         return default
 
 
+def load_history():
+    possible_files = [
+        "historical_games.csv",
+        "historical_training_data.csv",
+        "data/historical_games.csv",
+        "data/historical_training_data.csv",
+    ]
+
+    for file in possible_files:
+        if os.path.isfile(file):
+            try:
+                return pd.read_csv(file)
+            except Exception:
+                continue
+
+    return pd.DataFrame()
+
+
 def get_team_recent_stats(history_df, team_name):
+    if history_df is None or history_df.empty:
+        return {
+            "last_5_scored": NBA_AVG_TEAM_POINTS,
+            "last_10_scored": NBA_AVG_TEAM_POINTS,
+            "last_10_allowed": NBA_AVG_TEAM_POINTS,
+            "pace_score": PACE_BASELINE,
+        }
+
+    required_cols = ["home_team", "away_team", "home_score", "away_score"]
+
+    for col in required_cols:
+        if col not in history_df.columns:
+            return {
+                "last_5_scored": NBA_AVG_TEAM_POINTS,
+                "last_10_scored": NBA_AVG_TEAM_POINTS,
+                "last_10_allowed": NBA_AVG_TEAM_POINTS,
+                "pace_score": PACE_BASELINE,
+            }
+
     team_games = history_df[
-        (history_df["home_team"] == team_name) |
-        (history_df["away_team"] == team_name)
+        (history_df["home_team"].astype(str).str.lower() == team_name.lower()) |
+        (history_df["away_team"].astype(str).str.lower() == team_name.lower())
     ].copy()
 
     if team_games.empty:
@@ -28,7 +66,7 @@ def get_team_recent_stats(history_df, team_name):
             "last_5_scored": NBA_AVG_TEAM_POINTS,
             "last_10_scored": NBA_AVG_TEAM_POINTS,
             "last_10_allowed": NBA_AVG_TEAM_POINTS,
-            "pace_score": NBA_AVG_TEAM_POINTS,
+            "pace_score": PACE_BASELINE,
         }
 
     team_games = team_games.tail(10)
@@ -37,7 +75,7 @@ def get_team_recent_stats(history_df, team_name):
     allowed = []
 
     for _, row in team_games.iterrows():
-        if row["home_team"] == team_name:
+        if str(row["home_team"]).lower() == team_name.lower():
             scored.append(row["home_score"])
             allowed.append(row["away_score"])
         else:
@@ -58,7 +96,9 @@ def get_team_recent_stats(history_df, team_name):
     }
 
 
-def predict_totals(home_team, away_team, sportsbook_total_line, history_df):
+def predict_game_total(home_team, away_team, bookmaker_total):
+    history_df = load_history()
+
     home_stats = get_team_recent_stats(history_df, home_team)
     away_stats = get_team_recent_stats(history_df, away_team)
 
@@ -76,68 +116,54 @@ def predict_totals(home_team, away_team, sportsbook_total_line, history_df):
 
     raw_projected_total = projected_home_points + projected_away_points
 
-    # -----------------------------
-    # PACE ADJUSTMENT
-    # -----------------------------
-
     home_pace_score = home_stats["pace_score"]
     away_pace_score = away_stats["pace_score"]
 
     combined_pace_score = (home_pace_score + away_pace_score) / 2
     pace_gap = combined_pace_score - PACE_BASELINE
-
     pace_adjustment = pace_gap * 0.20
-
-    # -----------------------------
-    # OFFENSIVE RATING ADJUSTMENT
-    # -----------------------------
 
     home_offensive_rating = home_stats["last_10_scored"]
     away_offensive_rating = away_stats["last_10_scored"]
 
-    home_off_edge = home_offensive_rating - NBA_AVG_TEAM_POINTS
-    away_off_edge = away_offensive_rating - NBA_AVG_TEAM_POINTS
-
-    offensive_adjustment = (home_off_edge + away_off_edge) * 0.25
-
-    # -----------------------------
-    # FINAL TOTAL
-    # -----------------------------
+    offensive_adjustment = (
+        (home_offensive_rating - NBA_AVG_TEAM_POINTS) +
+        (away_offensive_rating - NBA_AVG_TEAM_POINTS)
+    ) * 0.25
 
     projected_total = raw_projected_total + pace_adjustment + offensive_adjustment
 
-    edge = projected_total - sportsbook_total_line
+    edge = projected_total - bookmaker_total
 
     if edge >= 5:
         recommendation = "Strong Over"
+        confidence_note = "Strong Over edge"
     elif edge >= 2.5:
-        recommendation = "Lean Over — Small Over edge"
+        recommendation = "Lean Over"
+        confidence_note = "Small Over edge"
     elif edge <= -5:
         recommendation = "Strong Under"
+        confidence_note = "Strong Under edge"
     elif edge <= -2.5:
-        recommendation = "Lean Under — Small Under edge"
+        recommendation = "Lean Under"
+        confidence_note = "Small Under edge"
     else:
-        recommendation = "No Bet — Edge too small"
+        recommendation = "No Bet"
+        confidence_note = "Edge too small"
 
     return {
         "home_team": home_team,
         "away_team": away_team,
 
         "projected_total": round(projected_total, 2),
-        "raw_projected_total": round(raw_projected_total, 2),
-        "bookmaker_line": round(float(sportsbook_total_line), 2),
+        "bookmaker_total": round(float(bookmaker_total), 2),
         "edge": round(edge, 2),
         "recommendation": recommendation,
+        "confidence_note": confidence_note,
 
+        "raw_projected_total": round(raw_projected_total, 2),
         "projected_home_points": round(projected_home_points, 2),
         "projected_away_points": round(projected_away_points, 2),
-
-        "home_last_5_scored": round(home_stats["last_5_scored"], 2),
-        "away_last_5_scored": round(away_stats["last_5_scored"], 2),
-        "home_last_10_scored": round(home_stats["last_10_scored"], 2),
-        "away_last_10_scored": round(away_stats["last_10_scored"], 2),
-        "home_last_10_allowed": round(home_stats["last_10_allowed"], 2),
-        "away_last_10_allowed": round(away_stats["last_10_allowed"], 2),
 
         "home_pace_score": round(home_pace_score, 2),
         "away_pace_score": round(away_pace_score, 2),
@@ -149,3 +175,12 @@ def predict_totals(home_team, away_team, sportsbook_total_line, history_df):
         "away_offensive_rating": round(away_offensive_rating, 2),
         "offensive_adjustment": round(offensive_adjustment, 2),
     }
+
+
+# Backward compatibility
+def predict_totals(home_team, away_team, sportsbook_total_line, history_df=None):
+    return predict_game_total(
+        home_team=home_team,
+        away_team=away_team,
+        bookmaker_total=sportsbook_total_line
+    )
