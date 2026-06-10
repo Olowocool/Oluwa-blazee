@@ -1186,6 +1186,25 @@ if data and "games" in data and len(data["games"]) > 0:
                 f"Recommendation: {totals_result['recommendation']} — "
                 f"{totals_result['confidence_note']}"
             )
+            pace_col1, pace_col2, pace_col3 = st.columns(3)
+
+            with pace_col1:
+                st.metric(
+                    "Raw Total Before Pace",
+                    totals_result["raw_projected_total"]
+                )
+            
+            with pace_col2:
+                st.metric(
+                    "Pace Adjustment",
+                    totals_result["pace_adjustment"]
+                )
+            
+            with pace_col3:
+                st.metric(
+                    "Combined Pace Score",
+                    totals_result["combined_pace_score"]
+                )
             if st.button(
                 f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
             ):
