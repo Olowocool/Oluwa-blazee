@@ -1206,6 +1206,25 @@ if data and "games" in data and len(data["games"]) > 0:
                     totals_result["combined_pace_score"]
                 )
             off_col1, off_col2, off_col3 = st.columns(3)
+            def_col1, def_col2, def_col3 = st.columns(3)
+            
+            with def_col1:
+                st.metric(
+                    "Home Defensive Rating",
+                    totals_result["home_defensive_rating"]
+                )
+            
+            with def_col2:
+                st.metric(
+                    "Away Defensive Rating",
+                    totals_result["away_defensive_rating"]
+                )
+            
+            with def_col3:
+                st.metric(
+                    "Defensive Adjustment",
+                    totals_result["defensive_adjustment"]
+                )
 
             with off_col1:
                 st.metric(
