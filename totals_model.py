@@ -220,6 +220,7 @@ def predict_game_total(home_team, away_team, bookmaker_total):
 
         "projected_total": round(projected_total, 2),
         "bookmaker_total": round(float(bookmaker_total), 2),
+        "history_rows": history_rows,
         "edge": round(edge, 2),
         "recommendation": recommendation,
         "confidence_note": confidence_note,
