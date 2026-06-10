@@ -1191,7 +1191,7 @@ if data and "games" in data and len(data["games"]) > 0:
             ):
             
                 save_totals_pick(
-                    game_date=selected_date,
+                    game_date=active_date,
                     home_team=game["home_team"],
                     away_team=game["away_team"],
                     projected_total=totals_result["projected_total"],
