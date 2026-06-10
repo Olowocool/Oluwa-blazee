@@ -1209,7 +1209,9 @@ if data and "games" in data and len(data["games"]) > 0:
                 "History Rows Loaded",
                 totals_result["history_rows"]
             )
-            
+            st.text(
+                totals_result["history_columns"]
+            )
             off_col1, off_col2, off_col3 = st.columns(3)
             def_col1, def_col2, def_col3 = st.columns(3)
             
