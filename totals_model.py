@@ -108,16 +108,18 @@ def get_team_recent_stats(history_df, team_name):
 
 def predict_game_total(home_team, away_team, bookmaker_total):
     history_df = load_history()
+
     history_rows = len(history_df)
 
     print("================================")
     print("TOTALS MODEL DEBUG")
     print("History Rows:", history_rows)
-    
+
     if history_rows > 0:
         print(history_df.head())
     else:
         print("NO HISTORY DATA FOUND")
+
     print("================================")
 
     home_stats = get_team_recent_stats(history_df, home_team)
@@ -137,20 +139,12 @@ def predict_game_total(home_team, away_team, bookmaker_total):
 
     raw_projected_total = projected_home_points + projected_away_points
 
-    # -----------------------------
-    # PACE ADJUSTMENT
-    # -----------------------------
-
     home_pace_score = home_stats["pace_score"]
     away_pace_score = away_stats["pace_score"]
 
     combined_pace_score = (home_pace_score + away_pace_score) / 2
     pace_gap = combined_pace_score - PACE_BASELINE
     pace_adjustment = pace_gap * 0.20
-
-    # -----------------------------
-    # OFFENSIVE RATING ADJUSTMENT
-    # -----------------------------
 
     home_offensive_rating = home_stats["last_10_scored"]
     away_offensive_rating = away_stats["last_10_scored"]
@@ -160,10 +154,6 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         (away_offensive_rating - NBA_AVG_TEAM_POINTS)
     ) * 0.25
 
-    # -----------------------------
-    # DEFENSIVE RATING ADJUSTMENT
-    # -----------------------------
-
     home_defensive_rating = home_stats["last_10_allowed"]
     away_defensive_rating = away_stats["last_10_allowed"]
 
@@ -172,10 +162,6 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         (away_defensive_rating - NBA_AVG_TEAM_POINTS)
     ) * 0.25
 
-    # -----------------------------
-    # HOME / AWAY SPLIT ADJUSTMENT
-    # -----------------------------
-
     home_split_advantage = home_stats["home_split"] - NBA_AVG_TEAM_POINTS
     away_split_advantage = away_stats["away_split"] - NBA_AVG_TEAM_POINTS
 
@@ -183,10 +169,6 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         home_split_advantage +
         away_split_advantage
     ) * 0.20
-
-    # -----------------------------
-    # FINAL PROJECTED TOTAL
-    # -----------------------------
 
     projected_total = (
         raw_projected_total
@@ -215,12 +197,13 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         confidence_note = "Edge too small"
 
     return {
+        "history_rows": history_rows,
+
         "home_team": home_team,
         "away_team": away_team,
 
         "projected_total": round(projected_total, 2),
         "bookmaker_total": round(float(bookmaker_total), 2),
-        "history_rows": history_rows,
         "edge": round(edge, 2),
         "recommendation": recommendation,
         "confidence_note": confidence_note,
@@ -256,7 +239,6 @@ def predict_game_total(home_team, away_team, bookmaker_total):
     }
 
 
-# Backward compatibility
 def predict_totals(home_team, away_team, sportsbook_total_line, history_df=None):
     return predict_game_total(
         home_team=home_team,
