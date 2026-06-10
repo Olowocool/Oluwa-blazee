@@ -1,217 +1,151 @@
-import os
+# totals_model.py
+
 import pandas as pd
 
 
-DATA_PATH = "outputs/training_dataset.parquet"
-LEAGUE_AVG_TOTAL = 224
-LEAGUE_AVG_TEAM_POINTS = 112
+NBA_AVG_TEAM_POINTS = 114
+PACE_BASELINE = 228
 
 
-def safe_float(value, default=0):
+def safe_mean(values, default=114):
     try:
-        if pd.isna(value):
+        values = pd.Series(values).dropna()
+        if len(values) == 0:
             return default
-        return float(value)
+        return float(values.mean())
     except Exception:
         return default
 
 
-def load_history():
-    if not os.path.exists(DATA_PATH):
-        return None
-
-    try:
-        return pd.read_parquet(DATA_PATH)
-    except Exception:
-        return None
-
-
-def team_recent_points(team_name, history, last_n=10):
-    if history is None or history.empty:
-        return {
-            "points_for": 112,
-            "points_allowed": 112,
-            "pace_score": 224
-        }
-
-    games = history[
-        (history["home_team_name"] == team_name)
-        |
-        (history["away_team_name"] == team_name)
+def get_team_recent_stats(history_df, team_name):
+    team_games = history_df[
+        (history_df["home_team"] == team_name) |
+        (history_df["away_team"] == team_name)
     ].copy()
 
-    if games.empty:
+    if team_games.empty:
         return {
-            "points_for": 112,
-            "points_allowed": 112,
-            "pace_score": 224
+            "last_5_scored": NBA_AVG_TEAM_POINTS,
+            "last_10_scored": NBA_AVG_TEAM_POINTS,
+            "last_10_allowed": NBA_AVG_TEAM_POINTS,
+            "pace_score": NBA_AVG_TEAM_POINTS,
         }
 
-    games["date"] = pd.to_datetime(
-        games["date"],
-        errors="coerce"
-    )
-
-    games = games.sort_values("date").tail(last_n)
+    team_games = team_games.tail(10)
 
     scored = []
     allowed = []
-    totals = []
 
-    for _, row in games.iterrows():
-        home_team = row.get("home_team_name")
-        away_team = row.get("away_team_name")
+    for _, row in team_games.iterrows():
+        if row["home_team"] == team_name:
+            scored.append(row["home_score"])
+            allowed.append(row["away_score"])
+        else:
+            scored.append(row["away_score"])
+            allowed.append(row["home_score"])
 
-        home_score = safe_float(
-            row.get("home_team_score", row.get("home_points", 0))
-        )
+    last_5_scored = safe_mean(scored[-5:], NBA_AVG_TEAM_POINTS)
+    last_10_scored = safe_mean(scored, NBA_AVG_TEAM_POINTS)
+    last_10_allowed = safe_mean(allowed, NBA_AVG_TEAM_POINTS)
 
-        away_score = safe_float(
-            row.get("away_team_score", row.get("away_points", 0))
-        )
-
-        if home_score <= 0 or away_score <= 0:
-            continue
-
-        game_total = home_score + away_score
-
-        if home_team == team_name:
-            scored.append(home_score)
-            allowed.append(away_score)
-            totals.append(game_total)
-
-        elif away_team == team_name:
-            scored.append(away_score)
-            allowed.append(home_score)
-            totals.append(game_total)
-
-    if not scored:
-        return {
-            "points_for": 112,
-            "points_allowed": 112,
-            "pace_score": 224
-        }
+    pace_score = last_10_scored + last_10_allowed
 
     return {
-        "points_for": sum(scored) / len(scored),
-        "points_allowed": sum(allowed) / len(allowed),
-        "pace_score": sum(totals) / len(totals)
+        "last_5_scored": last_5_scored,
+        "last_10_scored": last_10_scored,
+        "last_10_allowed": last_10_allowed,
+        "pace_score": pace_score,
     }
 
 
-def calculate_pace_adjustment(home_pace_score, away_pace_score):
-    combined_pace = (
-        home_pace_score + away_pace_score
-    ) / 2
-
-    pace_gap = combined_pace - LEAGUE_AVG_TOTAL
-
-    pace_adjustment = pace_gap * 0.35
-
-    return {
-        "combined_pace_score": round(combined_pace, 1),
-        "pace_gap": round(pace_gap, 1),
-        "pace_adjustment": round(pace_adjustment, 1)
-    }
-
-
-def predict_game_total(home_team, away_team, bookmaker_total=None):
-    history = load_history()
-
-    home_5 = team_recent_points(home_team, history, last_n=5)
-    away_5 = team_recent_points(away_team, history, last_n=5)
-
-    home_10 = team_recent_points(home_team, history, last_n=10)
-    away_10 = team_recent_points(away_team, history, last_n=10)
+def predict_totals(home_team, away_team, sportsbook_total_line, history_df):
+    home_stats = get_team_recent_stats(history_df, home_team)
+    away_stats = get_team_recent_stats(history_df, away_team)
 
     projected_home_points = (
-        (home_10["points_for"] * 0.45)
-        + (away_10["points_allowed"] * 0.35)
-        + (home_5["points_for"] * 0.20)
+        home_stats["last_5_scored"] * 0.35 +
+        home_stats["last_10_scored"] * 0.35 +
+        away_stats["last_10_allowed"] * 0.30
     )
 
     projected_away_points = (
-        (away_10["points_for"] * 0.45)
-        + (home_10["points_allowed"] * 0.35)
-        + (away_5["points_for"] * 0.20)
+        away_stats["last_5_scored"] * 0.35 +
+        away_stats["last_10_scored"] * 0.35 +
+        home_stats["last_10_allowed"] * 0.30
     )
 
-    raw_projected_total = (
-        projected_home_points + projected_away_points
-    )
+    raw_projected_total = projected_home_points + projected_away_points
 
-    pace_data = calculate_pace_adjustment(
-        home_pace_score=home_10["pace_score"],
-        away_pace_score=away_10["pace_score"]
-    )
+    # -----------------------------
+    # PACE ADJUSTMENT
+    # -----------------------------
 
-    projected_total = (
-        raw_projected_total
-        + pace_data["pace_adjustment"]
-    )
+    home_pace_score = home_stats["pace_score"]
+    away_pace_score = away_stats["pace_score"]
 
-    confidence_note = "No betting line entered."
-    recommendation = "No Bet"
-    edge = None
+    combined_pace_score = (home_pace_score + away_pace_score) / 2
+    pace_gap = combined_pace_score - PACE_BASELINE
 
-    if bookmaker_total is not None:
-        bookmaker_total = safe_float(bookmaker_total)
+    pace_adjustment = pace_gap * 0.20
 
-        edge = projected_total - bookmaker_total
+    # -----------------------------
+    # OFFENSIVE RATING ADJUSTMENT
+    # -----------------------------
 
-        if edge >= 6:
-            recommendation = "Over"
-            confidence_note = "Strong Over edge"
+    home_offensive_rating = home_stats["last_10_scored"]
+    away_offensive_rating = away_stats["last_10_scored"]
 
-        elif edge >= 3:
-            recommendation = "Lean Over"
-            confidence_note = "Small Over edge"
+    home_off_edge = home_offensive_rating - NBA_AVG_TEAM_POINTS
+    away_off_edge = away_offensive_rating - NBA_AVG_TEAM_POINTS
 
-        elif edge <= -6:
-            recommendation = "Under"
-            confidence_note = "Strong Under edge"
+    offensive_adjustment = (home_off_edge + away_off_edge) * 0.25
 
-        elif edge <= -3:
-            recommendation = "Lean Under"
-            confidence_note = "Small Under edge"
+    # -----------------------------
+    # FINAL TOTAL
+    # -----------------------------
 
-        else:
-            recommendation = "No Bet"
-            confidence_note = "Line is too close to projection"
+    projected_total = raw_projected_total + pace_adjustment + offensive_adjustment
+
+    edge = projected_total - sportsbook_total_line
+
+    if edge >= 5:
+        recommendation = "Strong Over"
+    elif edge >= 2.5:
+        recommendation = "Lean Over — Small Over edge"
+    elif edge <= -5:
+        recommendation = "Strong Under"
+    elif edge <= -2.5:
+        recommendation = "Lean Under — Small Under edge"
+    else:
+        recommendation = "No Bet — Edge too small"
 
     return {
-        "status": "success",
         "home_team": home_team,
         "away_team": away_team,
 
-        "projected_home_points": round(projected_home_points, 1),
-        "projected_away_points": round(projected_away_points, 1),
-
-        "raw_projected_total": round(raw_projected_total, 1),
-        "pace_adjustment": pace_data["pace_adjustment"],
-        "combined_pace_score": pace_data["combined_pace_score"],
-        "pace_gap": pace_data["pace_gap"],
-
-        "projected_total": round(projected_total, 1),
+        "projected_total": round(projected_total, 2),
         "raw_projected_total": round(raw_projected_total, 2),
-        "pace_adjustment": round(pace_adjustment, 2),
+        "bookmaker_line": round(float(sportsbook_total_line), 2),
+        "edge": round(edge, 2),
+        "recommendation": recommendation,
+
+        "projected_home_points": round(projected_home_points, 2),
+        "projected_away_points": round(projected_away_points, 2),
+
+        "home_last_5_scored": round(home_stats["last_5_scored"], 2),
+        "away_last_5_scored": round(away_stats["last_5_scored"], 2),
+        "home_last_10_scored": round(home_stats["last_10_scored"], 2),
+        "away_last_10_scored": round(away_stats["last_10_scored"], 2),
+        "home_last_10_allowed": round(home_stats["last_10_allowed"], 2),
+        "away_last_10_allowed": round(away_stats["last_10_allowed"], 2),
+
+        "home_pace_score": round(home_pace_score, 2),
+        "away_pace_score": round(away_pace_score, 2),
         "combined_pace_score": round(combined_pace_score, 2),
         "pace_gap": round(pace_gap, 2),
-        "bookmaker_total": bookmaker_total,
-        "edge": round(edge, 1) if edge is not None else None,
+        "pace_adjustment": round(pace_adjustment, 2),
 
-        "recommendation": recommendation,
-        "confidence_note": confidence_note,
-
-        "home_last_5_ppg": round(home_5["points_for"], 1),
-        "away_last_5_ppg": round(away_5["points_for"], 1),
-
-        "home_last_10_ppg": round(home_10["points_for"], 1),
-        "away_last_10_ppg": round(away_10["points_for"], 1),
-
-        "home_points_allowed_last_10": round(home_10["points_allowed"], 1),
-        "away_points_allowed_last_10": round(away_10["points_allowed"], 1),
-
-        "home_pace_score_last_10": round(home_10["pace_score"], 1),
-        "away_pace_score_last_10": round(away_10["pace_score"], 1),
+        "home_offensive_rating": round(home_offensive_rating, 2),
+        "away_offensive_rating": round(away_offensive_rating, 2),
+        "offensive_adjustment": round(offensive_adjustment, 2),
     }
