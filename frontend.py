@@ -3,6 +3,10 @@ import requests
 import csv
 import os
 import pandas as pd
+from totals_tracker import (
+    save_totals_pick,
+    load_totals_history
+)
 from datetime import date, datetime
 from totals_model import predict_game_total
 from retrain_model import retrain_pipeline
@@ -1182,7 +1186,20 @@ if data and "games" in data and len(data["games"]) > 0:
                 f"Recommendation: {totals_result['recommendation']} — "
                 f"{totals_result['confidence_note']}"
             )
+            if st.button(
+                f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
+            ):
             
+                save_totals_pick(
+                    game_date=selected_date,
+                    home_team=game["home_team"],
+                    away_team=game["away_team"],
+                    projected_total=totals_result["projected_total"],
+                    sportsbook_total=totals_result["bookmaker_total"],
+                    recommendation=totals_result["recommendation"]
+                )
+            
+                st.success("Totals pick saved.")
             with st.expander("Totals Model Details"):
                 st.json(totals_result)
             st.subheader("Betting Analytics")
@@ -2301,4 +2318,20 @@ if model_versions:
             st.error(
                 rollback_result["message"]
             )
+            st.header("Totals Model Performance")
+
+            totals_df = load_totals_history()
+            
+            if not totals_df.empty:
+            
+                st.dataframe(
+                    totals_df.tail(50),
+                    use_container_width=True
+                )
+            
+            else:
+            
+                st.info(
+                    "No totals picks tracked yet."
+                )
 
