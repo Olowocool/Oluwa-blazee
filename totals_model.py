@@ -27,24 +27,40 @@ def load_history():
         "historical_training_data.csv",
         "data/historical_training_data.csv",
     ]
+
+    required_score_cols = [
+        "home_team",
+        "away_team",
+        "home_score",
+        "away_score",
+    ]
+
     for file in possible_files:
         if os.path.isfile(file):
             try:
                 df = pd.read_csv(file)
 
                 print("================================")
-                print("FOUND HISTORY FILE:", file)
+                print("CHECKING HISTORY FILE:", file)
                 print("ROWS:", len(df))
                 print("COLUMNS:", list(df.columns))
                 print("================================")
 
-                return df
+                has_score_columns = all(
+                    col in df.columns for col in required_score_cols
+                )
+
+                if has_score_columns:
+                    print("USING SCORE HISTORY FILE:", file)
+                    return df
+
+                print("SKIPPED FILE — missing score columns:", file)
 
             except Exception as e:
                 print("FAILED TO LOAD:", file)
                 print(e)
 
-    print("NO HISTORY FILE FOUND")
+    print("NO VALID SCORE HISTORY FILE FOUND")
     return pd.DataFrame()
 
 
