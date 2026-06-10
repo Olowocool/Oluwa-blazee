@@ -36,25 +36,29 @@ def load_history():
     return pd.DataFrame()
 
 
+def default_team_stats():
+    return {
+        "last_5_scored": NBA_AVG_TEAM_POINTS,
+        "last_10_scored": NBA_AVG_TEAM_POINTS,
+        "last_10_allowed": NBA_AVG_TEAM_POINTS,
+        "pace_score": PACE_BASELINE,
+    }
+
+
 def get_team_recent_stats(history_df, team_name):
     if history_df is None or history_df.empty:
-        return {
-            "last_5_scored": NBA_AVG_TEAM_POINTS,
-            "last_10_scored": NBA_AVG_TEAM_POINTS,
-            "last_10_allowed": NBA_AVG_TEAM_POINTS,
-            "pace_score": PACE_BASELINE,
-        }
+        return default_team_stats()
 
-    required_cols = ["home_team", "away_team", "home_score", "away_score"]
+    required_cols = [
+        "home_team",
+        "away_team",
+        "home_score",
+        "away_score",
+    ]
 
     for col in required_cols:
         if col not in history_df.columns:
-            return {
-                "last_5_scored": NBA_AVG_TEAM_POINTS,
-                "last_10_scored": NBA_AVG_TEAM_POINTS,
-                "last_10_allowed": NBA_AVG_TEAM_POINTS,
-                "pace_score": PACE_BASELINE,
-            }
+            return default_team_stats()
 
     team_games = history_df[
         (history_df["home_team"].astype(str).str.lower() == team_name.lower()) |
@@ -62,15 +66,7 @@ def get_team_recent_stats(history_df, team_name):
     ].copy()
 
     if team_games.empty:
-        return {
-            "last_5_scored": NBA_AVG_TEAM_POINTS,
-            "last_10_scored": NBA_AVG_TEAM_POINTS,
-            "last_10_allowed": NBA_AVG_TEAM_POINTS,
-            "pace_score": PACE_BASELINE,
-            "home_defensive_rating": round(home_defensive_rating, 2),
-            "away_defensive_rating": round(away_defensive_rating, 2),
-            "defensive_adjustment": round(defensive_adjustment, 2),
-        }
+        return default_team_stats()
 
     team_games = team_games.tail(10)
 
@@ -119,12 +115,20 @@ def predict_game_total(home_team, away_team, bookmaker_total):
 
     raw_projected_total = projected_home_points + projected_away_points
 
+    # -----------------------------
+    # PACE ADJUSTMENT
+    # -----------------------------
+
     home_pace_score = home_stats["pace_score"]
     away_pace_score = away_stats["pace_score"]
 
     combined_pace_score = (home_pace_score + away_pace_score) / 2
     pace_gap = combined_pace_score - PACE_BASELINE
     pace_adjustment = pace_gap * 0.20
+
+    # -----------------------------
+    # OFFENSIVE RATING ADJUSTMENT
+    # -----------------------------
 
     home_offensive_rating = home_stats["last_10_scored"]
     away_offensive_rating = away_stats["last_10_scored"]
@@ -133,17 +137,22 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         (home_offensive_rating - NBA_AVG_TEAM_POINTS) +
         (away_offensive_rating - NBA_AVG_TEAM_POINTS)
     ) * 0.25
+
     # -----------------------------
     # DEFENSIVE RATING ADJUSTMENT
     # -----------------------------
-    
+
     home_defensive_rating = home_stats["last_10_allowed"]
     away_defensive_rating = away_stats["last_10_allowed"]
-    
-    home_def_edge = home_defensive_rating - NBA_AVG_TEAM_POINTS
-    away_def_edge = away_defensive_rating - NBA_AVG_TEAM_POINTS
-    
-    defensive_adjustment = (home_def_edge + away_def_edge) * 0.25
+
+    defensive_adjustment = (
+        (home_defensive_rating - NBA_AVG_TEAM_POINTS) +
+        (away_defensive_rating - NBA_AVG_TEAM_POINTS)
+    ) * 0.25
+
+    # -----------------------------
+    # FINAL PROJECTED TOTAL
+    # -----------------------------
 
     projected_total = (
         raw_projected_total
@@ -152,7 +161,7 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         + defensive_adjustment
     )
 
-    edge = projected_total - bookmaker_total
+    edge = projected_total - float(bookmaker_total)
 
     if edge >= 5:
         recommendation = "Strong Over"
@@ -184,6 +193,13 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         "projected_home_points": round(projected_home_points, 2),
         "projected_away_points": round(projected_away_points, 2),
 
+        "home_last_5_scored": round(home_stats["last_5_scored"], 2),
+        "away_last_5_scored": round(away_stats["last_5_scored"], 2),
+        "home_last_10_scored": round(home_stats["last_10_scored"], 2),
+        "away_last_10_scored": round(away_stats["last_10_scored"], 2),
+        "home_last_10_allowed": round(home_stats["last_10_allowed"], 2),
+        "away_last_10_allowed": round(away_stats["last_10_allowed"], 2),
+
         "home_pace_score": round(home_pace_score, 2),
         "away_pace_score": round(away_pace_score, 2),
         "combined_pace_score": round(combined_pace_score, 2),
@@ -193,6 +209,10 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         "home_offensive_rating": round(home_offensive_rating, 2),
         "away_offensive_rating": round(away_offensive_rating, 2),
         "offensive_adjustment": round(offensive_adjustment, 2),
+
+        "home_defensive_rating": round(home_defensive_rating, 2),
+        "away_defensive_rating": round(away_defensive_rating, 2),
+        "defensive_adjustment": round(defensive_adjustment, 2),
     }
 
 
