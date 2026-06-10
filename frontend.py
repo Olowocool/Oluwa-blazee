@@ -1205,6 +1205,25 @@ if data and "games" in data and len(data["games"]) > 0:
                     "Combined Pace Score",
                     totals_result["combined_pace_score"]
                 )
+            off_col1, off_col2, off_col3 = st.columns(3)
+
+            with off_col1:
+                st.metric(
+                    "Home Offensive Rating",
+                    totals_result["home_offensive_rating"]
+                )
+            
+            with off_col2:
+                st.metric(
+                    "Away Offensive Rating",
+                    totals_result["away_offensive_rating"]
+                )
+            
+            with off_col3:
+                st.metric(
+                    "Offensive Adjustment",
+                    totals_result["offensive_adjustment"]
+                )
             if st.button(
                 f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
             ):
