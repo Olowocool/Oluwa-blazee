@@ -67,6 +67,9 @@ def get_team_recent_stats(history_df, team_name):
             "last_10_scored": NBA_AVG_TEAM_POINTS,
             "last_10_allowed": NBA_AVG_TEAM_POINTS,
             "pace_score": PACE_BASELINE,
+            "home_defensive_rating": round(home_defensive_rating, 2),
+            "away_defensive_rating": round(away_defensive_rating, 2),
+            "defensive_adjustment": round(defensive_adjustment, 2),
         }
 
     team_games = team_games.tail(10)
@@ -130,8 +133,24 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         (home_offensive_rating - NBA_AVG_TEAM_POINTS) +
         (away_offensive_rating - NBA_AVG_TEAM_POINTS)
     ) * 0.25
+    # -----------------------------
+    # DEFENSIVE RATING ADJUSTMENT
+    # -----------------------------
+    
+    home_defensive_rating = home_stats["last_10_allowed"]
+    away_defensive_rating = away_stats["last_10_allowed"]
+    
+    home_def_edge = home_defensive_rating - NBA_AVG_TEAM_POINTS
+    away_def_edge = away_defensive_rating - NBA_AVG_TEAM_POINTS
+    
+    defensive_adjustment = (home_def_edge + away_def_edge) * 0.25
 
-    projected_total = raw_projected_total + pace_adjustment + offensive_adjustment
+    projected_total = (
+        raw_projected_total
+        + pace_adjustment
+        + offensive_adjustment
+        + defensive_adjustment
+    )
 
     edge = projected_total - bookmaker_total
 
