@@ -108,6 +108,17 @@ def get_team_recent_stats(history_df, team_name):
 
 def predict_game_total(home_team, away_team, bookmaker_total):
     history_df = load_history()
+    history_rows = len(history_df)
+
+    print("================================")
+    print("TOTALS MODEL DEBUG")
+    print("History Rows:", history_rows)
+    
+    if history_rows > 0:
+        print(history_df.head())
+    else:
+        print("NO HISTORY DATA FOUND")
+    print("================================")
 
     home_stats = get_team_recent_stats(history_df, home_team)
     away_stats = get_team_recent_stats(history_df, away_team)
