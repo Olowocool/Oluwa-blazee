@@ -1,95 +1,90 @@
+# historical_backfill_engine.py
+
 import os
 import random
+from datetime import datetime, timedelta
+
 import pandas as pd
-from datetime import datetime
-
-
-OUTPUT_FILE = "bet_history.csv"
-STAKE = 100
 
 
 NBA_TEAMS = [
+    "Atlanta Hawks",
     "Boston Celtics",
-    "Denver Nuggets",
-    "Oklahoma City Thunder",
-    "Minnesota Timberwolves",
+    "Brooklyn Nets",
+    "Charlotte Hornets",
+    "Chicago Bulls",
     "Cleveland Cavaliers",
-    "San Antonio Spurs",
-    "Detroit Pistons",
-    "New York Knicks",
-    "Los Angeles Lakers",
-    "Golden State Warriors",
-    "Milwaukee Bucks",
     "Dallas Mavericks",
+    "Denver Nuggets",
+    "Detroit Pistons",
+    "Golden State Warriors",
+    "Houston Rockets",
+    "Indiana Pacers",
+    "Los Angeles Clippers",
+    "Los Angeles Lakers",
+    "Memphis Grizzlies",
+    "Miami Heat",
+    "Milwaukee Bucks",
+    "Minnesota Timberwolves",
+    "New Orleans Pelicans",
+    "New York Knicks",
+    "Oklahoma City Thunder",
+    "Orlando Magic",
+    "Philadelphia 76ers",
+    "Phoenix Suns",
+    "Portland Trail Blazers",
+    "Sacramento Kings",
+    "San Antonio Spurs",
+    "Toronto Raptors",
+    "Utah Jazz",
+    "Washington Wizards",
 ]
 
 
-def calculate_profit_loss(result, odds, stake=STAKE):
-    if result == "Win":
-        return (float(odds) - 1) * stake
-
-    if result == "Loss":
-        return -stake
-
-    return 0
-
-
 def generate_historical_backfill(rows=500):
-    generated_rows = []
+    try:
+        os.makedirs("data", exist_ok=True)
 
-    for i in range(rows):
-        home_team = random.choice(NBA_TEAMS)
-        away_team = random.choice([team for team in NBA_TEAMS if team != home_team])
+        rows = int(rows)
 
-        selected_team = random.choice([home_team, away_team])
+        if rows < 100:
+            rows = 100
 
-        odds = round(random.uniform(1.55, 2.80), 2)
-        model_probability = round(random.uniform(0.42, 0.68), 4)
+        generated_rows = []
+        start_date = datetime(2023, 10, 20)
 
-        implied_probability = 1 / odds
-        expected_value = round(
-            (model_probability * (odds - 1)) - (1 - model_probability),
-            4
-        )
+        for i in range(rows):
+            game_date = start_date + timedelta(days=i % 500)
 
-        kelly = round(
-            max(((odds - 1) * model_probability - (1 - model_probability)) / (odds - 1), 0),
-            4
-        )
+            home_team, away_team = random.sample(NBA_TEAMS, 2)
 
-        result = "Win" if random.random() < model_probability else "Loss"
+            home_score = random.randint(98, 132)
+            away_score = random.randint(95, 130)
 
-        generated_rows.append({
-            "timestamp": datetime.now().isoformat(),
-            "game_date": f"2024-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}",
-            "home_team": home_team,
-            "away_team": away_team,
-            "best_bet": selected_team,
-            "odds": odds,
-            "model_probability": model_probability,
-            "expected_value": expected_value,
-            "kelly": kelly,
-            "stake": STAKE,
-            "result": result,
-            "profit_loss": calculate_profit_loss(result, odds),
-            "closing_odds": "",
-            "clv": "",
-            "source": "historical_backfill_simulation"
-        })
+            generated_rows.append({
+                "game_date": game_date.strftime("%Y-%m-%d"),
+                "home_team": home_team,
+                "away_team": away_team,
+                "home_score": home_score,
+                "away_score": away_score,
+                "total_score": home_score + away_score,
+            })
 
-    new_df = pd.DataFrame(generated_rows)
+        df = pd.DataFrame(generated_rows)
 
-    if os.path.isfile(OUTPUT_FILE):
-        old_df = pd.read_csv(OUTPUT_FILE)
-        final_df = pd.concat([old_df, new_df], ignore_index=True)
-    else:
-        final_df = new_df
+        df.to_csv("data/historical_nba_scores.csv", index=False)
+        df.to_csv("historical_nba_scores.csv", index=False)
 
-    final_df.to_csv(OUTPUT_FILE, index=False)
+        return {
+            "status": "success",
+            "message": f"Generated {len(df)} historical NBA score rows.",
+            "rows": len(df),
+            "file": "data/historical_nba_scores.csv",
+            "columns": list(df.columns),
+        }
 
-    return {
-        "status": "success",
-        "message": f"{rows} historical rows added to bet_history.csv.",
-        "added_rows": rows,
-        "total_rows": len(final_df)
-    }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+        }
