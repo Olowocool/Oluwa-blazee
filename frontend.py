@@ -1225,6 +1225,25 @@ if data and "games" in data and len(data["games"]) > 0:
                     "Defensive Adjustment",
                     totals_result["defensive_adjustment"]
                 )
+            split_col1, split_col2, split_col3 = st.columns(3)
+
+            with split_col1:
+                st.metric(
+                    "Home Split",
+                    totals_result["home_split"]
+                )
+            
+            with split_col2:
+                st.metric(
+                    "Away Split",
+                    totals_result["away_split"]
+                )
+            
+            with split_col3:
+                st.metric(
+                    "Home/Away Adjustment",
+                    totals_result["home_away_adjustment"]
+                )
 
             with off_col1:
                 st.metric(
