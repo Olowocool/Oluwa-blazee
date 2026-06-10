@@ -1205,6 +1205,11 @@ if data and "games" in data and len(data["games"]) > 0:
                     "Combined Pace Score",
                     totals_result["combined_pace_score"]
                 )
+            st.metric(
+                "History Rows Loaded",
+                totals_result["history_rows"]
+            )
+            
             off_col1, off_col2, off_col3 = st.columns(3)
             def_col1, def_col2, def_col3 = st.columns(3)
             
