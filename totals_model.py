@@ -29,10 +29,21 @@ def load_history():
     for file in possible_files:
         if os.path.isfile(file):
             try:
-                return pd.read_csv(file)
-            except Exception:
-                continue
+                df = pd.read_csv(file)
 
+                print("================================")
+                print("FOUND HISTORY FILE:", file)
+                print("ROWS:", len(df))
+                print("COLUMNS:", list(df.columns))
+                print("================================")
+
+                return df
+
+            except Exception as e:
+                print("FAILED TO LOAD:", file)
+                print(e)
+
+    print("NO HISTORY FILE FOUND")
     return pd.DataFrame()
 
 
@@ -110,10 +121,12 @@ def predict_game_total(home_team, away_team, bookmaker_total):
     history_df = load_history()
 
     history_rows = len(history_df)
+    history_columns = str(list(history_df.columns))
 
     print("================================")
     print("TOTALS MODEL DEBUG")
     print("History Rows:", history_rows)
+    print("History Columns:", history_columns)
 
     if history_rows > 0:
         print(history_df.head())
@@ -198,6 +211,7 @@ def predict_game_total(home_team, away_team, bookmaker_total):
 
     return {
         "history_rows": history_rows,
+        "history_columns": history_columns,
 
         "home_team": home_team,
         "away_team": away_team,
