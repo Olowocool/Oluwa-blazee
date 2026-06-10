@@ -193,6 +193,10 @@ def predict_game_total(home_team, away_team, bookmaker_total=None):
         "pace_gap": pace_data["pace_gap"],
 
         "projected_total": round(projected_total, 1),
+        "raw_projected_total": round(raw_projected_total, 2),
+        "pace_adjustment": round(pace_adjustment, 2),
+        "combined_pace_score": round(combined_pace_score, 2),
+        "pace_gap": round(pace_gap, 2),
         "bookmaker_total": bookmaker_total,
         "edge": round(edge, 1) if edge is not None else None,
 
