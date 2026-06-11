@@ -1269,6 +1269,26 @@ if data and "games" in data and len(data["games"]) > 0:
                     "Offensive Adjustment",
                     totals_result["offensive_adjustment"]
                 )
+
+            rest_col1, rest_col2, rest_col3 = st.columns(3)
+
+            with rest_col1:
+                st.metric(
+                    "Home Rest Days",
+                    totals_result["home_rest_days"]
+                )
+            
+            with rest_col2:
+                st.metric(
+                    "Away Rest Days",
+                    totals_result["away_rest_days"]
+                )
+            
+            with rest_col3:
+                st.metric(
+                    "Rest Adjustment",
+                    totals_result["rest_adjustment"]
+                )
             if st.button(
                 f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
             ):
