@@ -2,6 +2,7 @@
 
 import os
 import pandas as pd
+from injury_impact_engine import get_injury_impact
 
 
 NBA_AVG_TEAM_POINTS = 114
@@ -219,6 +220,22 @@ def predict_game_total(home_team, away_team, bookmaker_total):
 
     home_rest_days = home_stats["rest_days"]
     away_rest_days = away_stats["rest_days"]
+    injury_data = get_injury_impact(
+        home_team,
+        away_team
+    )
+    
+    home_injury_penalty = injury_data[
+        "home_injury_penalty"
+    ]
+    
+    away_injury_penalty = injury_data[
+        "away_injury_penalty"
+    ]
+    
+    injury_adjustment = injury_data[
+        "injury_adjustment"
+    ]
 
     rest_advantage = (
         home_rest_days +
@@ -234,6 +251,7 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         + defensive_adjustment
         + home_away_adjustment
         + rest_adjustment
+        + injury_adjustment
     )
 
     edge = projected_total - float(bookmaker_total)
@@ -299,6 +317,10 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         "home_rest_days": home_rest_days,
         "away_rest_days": away_rest_days,
         "rest_adjustment": round(rest_adjustment, 2),
+
+        "home_injury_penalty": home_injury_penalty,
+        "away_injury_penalty": away_injury_penalty,
+        "injury_adjustment": injury_adjustment,
     }
 
 
