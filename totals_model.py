@@ -121,7 +121,7 @@ def get_team_recent_stats(history_df, team_name):
             rest_days = max(
                 0,
                 min(
-                    4,
+                    3,
                     int((latest_game - previous_game).days) - 1
                 )
             )
