@@ -2,6 +2,7 @@
 
 import os
 import pandas as pd
+
 from injury_impact_engine import get_injury_impact
 
 
@@ -108,10 +109,6 @@ def get_team_recent_stats(history_df, team_name):
 
     recent_games = team_games.tail(10)
 
-    # -----------------------------
-    # REAL REST DAYS
-    # -----------------------------
-
     rest_days = 1
 
     if "game_date" in team_games.columns and len(team_games) >= 2:
@@ -170,8 +167,15 @@ def predict_game_total(home_team, away_team, bookmaker_total):
     history_rows = len(history_df)
     history_columns = str(list(history_df.columns))
 
-    home_stats = get_team_recent_stats(history_df, home_team)
-    away_stats = get_team_recent_stats(history_df, away_team)
+    home_stats = get_team_recent_stats(
+        history_df,
+        home_team
+    )
+
+    away_stats = get_team_recent_stats(
+        history_df,
+        away_team
+    )
 
     projected_home_points = (
         home_stats["last_5_scored"] * 0.35 +
@@ -185,14 +189,29 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         home_stats["last_10_allowed"] * 0.30
     )
 
-    raw_projected_total = projected_home_points + projected_away_points
+    raw_projected_total = (
+        projected_home_points +
+        projected_away_points
+    )
+
+    # -----------------------------
+    # PACE ADJUSTMENT
+    # -----------------------------
 
     home_pace_score = home_stats["pace_score"]
     away_pace_score = away_stats["pace_score"]
 
-    combined_pace_score = (home_pace_score + away_pace_score) / 2
+    combined_pace_score = (
+        home_pace_score +
+        away_pace_score
+    ) / 2
+
     pace_gap = combined_pace_score - PACE_BASELINE
     pace_adjustment = pace_gap * 0.20
+
+    # -----------------------------
+    # OFFENSIVE RATING ADJUSTMENT
+    # -----------------------------
 
     home_offensive_rating = home_stats["last_10_scored"]
     away_offensive_rating = away_stats["last_10_scored"]
@@ -202,6 +221,10 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         (away_offensive_rating - NBA_AVG_TEAM_POINTS)
     ) * 0.25
 
+    # -----------------------------
+    # DEFENSIVE RATING ADJUSTMENT
+    # -----------------------------
+
     home_defensive_rating = home_stats["last_10_allowed"]
     away_defensive_rating = away_stats["last_10_allowed"]
 
@@ -210,32 +233,31 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         (away_defensive_rating - NBA_AVG_TEAM_POINTS)
     ) * 0.25
 
-    home_split_advantage = home_stats["home_split"] - NBA_AVG_TEAM_POINTS
-    away_split_advantage = away_stats["away_split"] - NBA_AVG_TEAM_POINTS
+    # -----------------------------
+    # HOME / AWAY SPLIT ADJUSTMENT
+    # -----------------------------
+
+    home_split_advantage = (
+        home_stats["home_split"] -
+        NBA_AVG_TEAM_POINTS
+    )
+
+    away_split_advantage = (
+        away_stats["away_split"] -
+        NBA_AVG_TEAM_POINTS
+    )
 
     home_away_adjustment = (
         home_split_advantage +
         away_split_advantage
     ) * 0.20
 
+    # -----------------------------
+    # REST DAYS ADJUSTMENT
+    # -----------------------------
+
     home_rest_days = home_stats["rest_days"]
     away_rest_days = away_stats["rest_days"]
-    injury_data = get_injury_impact(
-        home_team,
-        away_team
-    )
-    
-    home_injury_penalty = injury_data[
-        "home_injury_penalty"
-    ]
-    
-    away_injury_penalty = injury_data[
-        "away_injury_penalty"
-    ]
-    
-    injury_adjustment = injury_data[
-        "injury_adjustment"
-    ]
 
     rest_advantage = (
         home_rest_days +
@@ -243,6 +265,31 @@ def predict_game_total(home_team, away_team, bookmaker_total):
     ) - 2
 
     rest_adjustment = rest_advantage * 0.75
+
+    # -----------------------------
+    # INJURY IMPACT ADJUSTMENT
+    # -----------------------------
+
+    injury_data = get_injury_impact(
+        home_team,
+        away_team
+    )
+
+    home_injury_penalty = injury_data[
+        "home_injury_penalty"
+    ]
+
+    away_injury_penalty = injury_data[
+        "away_injury_penalty"
+    ]
+
+    injury_adjustment = injury_data[
+        "injury_adjustment"
+    ]
+
+    # -----------------------------
+    # FINAL PROJECTED TOTAL
+    # -----------------------------
 
     projected_total = (
         raw_projected_total
@@ -318,13 +365,26 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         "away_rest_days": away_rest_days,
         "rest_adjustment": round(rest_adjustment, 2),
 
-        "home_injury_penalty": home_injury_penalty,
-        "away_injury_penalty": away_injury_penalty,
-        "injury_adjustment": injury_adjustment,
+        "home_injury_penalty": round(home_injury_penalty, 2),
+        "away_injury_penalty": round(away_injury_penalty, 2),
+        "injury_adjustment": round(injury_adjustment, 2),
+
+        "home_missing_players": injury_data[
+            "home_missing_players"
+        ],
+
+        "away_missing_players": injury_data[
+            "away_missing_players"
+        ],
     }
 
 
-def predict_totals(home_team, away_team, sportsbook_total_line, history_df=None):
+def predict_totals(
+    home_team,
+    away_team,
+    sportsbook_total_line,
+    history_df=None
+):
     return predict_game_total(
         home_team=home_team,
         away_team=away_team,
