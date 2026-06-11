@@ -40,27 +40,16 @@ def load_history():
             try:
                 df = pd.read_csv(file)
 
-                print("================================")
-                print("CHECKING HISTORY FILE:", file)
-                print("ROWS:", len(df))
-                print("COLUMNS:", list(df.columns))
-                print("================================")
-
                 has_score_columns = all(
                     col in df.columns for col in required_score_cols
                 )
 
                 if has_score_columns:
-                    print("USING SCORE HISTORY FILE:", file)
                     return df
 
-                print("SKIPPED FILE — missing score columns:", file)
+            except Exception:
+                continue
 
-            except Exception as e:
-                print("FAILED TO LOAD:", file)
-                print(e)
-
-    print("NO VALID SCORE HISTORY FILE FOUND")
     return pd.DataFrame()
 
 
@@ -99,14 +88,49 @@ def get_team_recent_stats(history_df, team_name):
     if team_games.empty:
         return default_team_stats()
 
-    team_games = team_games.tail(10)
+    if "game_date" in team_games.columns:
+        try:
+            team_games["game_date"] = pd.to_datetime(
+                team_games["game_date"],
+                errors="coerce"
+            )
+
+            team_games = team_games.dropna(
+                subset=["game_date"]
+            )
+
+            team_games = team_games.sort_values(
+                "game_date"
+            )
+        except Exception:
+            pass
+
+    recent_games = team_games.tail(10)
+
+    # -----------------------------
+    # REAL REST DAYS
+    # -----------------------------
+
+    rest_days = 1
+
+    if "game_date" in team_games.columns and len(team_games) >= 2:
+        try:
+            latest_game = team_games.iloc[-1]["game_date"]
+            previous_game = team_games.iloc[-2]["game_date"]
+
+            rest_days = max(
+                0,
+                int((latest_game - previous_game).days) - 1
+            )
+        except Exception:
+            rest_days = 1
 
     scored = []
     allowed = []
     home_scored = []
     away_scored = []
 
-    for _, row in team_games.iterrows():
+    for _, row in recent_games.iterrows():
         if str(row["home_team"]).lower() == team_name.lower():
             scored.append(row["home_score"])
             allowed.append(row["away_score"])
@@ -125,8 +149,6 @@ def get_team_recent_stats(history_df, team_name):
 
     pace_score = last_10_scored + last_10_allowed
 
-    rest_days = 1
-
     return {
         "last_5_scored": last_5_scored,
         "last_10_scored": last_10_scored,
@@ -143,18 +165,6 @@ def predict_game_total(home_team, away_team, bookmaker_total):
 
     history_rows = len(history_df)
     history_columns = str(list(history_df.columns))
-
-    print("================================")
-    print("TOTALS MODEL DEBUG")
-    print("History Rows:", history_rows)
-    print("History Columns:", history_columns)
-
-    if history_rows > 0:
-        print(history_df.head())
-    else:
-        print("NO HISTORY DATA FOUND")
-
-    print("================================")
 
     home_stats = get_team_recent_stats(history_df, home_team)
     away_stats = get_team_recent_stats(history_df, away_team)
@@ -173,20 +183,12 @@ def predict_game_total(home_team, away_team, bookmaker_total):
 
     raw_projected_total = projected_home_points + projected_away_points
 
-    # -----------------------------
-    # PACE ADJUSTMENT
-    # -----------------------------
-
     home_pace_score = home_stats["pace_score"]
     away_pace_score = away_stats["pace_score"]
 
     combined_pace_score = (home_pace_score + away_pace_score) / 2
     pace_gap = combined_pace_score - PACE_BASELINE
     pace_adjustment = pace_gap * 0.20
-
-    # -----------------------------
-    # OFFENSIVE RATING ADJUSTMENT
-    # -----------------------------
 
     home_offensive_rating = home_stats["last_10_scored"]
     away_offensive_rating = away_stats["last_10_scored"]
@@ -196,10 +198,6 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         (away_offensive_rating - NBA_AVG_TEAM_POINTS)
     ) * 0.25
 
-    # -----------------------------
-    # DEFENSIVE RATING ADJUSTMENT
-    # -----------------------------
-
     home_defensive_rating = home_stats["last_10_allowed"]
     away_defensive_rating = away_stats["last_10_allowed"]
 
@@ -207,10 +205,6 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         (home_defensive_rating - NBA_AVG_TEAM_POINTS) +
         (away_defensive_rating - NBA_AVG_TEAM_POINTS)
     ) * 0.25
-
-    # -----------------------------
-    # HOME / AWAY SPLIT ADJUSTMENT
-    # -----------------------------
 
     home_split_advantage = home_stats["home_split"] - NBA_AVG_TEAM_POINTS
     away_split_advantage = away_stats["away_split"] - NBA_AVG_TEAM_POINTS
@@ -220,10 +214,6 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         away_split_advantage
     ) * 0.20
 
-    # -----------------------------
-    # REST DAYS ADJUSTMENT
-    # -----------------------------
-
     home_rest_days = home_stats["rest_days"]
     away_rest_days = away_stats["rest_days"]
 
@@ -232,11 +222,7 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         away_rest_days
     ) - 2
 
-    rest_adjustment = rest_advantage * 1.5
-
-    # -----------------------------
-    # FINAL PROJECTED TOTAL
-    # -----------------------------
+    rest_adjustment = rest_advantage * 0.75
 
     projected_total = (
         raw_projected_total
