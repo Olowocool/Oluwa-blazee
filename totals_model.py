@@ -72,6 +72,7 @@ def default_team_stats():
         "pace_score": PACE_BASELINE,
         "home_split": NBA_AVG_TEAM_POINTS,
         "away_split": NBA_AVG_TEAM_POINTS,
+        "rest_days": 1,
     }
 
 
@@ -123,6 +124,7 @@ def get_team_recent_stats(history_df, team_name):
     away_split = safe_mean(away_scored, NBA_AVG_TEAM_POINTS)
 
     pace_score = last_10_scored + last_10_allowed
+    rest_days = 1
 
     return {
         "last_5_scored": last_5_scored,
@@ -131,6 +133,7 @@ def get_team_recent_stats(history_df, team_name):
         "pace_score": pace_score,
         "home_split": home_split,
         "away_split": away_split,
+        "rest_days": rest_days,
     }
 
 
@@ -199,6 +202,19 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         home_split_advantage +
         away_split_advantage
     ) * 0.20
+    # -----------------------------
+    # REST DAYS ADJUSTMENT
+    # -----------------------------
+    
+    home_rest_days = home_stats["rest_days"]
+    away_rest_days = away_stats["rest_days"]
+    
+    rest_advantage = (
+        home_rest_days +
+        away_rest_days
+    ) - 2
+    
+    rest_adjustment = rest_advantage * 1.5
 
     projected_total = (
         raw_projected_total
@@ -206,6 +222,7 @@ def predict_game_total(home_team, away_team, bookmaker_total):
         + offensive_adjustment
         + defensive_adjustment
         + home_away_adjustment
+        + rest_adjustment
     )
 
     edge = projected_total - float(bookmaker_total)
@@ -266,6 +283,9 @@ def predict_game_total(home_team, away_team, bookmaker_total):
 
         "home_split": round(home_stats["home_split"], 2),
         "away_split": round(away_stats["away_split"], 2),
+        "home_rest_days": home_rest_days,
+        "away_rest_days": away_rest_days,
+        "rest_adjustment": round(rest_adjustment, 2),
         "home_away_adjustment": round(home_away_adjustment, 2),
     }
 
