@@ -8,6 +8,12 @@ from totals_tracker import (
     load_totals_history
 )
 from datetime import date, datetime
+from injury_data_collector import collect_injury_data
+
+try:
+    collect_injury_data()
+except Exception as e:
+    print("Injury update failed:", e)
 from totals_model import predict_game_total
 from retrain_model import retrain_pipeline
 from confidence_engine import classify_confidence
