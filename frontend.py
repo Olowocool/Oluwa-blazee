@@ -9,6 +9,7 @@ from totals_tracker import (
 )
 from datetime import date, datetime
 from injury_data_collector import collect_injury_data
+from injury_impact_engine import get_injury_impact
 
 try:
     collect_injury_data()
@@ -935,46 +936,76 @@ if data and "games" in data and len(data["games"]) > 0:
 
         st.subheader("Injury Impact")
 
-        try:
-            raw_home_penalty = float(game.get("home_injury_penalty", 0))
-        except Exception:
-            raw_home_penalty = 0
-
-        try:
-            raw_away_penalty = float(game.get("away_injury_penalty", 0))
-        except Exception:
-            raw_away_penalty = 0
-
-        home_penalty = (
-            raw_home_penalty / 100
-            if abs(raw_home_penalty) > 1
-            else raw_home_penalty
+        live_injury_result = get_injury_impact(
+            game["home_team"],
+            game["away_team"]
         )
 
-        away_penalty = (
-            raw_away_penalty / 100
-            if abs(raw_away_penalty) > 1
-            else raw_away_penalty
+        home_penalty = float(
+            live_injury_result.get(
+                "home_injury_penalty",
+                0.0
+            )
         )
 
-        injury_diff = away_penalty - home_penalty
-        probability_adjustment = injury_diff * 100
+        away_penalty = float(
+            live_injury_result.get(
+                "away_injury_penalty",
+                0.0
+            )
+        )
+
+        injury_diff = float(
+            live_injury_result.get(
+                "injury_adjustment",
+                0.0
+            )
+        )
+
+        probability_adjustment = injury_diff
 
         injury_col1, injury_col2, injury_col3 = st.columns(3)
 
         with injury_col1:
-            st.metric("Home Penalty", round(home_penalty, 3))
+            st.metric(
+                "Home Penalty",
+                round(home_penalty, 2)
+            )
 
         with injury_col2:
-            st.metric("Away Penalty", round(away_penalty, 3))
+            st.metric(
+                "Away Penalty",
+                round(away_penalty, 2)
+            )
 
         with injury_col3:
-            st.metric("Injury Diff", round(injury_diff, 3))
+            st.metric(
+                "Injury Diff",
+                round(injury_diff, 2)
+            )
 
         st.metric(
-            "Probability Adjustment",
-            f"{probability_adjustment:.1f}%"
+            "Totals Adjustment",
+            round(injury_diff, 2)
         )
+
+        with st.expander("Current Missing Players"):
+            st.write("Home missing players")
+            st.json(
+                live_injury_result.get(
+                    "home_missing_players",
+                    []
+                )
+            )
+
+            st.write("Away missing players")
+            st.json(
+                live_injury_result.get(
+                    "away_missing_players",
+                    []
+                )
+            )
+
         feature_input = {
 
             # Base probabilities
@@ -1294,6 +1325,64 @@ if data and "games" in data and len(data["games"]) > 0:
                 st.metric(
                     "Rest Adjustment",
                     totals_result["rest_adjustment"]
+                )
+
+            totals_injury_col1, totals_injury_col2, totals_injury_col3 = st.columns(3)
+
+            with totals_injury_col1:
+                st.metric(
+                    "Totals Home Injury Penalty",
+                    totals_result.get(
+                        "home_injury_penalty",
+                        0.0
+                    )
+                )
+
+            with totals_injury_col2:
+                st.metric(
+                    "Totals Away Injury Penalty",
+                    totals_result.get(
+                        "away_injury_penalty",
+                        0.0
+                    )
+                )
+
+            with totals_injury_col3:
+                st.metric(
+                    "Totals Injury Adjustment",
+                    totals_result.get(
+                        "injury_adjustment",
+                        0.0
+                    )
+                )
+
+            with st.expander("Totals Injury Debug"):
+                st.write(
+                    {
+                        "home_injury_penalty": totals_result.get(
+                            "home_injury_penalty"
+                        ),
+                        "away_injury_penalty": totals_result.get(
+                            "away_injury_penalty"
+                        ),
+                        "injury_adjustment": totals_result.get(
+                            "injury_adjustment"
+                        ),
+                    }
+                )
+                st.write("Home missing players")
+                st.json(
+                    totals_result.get(
+                        "home_missing_players",
+                        []
+                    )
+                )
+                st.write("Away missing players")
+                st.json(
+                    totals_result.get(
+                        "away_missing_players",
+                        []
+                    )
                 )
             if st.button(
                 f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
