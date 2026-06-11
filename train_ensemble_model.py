@@ -59,11 +59,25 @@ def train_ensemble_model():
 
     dataset_path = "bet_history.csv"
 
-    if not os.path.isfile(dataset_path):
+    possible_files = [
+        "bet_history.csv",
+        "data/bet_history.csv",
+    ]
+    
+    bet_file = None
+    
+    for file in possible_files:
+        if os.path.isfile(file):
+            bet_file = file
+            break
+    
+    if bet_file is None:
         return {
             "status": "error",
-            "message": "bet_history.csv not found."
+            "message": "bet_history.csv not found. Save at least one bet pick first."
         }
+    
+    df = pd.read_csv(bet_file)
 
     df = pd.read_csv(dataset_path)
 
