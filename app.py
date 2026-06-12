@@ -439,12 +439,26 @@ def predict_today(date: str = None):
                             possible_team_id = normalize_team_id(
                                 possible_line.get("TEAM_ID", None)
                             )
-
-                            if possible_team_id == normalize_team_id(home_team_id):
+                    
+                            normalized_home_id = normalize_team_id(home_team_id)
+                            normalized_away_id = normalize_team_id(away_team_id)
+                    
+                            if possible_team_id == normalized_home_id:
                                 home_line_row = possible_line
-
-                            if possible_team_id == normalize_team_id(away_team_id):
+                    
+                            if normalized_away_id is not None and possible_team_id == normalized_away_id:
                                 away_line_row = possible_line
+                    
+                        if away_line_row is None and len(game_lines) >= 1:
+                            for _, possible_line in game_lines.iterrows():
+                                possible_team_id = normalize_team_id(
+                                    possible_line.get("TEAM_ID", None)
+                                )
+                    
+                                if possible_team_id != normalize_team_id(home_team_id):
+                                    away_line_row = possible_line
+                                    away_team_id = possible_team_id
+                                    break
 
                 # Always resolve team names from the official IDs first.
                 home_team = team_name_from_id(home_team_id)
