@@ -4,10 +4,10 @@ import os
 import pandas as pd
 
 from injury_impact_engine import get_injury_impact
+from pace_engine import calculate_matchup_pace
 
 
 NBA_AVG_TEAM_POINTS = 114
-PACE_BASELINE = 228
 
 
 def safe_mean(values, default=114):
@@ -47,6 +47,12 @@ def load_history():
                 )
 
                 if has_score_columns:
+                    if "total_score" not in df.columns:
+                        df["total_score"] = (
+                            pd.to_numeric(df["home_score"], errors="coerce")
+                            + pd.to_numeric(df["away_score"], errors="coerce")
+                        )
+
                     return df
 
             except Exception:
@@ -60,7 +66,6 @@ def default_team_stats():
         "last_5_scored": NBA_AVG_TEAM_POINTS,
         "last_10_scored": NBA_AVG_TEAM_POINTS,
         "last_10_allowed": NBA_AVG_TEAM_POINTS,
-        "pace_score": PACE_BASELINE,
         "home_split": NBA_AVG_TEAM_POINTS,
         "away_split": NBA_AVG_TEAM_POINTS,
         "rest_days": 1,
@@ -148,13 +153,10 @@ def get_team_recent_stats(history_df, team_name):
     home_split = safe_mean(home_scored, NBA_AVG_TEAM_POINTS)
     away_split = safe_mean(away_scored, NBA_AVG_TEAM_POINTS)
 
-    pace_score = last_10_scored + last_10_allowed
-
     return {
         "last_5_scored": last_5_scored,
         "last_10_scored": last_10_scored,
         "last_10_allowed": last_10_allowed,
-        "pace_score": pace_score,
         "home_split": home_split,
         "away_split": away_split,
         "rest_days": rest_days,
@@ -195,19 +197,20 @@ def predict_game_total(home_team, away_team, bookmaker_total):
     )
 
     # -----------------------------
-    # PACE ADJUSTMENT
+    # REAL PACE ENGINE
     # -----------------------------
 
-    home_pace_score = home_stats["pace_score"]
-    away_pace_score = away_stats["pace_score"]
+    pace_data = calculate_matchup_pace(
+        history_df,
+        home_team,
+        away_team
+    )
 
-    combined_pace_score = (
-        home_pace_score +
-        away_pace_score
-    ) / 2
-
-    pace_gap = combined_pace_score - PACE_BASELINE
-    pace_adjustment = pace_gap * 0.20
+    home_pace_score = pace_data["home_pace"]
+    away_pace_score = pace_data["away_pace"]
+    combined_pace_score = pace_data["combined_pace"]
+    pace_adjustment = pace_data["pace_adjustment"]
+    pace_gap = combined_pace_score - 100
 
     # -----------------------------
     # OFFENSIVE RATING ADJUSTMENT
