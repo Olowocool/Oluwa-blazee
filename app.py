@@ -418,17 +418,40 @@ def predict_today(date: str = None):
                             if possible_team_id == normalize_team_id(away_team_id):
                                 away_line_row = possible_line
 
-                home_team = team_name_from_line(home_line_row, fallback_team_id=home_team_id)
-                away_team = team_name_from_line(away_line_row, fallback_team_id=away_team_id)
-
+                home_team = team_name_from_id(home_team_id)
+                away_team = team_name_from_id(away_team_id)
+                
+                if not home_team:
+                    home_team = team_name_from_line(
+                        home_line_row,
+                        fallback_team_id=home_team_id
+                    )
+                
+                if not away_team:
+                    away_team = team_name_from_line(
+                        away_line_row,
+                        fallback_team_id=away_team_id
+                    )
+                
                 if not home_team or not away_team:
-                    continue
+                    prediction = {
+                        "home_team": str(home_team_id),
+                        "away_team": str(away_team_id),
+                        "home_win_probability": 0.5,
+                        "away_win_probability": 0.5,
+                        "prediction": "No Bet",
+                        "best_bet": "No Bet",
+                        "confidence": 0,
+                        "model_status": model_status,
+                        "warning": "Could not resolve team names from NBA team IDs."
+                    }
+                else:
+                    prediction = safe_prediction(
+                        home_team,
+                        away_team
+                    )
 
-                prediction = safe_prediction(home_team, away_team)
-
-                home_score = 0
-                away_score = 0
-
+                
                 if home_line_row is not None:
                     home_score = safe_int(home_line_row.get("PTS", 0))
 
