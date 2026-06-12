@@ -719,91 +719,50 @@ if st.session_state.get("last_input_date") != date_input:
 
 if st.button("Load Daily Predictions"):
     try:
-        live_odds_mode = should_fetch_live_odds(date_input)
+        response = requests.get(
+            f"{API_URL}/predict_today",
+            params={"date": date_input},
+            timeout=90
+        )
 
-        if live_odds_mode:
-            odds_map = get_odds()
+        if response.status_code != 200:
+            st.error(f"Prediction API failed with status {response.status_code}")
+            st.write(response.text)
+            st.stop()
 
-            if not isinstance(odds_map, dict):
-                odds_map = {}
+        data = response.json()
 
-            if odds_map:
-                save_live_odds_to_history(date_input, odds_map)
+        st.session_state["daily_data"] = data
+        st.session_state["last_loaded_date"] = date_input
 
-                predictions = build_predictions_from_live_odds(odds_map)
-
-                st.session_state["daily_data"] = {
-                    "date": date_input,
-                    "games": predictions,
-                    "source": "odds_api_synced_schedule"
-                }
-                try:
-                    snapshot_result = save_odds_snapshot(predictions)
-                
-                    st.success(
-                        f"Saved {snapshot_result['saved_rows']} odds snapshots."
-                    )
-                
-                except Exception as e:
-                
-                    st.warning(
-                        f"Odds snapshot error: {e}"
-                    )
-                try:
-                    snapshot_result = save_odds_snapshot(predictions)
-                    st.info(f"Saved {snapshot_result['saved_rows']} odds snapshots.")
-                except Exception as e:
-                    st.warning(f"Odds snapshot save skipped: {e}")
-
-                st.session_state["last_loaded_date"] = date_input
-
-                st.success("Predictions synced with live Odds API schedule.")
-
-            else:
-                st.warning("No live Odds API games found. Falling back to backend schedule.")
-
-                response = requests.get(
-                    f"{API_URL}/predict_today",
-                    params={"date": date_input},
-                    timeout=60
-                )
-
-                data = response.json()
-                st.session_state["daily_data"] = data
-                try:
-                    if data and "games" in data:
-                        snapshot_result = save_odds_snapshot(data["games"])
-                        st.info(f"Saved {snapshot_result['saved_rows']} odds snapshots.")
-                except Exception as e:
-                    st.warning(f"Odds snapshot save skipped: {e}")
-                st.session_state["last_loaded_date"] = date_input
-
-        else:
-            response = requests.get(
-                f"{API_URL}/predict_today",
-                params={"date": date_input},
-                timeout=60
-            )
-
-            if response.status_code != 200:
-                st.error(f"Prediction API failed with status {response.status_code}")
-                st.write(response.text)
-                st.stop()
-
-            data = response.json()
-            st.session_state["daily_data"] = data
+        if data and "games" in data and len(data["games"]) > 0:
             try:
-                if data and "games" in data:
-                    snapshot_result = save_odds_snapshot(data["games"])
-                    st.info(f"Saved {snapshot_result['saved_rows']} odds snapshots.")
+                snapshot_result = save_odds_snapshot(data["games"])
+                st.info(f"Saved {snapshot_result['saved_rows']} odds snapshots.")
             except Exception as e:
                 st.warning(f"Odds snapshot save skipped: {e}")
-            st.session_state["last_loaded_date"] = date_input
+
+            st.success(
+                f"Loaded {len(data['games'])} real NBA game(s) from backend schedule."
+            )
+
+            if "mode" in data:
+                st.caption(f"Schedule source: {data['mode']}")
+
+        else:
+            st.warning(
+                data.get(
+                    "message",
+                    "No real NBA games found for this selected date."
+                )
+            )
+
+            if "mode" in data:
+                st.caption(f"Schedule source: {data['mode']}")
 
     except Exception as e:
         st.error(f"Prediction request failed: {e}")
         st.stop()
-
 
 data = st.session_state["daily_data"]
 active_date = st.session_state["last_loaded_date"] or date_input
