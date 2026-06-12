@@ -108,7 +108,7 @@ def root():
 @app.get("/version")
 def version():
     return {
-        "version": "basketball-model-v6-scoreboard-date-window-line-safe",
+        "version": "basketball-model-v7-scoreboard-date-window-v3",
         "model_status": model_status,
         "model_error": model_error
     }
@@ -346,6 +346,13 @@ def predict_matchup(payload: dict):
 
 @app.get("/predict_today")
 def predict_today(date: str = None):
+    """
+    Reliable date-window ScoreboardV2 schedule loader.
+
+    Fixes the previous bug where a valid game was found in the date window
+    but skipped/failed because ScoreboardV2 sometimes returns only one
+    line_score row before full box-score data is populated.
+    """
     try:
         try:
             parsed_date = parse_selected_date(date)
@@ -359,6 +366,7 @@ def predict_today(date: str = None):
             }
 
         selected_date = parsed_date.strftime("%m/%d/%Y")
+
         search_dates = [
             parsed_date,
             parsed_date - timedelta(days=1),
@@ -367,17 +375,29 @@ def predict_today(date: str = None):
 
         games = []
         seen_game_ids = set()
-        debug_checked_dates = []
+        checked_dates = []
 
         for search_date in search_dates:
             formatted_date = search_date.strftime("%m/%d/%Y")
-            scoreboard = scoreboardv2.ScoreboardV2(game_date=formatted_date)
-            frames = scoreboard.get_data_frames()
+
+            try:
+                scoreboard = scoreboardv2.ScoreboardV2(
+                    game_date=formatted_date
+                )
+                frames = scoreboard.get_data_frames()
+            except Exception as e:
+                checked_dates.append({
+                    "date": formatted_date,
+                    "frame0_rows": 0,
+                    "frame1_rows": 0,
+                    "error": str(e)
+                })
+                continue
 
             frame0_rows = len(frames[0]) if len(frames) > 0 else 0
             frame1_rows = len(frames[1]) if len(frames) > 1 else 0
 
-            debug_checked_dates.append({
+            checked_dates.append({
                 "date": formatted_date,
                 "frame0_rows": frame0_rows,
                 "frame1_rows": frame1_rows,
@@ -390,7 +410,11 @@ def predict_today(date: str = None):
             if game_header.empty:
                 continue
 
-            line_score = frames[1].fillna("") if len(frames) > 1 else pd.DataFrame()
+            line_score = (
+                frames[1].fillna("")
+                if len(frames) > 1
+                else pd.DataFrame()
+            )
 
             for _, game_row in game_header.iterrows():
                 game_id = str(game_row.get("GAME_ID", "")).strip()
@@ -406,11 +430,15 @@ def predict_today(date: str = None):
                 game_lines = pd.DataFrame()
 
                 if not line_score.empty and "GAME_ID" in line_score.columns:
-                    game_lines = line_score[line_score["GAME_ID"].astype(str) == game_id]
+                    game_lines = line_score[
+                        line_score["GAME_ID"].astype(str) == game_id
+                    ]
 
                     if not game_lines.empty and "TEAM_ID" in game_lines.columns:
                         for _, possible_line in game_lines.iterrows():
-                            possible_team_id = normalize_team_id(possible_line.get("TEAM_ID", None))
+                            possible_team_id = normalize_team_id(
+                                possible_line.get("TEAM_ID", None)
+                            )
 
                             if possible_team_id == normalize_team_id(home_team_id):
                                 home_line_row = possible_line
@@ -418,32 +446,37 @@ def predict_today(date: str = None):
                             if possible_team_id == normalize_team_id(away_team_id):
                                 away_line_row = possible_line
 
+                # Always resolve team names from the official IDs first.
                 home_team = team_name_from_id(home_team_id)
                 away_team = team_name_from_id(away_team_id)
-                
+
                 if not home_team:
                     home_team = team_name_from_line(
                         home_line_row,
                         fallback_team_id=home_team_id
                     )
-                
+
                 if not away_team:
                     away_team = team_name_from_line(
                         away_line_row,
                         fallback_team_id=away_team_id
                     )
-                
+
                 if not home_team or not away_team:
+                    # Do not drop the game. Return a safe placeholder so the
+                    # frontend still shows the schedule issue clearly.
+                    home_team = home_team or str(home_team_id)
+                    away_team = away_team or str(away_team_id)
                     prediction = {
-                        "home_team": str(home_team_id),
-                        "away_team": str(away_team_id),
+                        "home_team": home_team,
+                        "away_team": away_team,
                         "home_win_probability": 0.5,
                         "away_win_probability": 0.5,
                         "prediction": "No Bet",
                         "best_bet": "No Bet",
                         "confidence": 0,
                         "model_status": model_status,
-                        "warning": "Could not resolve team names from NBA team IDs."
+                        "warning": "Could not fully resolve team names from NBA team IDs."
                     }
                 else:
                     prediction = safe_prediction(
@@ -451,20 +484,31 @@ def predict_today(date: str = None):
                         away_team
                     )
 
-                
+                # IMPORTANT: initialize scores before checking line rows.
+                # This fixes the bug where a game with only one line_score row
+                # caused an exception and made the endpoint return zero games.
+                home_score = 0
+                away_score = 0
+
                 if home_line_row is not None:
-                    home_score = safe_int(home_line_row.get("PTS", 0))
+                    home_score = safe_int(
+                        home_line_row.get("PTS", 0)
+                    )
 
                 if away_line_row is not None:
-                    away_score = safe_int(away_line_row.get("PTS", 0))
+                    away_score = safe_int(
+                        away_line_row.get("PTS", 0)
+                    )
 
                 prediction["game_id"] = game_id
                 prediction["game_date"] = formatted_date
                 prediction["selected_date"] = selected_date
+                prediction["schedule_source_date"] = formatted_date
                 prediction["home_score"] = home_score
                 prediction["away_score"] = away_score
-                prediction["game_status"] = str(game_row.get("GAME_STATUS_TEXT", ""))
-                prediction["schedule_source_date"] = formatted_date
+                prediction["game_status"] = str(
+                    game_row.get("GAME_STATUS_TEXT", "")
+                )
 
                 games.append(prediction)
                 seen_game_ids.add(game_id)
@@ -474,17 +518,17 @@ def predict_today(date: str = None):
                 "date": selected_date,
                 "games": [],
                 "games_found": 0,
-                "mode": "scoreboardv2_date_window_v2",
+                "mode": "scoreboardv2_date_window_v3",
                 "message": "No real NBA games found for this selected date.",
-                "checked_dates": debug_checked_dates
+                "checked_dates": checked_dates
             }
 
         return {
             "date": selected_date,
             "games": games,
             "games_found": len(games),
-            "mode": "scoreboardv2_date_window_v2",
-            "checked_dates": debug_checked_dates
+            "mode": "scoreboardv2_date_window_v3",
+            "checked_dates": checked_dates
         }
 
     except Exception as e:
