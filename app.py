@@ -289,17 +289,8 @@ def predict_matchup(payload: dict):
     }
 
 
-
 @app.get("/predict_today")
 def predict_today(date: str = None):
-    """
-    Pull the REAL NBA schedule for the selected date using nba_api ScoreboardV2,
-    then run predict_matchup() on those actual games.
-
-    This fixes the previous issue where the same fallback games appeared
-    across different dates.
-    """
-
     try:
         if date is None:
             date = datetime.now().strftime("%m/%d/%Y")
@@ -315,131 +306,198 @@ def predict_today(date: str = None):
                 "message": "Invalid date format. Use MM/DD/YYYY."
             }
 
-        scoreboard = scoreboardv2.ScoreboardV2(
-            game_date=parsed_date.strftime("%m/%d/%Y")
-        )
-
-        frames = scoreboard.get_data_frames()
-
-        if len(frames) < 2:
-            return {
-                "date": date,
-                "games": [],
-                "games_found": 0,
-                "mode": "nba_api_scoreboard",
-                "message": "No scoreboard data returned for this date."
-            }
-
-        game_header = frames[0].fillna("")
-        line_score = frames[1].fillna("")
-
-        if game_header.empty or line_score.empty:
-            return {
-                "date": date,
-                "games": [],
-                "games_found": 0,
-                "mode": "nba_api_scoreboard",
-                "message": "No NBA games found for this date."
-            }
-
         games = []
 
-        for _, game_row in game_header.iterrows():
+        # -----------------------------
+        # SOURCE 1: ScoreboardV2
+        # -----------------------------
+        try:
+            scoreboard = scoreboardv2.ScoreboardV2(
+                game_date=parsed_date.strftime("%m/%d/%Y")
+            )
 
-            game_id = game_row.get("GAME_ID", "")
+            frames = scoreboard.get_data_frames()
 
-            game_lines = line_score[
-                line_score["GAME_ID"] == game_id
+            if len(frames) >= 2:
+                game_header = frames[0].fillna("")
+                line_score = frames[1].fillna("")
+
+                if not game_header.empty and not line_score.empty:
+                    for _, game_row in game_header.iterrows():
+                        game_id = game_row.get("GAME_ID", "")
+
+                        game_lines = line_score[
+                            line_score["GAME_ID"] == game_id
+                        ]
+
+                        if len(game_lines) < 2:
+                            continue
+
+                        home_team_id = game_row.get("HOME_TEAM_ID", None)
+                        away_team_id = game_row.get("VISITOR_TEAM_ID", None)
+
+                        home_line = game_lines[
+                            game_lines["TEAM_ID"] == home_team_id
+                        ]
+
+                        away_line = game_lines[
+                            game_lines["TEAM_ID"] == away_team_id
+                        ]
+
+                        if home_line.empty or away_line.empty:
+                            continue
+
+                        home_line = home_line.iloc[0]
+                        away_line = away_line.iloc[0]
+
+                        home_team = (
+                            f"{home_line.get('TEAM_CITY_NAME', '')} "
+                            f"{home_line.get('TEAM_NAME', '')}"
+                        ).strip()
+
+                        away_team = (
+                            f"{away_line.get('TEAM_CITY_NAME', '')} "
+                            f"{away_line.get('TEAM_NAME', '')}"
+                        ).strip()
+
+                        prediction = predict_matchup({
+                            "home_team": home_team,
+                            "away_team": away_team
+                        })
+
+                        if "error" in prediction:
+                            prediction = {
+                                "home_team": home_team,
+                                "away_team": away_team,
+                                "home_win_probability": 0.5,
+                                "away_win_probability": 0.5,
+                                "prediction": home_team,
+                                "best_bet": home_team,
+                                "confidence": 0.5,
+                                "model_status": model_status,
+                                "warning": prediction.get("error", "Model prediction failed.")
+                            }
+
+                        prediction["game_id"] = game_id
+                        prediction["game_date"] = date
+                        prediction["game_status"] = game_row.get("GAME_STATUS_TEXT", "")
+                        prediction["home_score"] = int(home_line.get("PTS", 0) or 0)
+                        prediction["away_score"] = int(away_line.get("PTS", 0) or 0)
+
+                        games.append(prediction)
+
+        except Exception:
+            games = []
+
+        if games:
+            return {
+                "date": date,
+                "games": games,
+                "games_found": len(games),
+                "mode": "scoreboardv2"
+            }
+
+        # -----------------------------
+        # SOURCE 2: LeagueGameFinder fallback
+        # for completed historical games
+        # -----------------------------
+        try:
+            lgf = leaguegamefinder.LeagueGameFinder(
+                league_id_nullable="00"
+            )
+
+            df = lgf.get_data_frames()[0]
+
+            df["GAME_DATE"] = pd.to_datetime(
+                df["GAME_DATE"],
+                errors="coerce"
+            )
+
+            target_date = parsed_date.strftime("%Y-%m-%d")
+
+            df = df[
+                df["GAME_DATE"].dt.strftime("%Y-%m-%d") == target_date
             ]
 
-            if game_lines.empty:
-                continue
+            if df.empty:
+                return {
+                    "date": date,
+                    "games": [],
+                    "games_found": 0,
+                    "mode": "leaguegamefinder",
+                    "message": "No NBA games found for this date."
+                }
 
-            home_team_id = game_row.get("HOME_TEAM_ID", None)
-            away_team_id = game_row.get("VISITOR_TEAM_ID", None)
+            for game_id, group in df.groupby("GAME_ID"):
+                if len(group) != 2:
+                    continue
 
-            home_line = game_lines[
-                game_lines["TEAM_ID"] == home_team_id
-            ]
+                row1 = group.iloc[0]
+                row2 = group.iloc[1]
 
-            away_line = game_lines[
-                game_lines["TEAM_ID"] == away_team_id
-            ]
+                matchup1 = str(row1.get("MATCHUP", ""))
 
-            if home_line.empty or away_line.empty:
-                if len(game_lines) >= 2:
-                    away_line = game_lines.iloc[[0]]
-                    home_line = game_lines.iloc[[1]]
+                if " vs. " in matchup1:
+                    home_row = row1
+                    away_row = row2
+                elif " @ " in matchup1:
+                    away_row = row1
+                    home_row = row2
                 else:
                     continue
 
-            home_line = home_line.iloc[0]
-            away_line = away_line.iloc[0]
+                home_team = home_row["TEAM_NAME"]
+                away_team = away_row["TEAM_NAME"]
 
-            home_team = (
-                f"{home_line.get('TEAM_CITY_NAME', '')} "
-                f"{home_line.get('TEAM_NAME', '')}"
-            ).strip()
-
-            away_team = (
-                f"{away_line.get('TEAM_CITY_NAME', '')} "
-                f"{away_line.get('TEAM_NAME', '')}"
-            ).strip()
-
-            if not home_team or not away_team:
-                continue
-
-            prediction = predict_matchup({
-                "home_team": home_team,
-                "away_team": away_team
-            })
-
-            if "error" in prediction:
-                prediction = {
+                prediction = predict_matchup({
                     "home_team": home_team,
-                    "away_team": away_team,
-                    "home_win_probability": 0.5,
-                    "away_win_probability": 0.5,
-                    "prediction": home_team,
-                    "best_bet": home_team,
-                    "confidence": 0.5,
-                    "model_status": model_status,
-                    "warning": prediction.get("error", "Model prediction failed.")
-                }
+                    "away_team": away_team
+                })
 
-            try:
-                home_score = int(home_line.get("PTS", 0))
-            except Exception:
-                home_score = 0
+                if "error" in prediction:
+                    prediction = {
+                        "home_team": home_team,
+                        "away_team": away_team,
+                        "home_win_probability": 0.5,
+                        "away_win_probability": 0.5,
+                        "prediction": home_team,
+                        "best_bet": home_team,
+                        "confidence": 0.5,
+                        "model_status": model_status,
+                        "warning": prediction.get("error", "Model prediction failed.")
+                    }
 
-            try:
-                away_score = int(away_line.get("PTS", 0))
-            except Exception:
-                away_score = 0
+                prediction["game_id"] = str(game_id)
+                prediction["game_date"] = date
+                prediction["game_status"] = "Final"
+                prediction["home_score"] = int(home_row["PTS"])
+                prediction["away_score"] = int(away_row["PTS"])
 
-            prediction["game_id"] = game_id
-            prediction["game_date"] = date
-            prediction["home_score"] = home_score
-            prediction["away_score"] = away_score
-            prediction["game_status"] = game_row.get("GAME_STATUS_TEXT", "")
+                games.append(prediction)
 
-            games.append(prediction)
+            return {
+                "date": date,
+                "games": games,
+                "games_found": len(games),
+                "mode": "leaguegamefinder_fallback"
+            }
 
-        return {
-            "date": date,
-            "games": games,
-            "games_found": len(games),
-            "mode": "real_nba_api_scoreboard"
-        }
+        except Exception as e:
+            return {
+                "date": date,
+                "games": [],
+                "games_found": 0,
+                "mode": "leaguegamefinder_error",
+                "error": str(e)
+            }
 
     except Exception as e:
         return {
             "date": date,
             "games": [],
             "games_found": 0,
-            "mode": "nba_api_scoreboard_error",
-            "error": str(e),
-            "message": "predict_today failed while fetching real NBA schedule."
+            "mode": "predict_today_error",
+            "error": str(e)
         }
 
 @app.get("/daily-predictions")
