@@ -365,15 +365,6 @@ def predict_matchup(payload: dict):
 
 @app.get("/predict_today")
 def predict_today(date: str = None):
-    """
-    Uses NBA ScoreboardV2 as the only schedule source.
-
-    Important:
-    - Odds API must not be used as the schedule source.
-    - LeagueGameFinder must not be used as the schedule source.
-    - This endpoint returns only games that NBA ScoreboardV2 reports for the selected date.
-    """
-
     try:
         try:
             parsed_date = parse_selected_date(date)
@@ -386,113 +377,99 @@ def predict_today(date: str = None):
                 "message": str(e)
             }
 
-        formatted_date = parsed_date.strftime("%m/%d/%Y")
+        from datetime import timedelta
 
-        scoreboard = scoreboardv2.ScoreboardV2(
-            game_date=formatted_date
-        )
-
-        frames = scoreboard.get_data_frames()
-
-        if len(frames) < 2:
-            return {
-                "date": formatted_date,
-                "games": [],
-                "games_found": 0,
-                "mode": "scoreboardv2",
-                "message": "No scoreboard data returned."
-            }
-
-        game_header = frames[0].fillna("")
-        line_score = frames[1].fillna("")
-
-        if game_header.empty:
-            return {
-                "date": formatted_date,
-                "games": [],
-                "games_found": 0,
-                "mode": "scoreboardv2",
-                "message": "No NBA games scheduled for this date."
-            }
+        search_dates = [
+            parsed_date,
+            parsed_date - timedelta(days=1),
+            parsed_date + timedelta(days=1),
+        ]
 
         games = []
+        seen_game_ids = set()
 
-        for _, game_row in game_header.iterrows():
+        for search_date in search_dates:
+            formatted_date = search_date.strftime("%m/%d/%Y")
 
-            game_id = str(game_row.get("GAME_ID", "")).strip()
+            scoreboard = scoreboardv2.ScoreboardV2(
+                game_date=formatted_date
+            )
 
-            game_lines = line_score[
-                line_score["GAME_ID"].astype(str) == game_id
-            ]
+            frames = scoreboard.get_data_frames()
 
-            if len(game_lines) < 2:
+            if len(frames) < 2:
                 continue
 
-            home_team_id = game_row.get("HOME_TEAM_ID", None)
-            away_team_id = game_row.get("VISITOR_TEAM_ID", None)
+            game_header = frames[0].fillna("")
+            line_score = frames[1].fillna("")
 
-            home_line = game_lines[
-                game_lines["TEAM_ID"] == home_team_id
-            ]
+            if game_header.empty or line_score.empty:
+                continue
 
-            away_line = game_lines[
-                game_lines["TEAM_ID"] == away_team_id
-            ]
+            for _, game_row in game_header.iterrows():
+                game_id = str(game_row.get("GAME_ID", "")).strip()
 
-            if home_line.empty or away_line.empty:
-                if len(game_lines) >= 2:
-                    # ScoreboardV2 line_score usually lists visitor first, home second.
-                    away_line = game_lines.iloc[[0]]
-                    home_line = game_lines.iloc[[1]]
-                else:
+                if game_id in seen_game_ids:
                     continue
 
-            home_line = home_line.iloc[0]
-            away_line = away_line.iloc[0]
+                game_lines = line_score[
+                    line_score["GAME_ID"].astype(str) == game_id
+                ]
 
-            home_team = (
-                f"{home_line.get('TEAM_CITY_NAME', '')} "
-                f"{home_line.get('TEAM_NAME', '')}"
-            ).strip()
+                if len(game_lines) < 2:
+                    continue
 
-            away_team = (
-                f"{away_line.get('TEAM_CITY_NAME', '')} "
-                f"{away_line.get('TEAM_NAME', '')}"
-            ).strip()
+                home_team_id = game_row.get("HOME_TEAM_ID", None)
+                away_team_id = game_row.get("VISITOR_TEAM_ID", None)
 
-            if not home_team or not away_team:
-                continue
+                home_line = game_lines[
+                    game_lines["TEAM_ID"] == home_team_id
+                ]
 
-            prediction = safe_prediction(
-                home_team,
-                away_team
-            )
+                away_line = game_lines[
+                    game_lines["TEAM_ID"] == away_team_id
+                ]
 
-            try:
-                home_score = int(float(home_line.get("PTS", 0) or 0))
-            except Exception:
-                home_score = 0
+                if home_line.empty or away_line.empty:
+                    if len(game_lines) >= 2:
+                        away_line = game_lines.iloc[[0]]
+                        home_line = game_lines.iloc[[1]]
+                    else:
+                        continue
 
-            try:
-                away_score = int(float(away_line.get("PTS", 0) or 0))
-            except Exception:
-                away_score = 0
+                home_line = home_line.iloc[0]
+                away_line = away_line.iloc[0]
 
-            prediction["game_id"] = game_id
-            prediction["game_date"] = formatted_date
-            prediction["home_score"] = home_score
-            prediction["away_score"] = away_score
-            prediction["game_status"] = str(
-                game_row.get("GAME_STATUS_TEXT", "")
-            )
+                home_team = (
+                    f"{home_line.get('TEAM_CITY_NAME', '')} "
+                    f"{home_line.get('TEAM_NAME', '')}"
+                ).strip()
 
-            games.append(prediction)
+                away_team = (
+                    f"{away_line.get('TEAM_CITY_NAME', '')} "
+                    f"{away_line.get('TEAM_NAME', '')}"
+                ).strip()
+
+                prediction = safe_prediction(
+                    home_team,
+                    away_team
+                )
+
+                prediction["game_id"] = game_id
+                prediction["game_date"] = formatted_date
+                prediction["selected_date"] = parsed_date.strftime("%m/%d/%Y")
+                prediction["home_score"] = int(float(home_line.get("PTS", 0) or 0))
+                prediction["away_score"] = int(float(away_line.get("PTS", 0) or 0))
+                prediction["game_status"] = str(game_row.get("GAME_STATUS_TEXT", ""))
+
+                games.append(prediction)
+                seen_game_ids.add(game_id)
 
         return {
-            "date": formatted_date,
+            "date": parsed_date.strftime("%m/%d/%Y"),
             "games": games,
             "games_found": len(games),
-            "mode": "scoreboardv2"
+            "mode": "scoreboardv2_date_window"
         }
 
     except Exception as e:
@@ -501,8 +478,7 @@ def predict_today(date: str = None):
             "games": [],
             "games_found": 0,
             "mode": "scoreboardv2_error",
-            "error": str(e),
-            "message": "predict_today failed while fetching NBA ScoreboardV2 schedule."
+            "error": str(e)
         }
 
 
