@@ -1143,222 +1143,222 @@ if data and "games" in data and len(data["games"]) > 0:
         if home_odds and away_odds:
             st.subheader("Totals / Over-Under Model")
 
-            bookmaker_total = st.number_input(
-                f"Bookmaker Total Line for {game['away_team']} @ {game['home_team']}",
-                min_value=150.0,
-                max_value=300.0,
-                value=220.5,
-                step=0.5,
-                key=f"total_line_{game['away_team']}_{game['home_team']}"
+        bookmaker_total = st.number_input(
+            f"Bookmaker Total Line for {game['away_team']} @ {game['home_team']}",
+            min_value=150.0,
+            max_value=300.0,
+            value=220.5,
+            step=0.5,
+            key=f"total_line_{game['away_team']}_{game['home_team']}"
+        )
+        
+        totals_result = predict_game_total(
+            home_team=game["home_team"],
+            away_team=game["away_team"],
+            bookmaker_total=bookmaker_total
+        )
+        
+        t1, t2, t3 = st.columns(3)
+        
+        with t1:
+            st.metric(
+                "Projected Total",
+                totals_result["projected_total"]
             )
-            
-            totals_result = predict_game_total(
+        
+        with t2:
+            st.metric(
+                "Bookmaker Line",
+                totals_result["bookmaker_total"]
+            )
+        
+        with t3:
+            st.metric(
+                "Edge",
+                totals_result["edge"]
+            )
+        
+        st.info(
+            f"Recommendation: {totals_result['recommendation']} — "
+            f"{totals_result['confidence_note']}"
+        )
+        pace_col1, pace_col2, pace_col3 = st.columns(3)
+
+        with pace_col1:
+            st.metric(
+                "Raw Total Before Pace",
+                totals_result["raw_projected_total"]
+            )
+        
+        with pace_col2:
+            st.metric(
+                "Pace Adjustment",
+                totals_result["pace_adjustment"]
+            )
+        
+        with pace_col3:
+            st.metric(
+                "Combined Pace Score",
+                totals_result["combined_pace_score"]
+            )
+        st.metric(
+            "History Rows Loaded",
+            totals_result["history_rows"]
+        )
+        st.text(
+            totals_result["history_columns"]
+        )
+        off_col1, off_col2, off_col3 = st.columns(3)
+        def_col1, def_col2, def_col3 = st.columns(3)
+        
+        with def_col1:
+            st.metric(
+                "Home Defensive Rating",
+                totals_result["home_defensive_rating"]
+            )
+        
+        with def_col2:
+            st.metric(
+                "Away Defensive Rating",
+                totals_result["away_defensive_rating"]
+            )
+        
+        with def_col3:
+            st.metric(
+                "Defensive Adjustment",
+                totals_result["defensive_adjustment"]
+            )
+        split_col1, split_col2, split_col3 = st.columns(3)
+
+        with split_col1:
+            st.metric(
+                "Home Split",
+                totals_result["home_split"]
+            )
+        
+        with split_col2:
+            st.metric(
+                "Away Split",
+                totals_result["away_split"]
+            )
+        
+        with split_col3:
+            st.metric(
+                "Home/Away Adjustment",
+                totals_result["home_away_adjustment"]
+            )
+
+        with off_col1:
+            st.metric(
+                "Home Offensive Rating",
+                totals_result["home_offensive_rating"]
+            )
+        
+        with off_col2:
+            st.metric(
+                "Away Offensive Rating",
+                totals_result["away_offensive_rating"]
+            )
+        
+        with off_col3:
+            st.metric(
+                "Offensive Adjustment",
+                totals_result["offensive_adjustment"]
+            )
+
+        rest_col1, rest_col2, rest_col3 = st.columns(3)
+
+        with rest_col1:
+            st.metric(
+                "Home Rest Days",
+                totals_result["home_rest_days"]
+            )
+        
+        with rest_col2:
+            st.metric(
+                "Away Rest Days",
+                totals_result["away_rest_days"]
+            )
+        
+        with rest_col3:
+            st.metric(
+                "Rest Adjustment",
+                totals_result["rest_adjustment"]
+            )
+
+        totals_injury_col1, totals_injury_col2, totals_injury_col3 = st.columns(3)
+
+        with totals_injury_col1:
+            st.metric(
+                "Totals Home Injury Penalty",
+                totals_result.get(
+                    "home_injury_penalty",
+                    0.0
+                )
+            )
+
+        with totals_injury_col2:
+            st.metric(
+                "Totals Away Injury Penalty",
+                totals_result.get(
+                    "away_injury_penalty",
+                    0.0
+                )
+            )
+
+        with totals_injury_col3:
+            st.metric(
+                "Totals Injury Adjustment",
+                totals_result.get(
+                    "injury_adjustment",
+                    0.0
+                )
+            )
+
+        with st.expander("Totals Injury Debug"):
+            st.write(
+                {
+                    "home_injury_penalty": totals_result.get(
+                        "home_injury_penalty"
+                    ),
+                    "away_injury_penalty": totals_result.get(
+                        "away_injury_penalty"
+                    ),
+                    "injury_adjustment": totals_result.get(
+                        "injury_adjustment"
+                    ),
+                }
+            )
+            st.write("Home missing players")
+            st.json(
+                totals_result.get(
+                    "home_missing_players",
+                    []
+                )
+            )
+            st.write("Away missing players")
+            st.json(
+                totals_result.get(
+                    "away_missing_players",
+                    []
+                )
+            )
+        if st.button(
+            f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
+        ):
+        
+            save_totals_pick(
+                game_date=active_date,
                 home_team=game["home_team"],
                 away_team=game["away_team"],
-                bookmaker_total=bookmaker_total
+                projected_total=totals_result["projected_total"],
+                sportsbook_total=totals_result["bookmaker_total"],
+                recommendation=totals_result["recommendation"]
             )
-            
-            t1, t2, t3 = st.columns(3)
-            
-            with t1:
-                st.metric(
-                    "Projected Total",
-                    totals_result["projected_total"]
-                )
-            
-            with t2:
-                st.metric(
-                    "Bookmaker Line",
-                    totals_result["bookmaker_total"]
-                )
-            
-            with t3:
-                st.metric(
-                    "Edge",
-                    totals_result["edge"]
-                )
-            
-            st.info(
-                f"Recommendation: {totals_result['recommendation']} — "
-                f"{totals_result['confidence_note']}"
-            )
-            pace_col1, pace_col2, pace_col3 = st.columns(3)
-
-            with pace_col1:
-                st.metric(
-                    "Raw Total Before Pace",
-                    totals_result["raw_projected_total"]
-                )
-            
-            with pace_col2:
-                st.metric(
-                    "Pace Adjustment",
-                    totals_result["pace_adjustment"]
-                )
-            
-            with pace_col3:
-                st.metric(
-                    "Combined Pace Score",
-                    totals_result["combined_pace_score"]
-                )
-            st.metric(
-                "History Rows Loaded",
-                totals_result["history_rows"]
-            )
-            st.text(
-                totals_result["history_columns"]
-            )
-            off_col1, off_col2, off_col3 = st.columns(3)
-            def_col1, def_col2, def_col3 = st.columns(3)
-            
-            with def_col1:
-                st.metric(
-                    "Home Defensive Rating",
-                    totals_result["home_defensive_rating"]
-                )
-            
-            with def_col2:
-                st.metric(
-                    "Away Defensive Rating",
-                    totals_result["away_defensive_rating"]
-                )
-            
-            with def_col3:
-                st.metric(
-                    "Defensive Adjustment",
-                    totals_result["defensive_adjustment"]
-                )
-            split_col1, split_col2, split_col3 = st.columns(3)
-
-            with split_col1:
-                st.metric(
-                    "Home Split",
-                    totals_result["home_split"]
-                )
-            
-            with split_col2:
-                st.metric(
-                    "Away Split",
-                    totals_result["away_split"]
-                )
-            
-            with split_col3:
-                st.metric(
-                    "Home/Away Adjustment",
-                    totals_result["home_away_adjustment"]
-                )
-
-            with off_col1:
-                st.metric(
-                    "Home Offensive Rating",
-                    totals_result["home_offensive_rating"]
-                )
-            
-            with off_col2:
-                st.metric(
-                    "Away Offensive Rating",
-                    totals_result["away_offensive_rating"]
-                )
-            
-            with off_col3:
-                st.metric(
-                    "Offensive Adjustment",
-                    totals_result["offensive_adjustment"]
-                )
-
-            rest_col1, rest_col2, rest_col3 = st.columns(3)
-
-            with rest_col1:
-                st.metric(
-                    "Home Rest Days",
-                    totals_result["home_rest_days"]
-                )
-            
-            with rest_col2:
-                st.metric(
-                    "Away Rest Days",
-                    totals_result["away_rest_days"]
-                )
-            
-            with rest_col3:
-                st.metric(
-                    "Rest Adjustment",
-                    totals_result["rest_adjustment"]
-                )
-
-            totals_injury_col1, totals_injury_col2, totals_injury_col3 = st.columns(3)
-
-            with totals_injury_col1:
-                st.metric(
-                    "Totals Home Injury Penalty",
-                    totals_result.get(
-                        "home_injury_penalty",
-                        0.0
-                    )
-                )
-
-            with totals_injury_col2:
-                st.metric(
-                    "Totals Away Injury Penalty",
-                    totals_result.get(
-                        "away_injury_penalty",
-                        0.0
-                    )
-                )
-
-            with totals_injury_col3:
-                st.metric(
-                    "Totals Injury Adjustment",
-                    totals_result.get(
-                        "injury_adjustment",
-                        0.0
-                    )
-                )
-
-            with st.expander("Totals Injury Debug"):
-                st.write(
-                    {
-                        "home_injury_penalty": totals_result.get(
-                            "home_injury_penalty"
-                        ),
-                        "away_injury_penalty": totals_result.get(
-                            "away_injury_penalty"
-                        ),
-                        "injury_adjustment": totals_result.get(
-                            "injury_adjustment"
-                        ),
-                    }
-                )
-                st.write("Home missing players")
-                st.json(
-                    totals_result.get(
-                        "home_missing_players",
-                        []
-                    )
-                )
-                st.write("Away missing players")
-                st.json(
-                    totals_result.get(
-                        "away_missing_players",
-                        []
-                    )
-                )
-            if st.button(
-                f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
-            ):
-            
-                save_totals_pick(
-                    game_date=active_date,
-                    home_team=game["home_team"],
-                    away_team=game["away_team"],
-                    projected_total=totals_result["projected_total"],
-                    sportsbook_total=totals_result["bookmaker_total"],
-                    recommendation=totals_result["recommendation"]
-                )
-            
-                st.success("Totals pick saved.")
-            with st.expander("Totals Model Details"):
-                st.json(totals_result)
+        
+            st.success("Totals pick saved.")
+        with st.expander("Totals Model Details"):
+            st.json(totals_result)
             st.subheader("Betting Analytics")
 
             calibrated_home_prob = calibrate_probability(
