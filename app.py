@@ -1,4 +1,4 @@
-from nba_api.stats.endpoints import scoreboardv2, leaguegamefinder
+from nba_api.stats.endpoints import scoreboardv2
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,10 +53,18 @@ for path in MODEL_CANDIDATES:
     except Exception as e:
         model_error = str(e)
 
-with open(TEAM_MAP_PATH, "r") as f:
-    team_map = {int(k): v for k, v in json.load(f).items()}
+team_map = {}
+try:
+    with open(TEAM_MAP_PATH, "r") as f:
+        team_map = {int(k): v for k, v in json.load(f).items()}
+except Exception as e:
+    model_error = f"{model_error} | team_map load error: {e}".strip(" |")
 
-history = pd.read_parquet(DATA_PATH)
+try:
+    history = pd.read_parquet(DATA_PATH)
+except Exception as e:
+    history = pd.DataFrame()
+    model_error = f"{model_error} | history load error: {e}".strip(" |")
 
 
 @app.get("/")
@@ -67,7 +75,7 @@ def root():
 @app.get("/version")
 def version():
     return {
-        "version": "basketball-model-v4-safe",
+        "version": "basketball-model-v5-scoreboard-only",
         "model_status": model_status,
         "model_error": model_error
     }
@@ -75,6 +83,9 @@ def version():
 
 @app.get("/teams")
 def teams():
+    if history.empty:
+        return {"teams": []}
+
     team_names = sorted(
         set(history["home_team_name"]).union(
             set(history["away_team_name"])
@@ -82,6 +93,25 @@ def teams():
     )
 
     return {"teams": team_names}
+
+
+def parse_selected_date(date_value: str = None):
+    """
+    Accepts MM/DD/YYYY from Streamlit and also supports YYYY-MM-DD for debugging URLs.
+    Returns a datetime object.
+    """
+    if date_value is None or str(date_value).strip() == "":
+        return datetime.now()
+
+    date_value = str(date_value).strip()
+
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(date_value, fmt)
+        except Exception:
+            pass
+
+    raise ValueError("Invalid date format. Use MM/DD/YYYY or YYYY-MM-DD.")
 
 
 def build_feature_row(latest_home, latest_away):
@@ -118,11 +148,55 @@ def build_feature_row(latest_home, latest_away):
     return row
 
 
+def safe_prediction(home_team, away_team):
+    """
+    Runs predict_matchup but always returns frontend-safe keys.
+    """
+    prediction = predict_matchup({
+        "home_team": home_team,
+        "away_team": away_team
+    })
+
+    if "error" not in prediction:
+        return prediction
+
+    return {
+        "home_team": home_team,
+        "away_team": away_team,
+        "home_win_probability": 0.5,
+        "away_win_probability": 0.5,
+        "prediction": home_team,
+        "best_bet": home_team,
+        "confidence": 0.5,
+        "model_status": model_status,
+        "warning": prediction.get("error", "Model prediction failed."),
+
+        "home_recent_win_rate": 0,
+        "away_recent_win_rate": 0,
+        "home_recent_margin": 0,
+        "away_recent_margin": 0,
+        "home_rest_days": 0,
+        "away_rest_days": 0,
+        "home_strength": 0,
+        "away_strength": 0,
+
+        "home_injury_penalty": 0,
+        "away_injury_penalty": 0,
+        "injury_diff": 0,
+        "injury_probability_adjustment": 0,
+        "home_injuries": [],
+        "away_injuries": []
+    }
+
+
 @app.post("/predict_matchup")
 def predict_matchup(payload: dict):
 
     home_team = payload["home_team"]
     away_team = payload["away_team"]
+
+    if history.empty:
+        return {"error": "Training history is not loaded."}
 
     home_games = history[
         (history["home_team_name"] == home_team)
@@ -288,199 +362,213 @@ def predict_matchup(payload: dict):
         injury_data.get("away_injuries", [])
     }
 
-@app.get("/raw_scoreboard")
-def raw_scoreboard(date: str):
 
-    from nba_api.stats.endpoints import scoreboardv2
-
-    board = scoreboardv2.ScoreboardV2(
-        game_date=date
-    )
-
-    frames = board.get_data_frames()
-
-    return {
-        "num_frames": len(frames),
-        "frame0_rows": len(frames[0]) if len(frames) > 0 else 0,
-        "frame1_rows": len(frames[1]) if len(frames) > 1 else 0,
-    }
 @app.get("/predict_today")
 def predict_today(date: str = None):
+    """
+    Uses NBA ScoreboardV2 as the only schedule source.
+
+    Important:
+    - Odds API must not be used as the schedule source.
+    - LeagueGameFinder must not be used as the schedule source.
+    - This endpoint returns only games that NBA ScoreboardV2 reports for the selected date.
+    """
 
     try:
-
-        if date is None:
-            date = datetime.now().strftime("%m/%d/%Y")
-
         try:
-            parsed_date = datetime.strptime(
-                date,
-                "%m/%d/%Y"
-            )
-        except Exception:
-
+            parsed_date = parse_selected_date(date)
+        except Exception as e:
             return {
                 "date": date,
                 "games": [],
                 "games_found": 0,
                 "mode": "invalid_date",
-                "message":
-                "Invalid date format. Use MM/DD/YYYY."
+                "message": str(e)
             }
 
+        formatted_date = parsed_date.strftime("%m/%d/%Y")
+
         scoreboard = scoreboardv2.ScoreboardV2(
-            game_date=parsed_date.strftime(
-                "%m/%d/%Y"
-            )
+            game_date=formatted_date
         )
 
         frames = scoreboard.get_data_frames()
 
         if len(frames) < 2:
-
             return {
-                "date": date,
+                "date": formatted_date,
                 "games": [],
                 "games_found": 0,
                 "mode": "scoreboardv2",
-                "message":
-                "No scoreboard data returned."
+                "message": "No scoreboard data returned."
             }
 
         game_header = frames[0].fillna("")
         line_score = frames[1].fillna("")
 
         if game_header.empty:
-
             return {
-                "date": date,
+                "date": formatted_date,
                 "games": [],
                 "games_found": 0,
                 "mode": "scoreboardv2",
-                "message":
-                "No NBA games scheduled for this date."
+                "message": "No NBA games scheduled for this date."
             }
 
         games = []
 
         for _, game_row in game_header.iterrows():
 
-            game_id = game_row.get(
-                "GAME_ID",
-                ""
-            )
+            game_id = str(game_row.get("GAME_ID", "")).strip()
 
             game_lines = line_score[
-                line_score["GAME_ID"]
-                ==
-                game_id
+                line_score["GAME_ID"].astype(str) == game_id
             ]
 
             if len(game_lines) < 2:
                 continue
 
-            home_team_id = game_row.get(
-                "HOME_TEAM_ID"
-            )
-
-            away_team_id = game_row.get(
-                "VISITOR_TEAM_ID"
-            )
+            home_team_id = game_row.get("HOME_TEAM_ID", None)
+            away_team_id = game_row.get("VISITOR_TEAM_ID", None)
 
             home_line = game_lines[
-                game_lines["TEAM_ID"]
-                ==
-                home_team_id
+                game_lines["TEAM_ID"] == home_team_id
             ]
 
             away_line = game_lines[
-                game_lines["TEAM_ID"]
-                ==
-                away_team_id
+                game_lines["TEAM_ID"] == away_team_id
             ]
 
-            if (
-                home_line.empty
-                or
-                away_line.empty
-            ):
-                continue
+            if home_line.empty or away_line.empty:
+                if len(game_lines) >= 2:
+                    # ScoreboardV2 line_score usually lists visitor first, home second.
+                    away_line = game_lines.iloc[[0]]
+                    home_line = game_lines.iloc[[1]]
+                else:
+                    continue
 
             home_line = home_line.iloc[0]
             away_line = away_line.iloc[0]
 
             home_team = (
-                f"{home_line.get('TEAM_CITY_NAME','')} "
-                f"{home_line.get('TEAM_NAME','')}"
+                f"{home_line.get('TEAM_CITY_NAME', '')} "
+                f"{home_line.get('TEAM_NAME', '')}"
             ).strip()
 
             away_team = (
-                f"{away_line.get('TEAM_CITY_NAME','')} "
-                f"{away_line.get('TEAM_NAME','')}"
+                f"{away_line.get('TEAM_CITY_NAME', '')} "
+                f"{away_line.get('TEAM_NAME', '')}"
             ).strip()
 
-            prediction = predict_matchup({
-                "home_team": home_team,
-                "away_team": away_team
-            })
+            if not home_team or not away_team:
+                continue
 
-            if "error" in prediction:
+            prediction = safe_prediction(
+                home_team,
+                away_team
+            )
 
-                prediction = {
-                    "home_team": home_team,
-                    "away_team": away_team,
-                    "prediction": "No Bet",
-                    "best_bet": "No Bet",
-                    "confidence": 0,
-                    "warning":
-                    prediction["error"]
-                }
+            try:
+                home_score = int(float(home_line.get("PTS", 0) or 0))
+            except Exception:
+                home_score = 0
+
+            try:
+                away_score = int(float(away_line.get("PTS", 0) or 0))
+            except Exception:
+                away_score = 0
 
             prediction["game_id"] = game_id
-            prediction["game_date"] = date
-            prediction["game_status"] = game_row.get(
-                "GAME_STATUS_TEXT",
-                ""
+            prediction["game_date"] = formatted_date
+            prediction["home_score"] = home_score
+            prediction["away_score"] = away_score
+            prediction["game_status"] = str(
+                game_row.get("GAME_STATUS_TEXT", "")
             )
 
-            try:
-                prediction["home_score"] = int(
-                    home_line.get("PTS", 0)
-                )
-            except Exception:
-                prediction["home_score"] = 0
-
-            try:
-                prediction["away_score"] = int(
-                    away_line.get("PTS", 0)
-                )
-            except Exception:
-                prediction["away_score"] = 0
-
-            games.append(
-                prediction
-            )
+            games.append(prediction)
 
         return {
-            "date": date,
+            "date": formatted_date,
             "games": games,
             "games_found": len(games),
             "mode": "scoreboardv2"
         }
 
     except Exception as e:
-
         return {
             "date": date,
             "games": [],
             "games_found": 0,
             "mode": "scoreboardv2_error",
-            "error": str(e)
+            "error": str(e),
+            "message": "predict_today failed while fetching NBA ScoreboardV2 schedule."
         }
+
 
 @app.get("/daily-predictions")
 def daily_predictions(date: str = None):
     return predict_today(date)
+
+
+@app.get("/raw_scoreboard")
+def raw_scoreboard(date: str):
+    """
+    Debug endpoint.
+    Example:
+    /raw_scoreboard?date=06/10/2026
+    /raw_scoreboard?date=2026-06-10
+    """
+
+    try:
+        parsed_date = parse_selected_date(date)
+        formatted_date = parsed_date.strftime("%m/%d/%Y")
+
+        board = scoreboardv2.ScoreboardV2(
+            game_date=formatted_date
+        )
+
+        frames = board.get_data_frames()
+
+        frame_info = []
+
+        for index, frame in enumerate(frames):
+            frame_info.append({
+                "frame": index,
+                "rows": len(frame),
+                "columns": list(frame.columns)
+            })
+
+        sample_frame_0 = []
+        sample_frame_1 = []
+
+        if len(frames) > 0 and not frames[0].empty:
+            sample_frame_0 = frames[0].head(10).fillna("").to_dict(
+                orient="records"
+            )
+
+        if len(frames) > 1 and not frames[1].empty:
+            sample_frame_1 = frames[1].head(20).fillna("").to_dict(
+                orient="records"
+            )
+
+        return {
+            "input_date": date,
+            "formatted_date": formatted_date,
+            "num_frames": len(frames),
+            "frames": frame_info,
+            "frame0_rows": len(frames[0]) if len(frames) > 0 else 0,
+            "frame1_rows": len(frames[1]) if len(frames) > 1 else 0,
+            "sample_frame_0": sample_frame_0,
+            "sample_frame_1": sample_frame_1
+        }
+
+    except Exception as e:
+        return {
+            "input_date": date,
+            "mode": "raw_scoreboard_error",
+            "error": str(e)
+        }
 
 
 @app.get("/score_result")
@@ -492,10 +580,7 @@ def score_result(
 ):
 
     try:
-        parsed_date = datetime.strptime(
-            date,
-            "%m/%d/%Y"
-        )
+        parsed_date = parse_selected_date(date)
 
         scoreboard = scoreboardv2.ScoreboardV2(
             game_date=parsed_date.strftime("%m/%d/%Y")
@@ -572,8 +657,10 @@ def score_result(
                     "home_team": home_team,
                     "away_team": away_team,
 
-                    "home_score": team1_points,
-                    "away_score": team2_points,
+                    "team1": t1,
+                    "team2": t2,
+                    "team1_score": team1_points,
+                    "team2_score": team2_points,
 
                     "winner": winner,
 
@@ -593,53 +680,7 @@ def score_result(
             "message": str(e)
         }
 
-# -----------------------------------
-# ADD THIS NEW ENDPOINT HERE
-# -----------------------------------
 
-@app.get("/debug_schedule")
-def debug_schedule(date: str):
-
-    from nba_api.stats.endpoints import leaguegamefinder
-    import pandas as pd
-
-    lgf = leaguegamefinder.LeagueGameFinder()
-
-    df = lgf.get_data_frames()[0]
-
-    df["GAME_DATE"] = pd.to_datetime(
-        df["GAME_DATE"],
-        errors="coerce"
-    )
-
-    target = pd.to_datetime(date)
-
-    matches = df[
-        df["GAME_DATE"].dt.strftime("%Y-%m-%d")
-        ==
-        target.strftime("%Y-%m-%d")
-    ]
-
-    return {
-        "rows_found": len(matches),
-        "sample": matches.head(20).to_dict(
-            orient="records"
-        )
-    }
-
-
-# -----------------------------------
-# YOUR EXISTING ENDPOINT
-# -----------------------------------
-
-@app.get("/debug_injuries")
-def debug_injuries():
-
-    sample_teams = [
-        "Cleveland Cavaliers",
-        "Detroit Pistons",
-        ...
-    ]
 @app.get("/debug_injuries")
 def debug_injuries():
 
@@ -664,3 +705,4 @@ def debug_injuries():
         )
 
     return output
+
