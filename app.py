@@ -288,7 +288,22 @@ def predict_matchup(payload: dict):
         injury_data.get("away_injuries", [])
     }
 
+@app.get("/raw_scoreboard")
+def raw_scoreboard(date: str):
 
+    from nba_api.stats.endpoints import scoreboardv2
+
+    board = scoreboardv2.ScoreboardV2(
+        game_date=date
+    )
+
+    frames = board.get_data_frames()
+
+    return {
+        "num_frames": len(frames),
+        "frame0_rows": len(frames[0]) if len(frames) > 0 else 0,
+        "frame1_rows": len(frames[1]) if len(frames) > 1 else 0,
+    }
 @app.get("/predict_today")
 def predict_today(date: str = None):
 
