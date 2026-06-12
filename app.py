@@ -615,7 +615,53 @@ def score_result(
             "message": str(e)
         }
 
+# -----------------------------------
+# ADD THIS NEW ENDPOINT HERE
+# -----------------------------------
 
+@app.get("/debug_schedule")
+def debug_schedule(date: str):
+
+    from nba_api.stats.endpoints import leaguegamefinder
+    import pandas as pd
+
+    lgf = leaguegamefinder.LeagueGameFinder()
+
+    df = lgf.get_data_frames()[0]
+
+    df["GAME_DATE"] = pd.to_datetime(
+        df["GAME_DATE"],
+        errors="coerce"
+    )
+
+    target = pd.to_datetime(date)
+
+    matches = df[
+        df["GAME_DATE"].dt.strftime("%Y-%m-%d")
+        ==
+        target.strftime("%Y-%m-%d")
+    ]
+
+    return {
+        "rows_found": len(matches),
+        "sample": matches.head(20).to_dict(
+            orient="records"
+        )
+    }
+
+
+# -----------------------------------
+# YOUR EXISTING ENDPOINT
+# -----------------------------------
+
+@app.get("/debug_injuries")
+def debug_injuries():
+
+    sample_teams = [
+        "Cleveland Cavaliers",
+        "Detroit Pistons",
+        ...
+    ]
 @app.get("/debug_injuries")
 def debug_injuries():
 
