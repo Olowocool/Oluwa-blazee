@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import requests
 
 from injury_impact import calculate_matchup_injury_adjustment
 
@@ -70,6 +71,13 @@ NBA_TEAM_ID_MAP = {
     1610612764: "Washington Wizards",
 }
 
+ESPN_TEAM_NAME_FIXES = {
+    "LA Clippers": "Los Angeles Clippers",
+    "Los Angeles Clippers": "Los Angeles Clippers",
+    "New York Knicks": "New York Knicks",
+    "San Antonio Spurs": "San Antonio Spurs",
+}
+
 model = None
 feature_cols = []
 model_status = "not_loaded"
@@ -108,7 +116,7 @@ def root():
 @app.get("/version")
 def version():
     return {
-        "version": "basketball-model-v7-scoreboard-date-window-v3",
+        "version": "basketball-model-v7-espn-schedule-primary",
         "model_status": model_status,
         "model_error": model_error
     }
@@ -152,6 +160,11 @@ def normalize_team_id(team_id):
         return None
 
 
+def normalize_team_name(name):
+    name = str(name or "").strip()
+    return ESPN_TEAM_NAME_FIXES.get(name, name)
+
+
 def team_name_from_id(team_id):
     team_id = normalize_team_id(team_id)
 
@@ -165,21 +178,6 @@ def team_name_from_id(team_id):
         return team_map[team_id]
 
     return ""
-
-
-def team_name_from_line(line_row, fallback_team_id=None):
-    if line_row is not None:
-        city = str(line_row.get("TEAM_CITY_NAME", "")).strip()
-        name = str(line_row.get("TEAM_NAME", "")).strip()
-
-        if city and name:
-            return f"{city} {name}".strip()
-
-        mapped = team_name_from_id(line_row.get("TEAM_ID", fallback_team_id))
-        if mapped:
-            return mapped
-
-    return team_name_from_id(fallback_team_id)
 
 
 def safe_int(value, default=0):
@@ -214,6 +212,33 @@ def build_feature_row(latest_home, latest_away):
 
 
 def safe_prediction(home_team, away_team):
+    if not home_team or not away_team:
+        return {
+            "home_team": home_team,
+            "away_team": away_team,
+            "home_win_probability": 0.5,
+            "away_win_probability": 0.5,
+            "prediction": "No Bet",
+            "best_bet": "No Bet",
+            "confidence": 0,
+            "model_status": model_status,
+            "warning": "Missing home or away team.",
+            "home_recent_win_rate": 0,
+            "away_recent_win_rate": 0,
+            "home_recent_margin": 0,
+            "away_recent_margin": 0,
+            "home_rest_days": 0,
+            "away_rest_days": 0,
+            "home_strength": 0,
+            "away_strength": 0,
+            "home_injury_penalty": 0,
+            "away_injury_penalty": 0,
+            "injury_diff": 0,
+            "injury_probability_adjustment": 0,
+            "home_injuries": [],
+            "away_injuries": []
+        }
+
     prediction = predict_matchup({
         "home_team": home_team,
         "away_team": away_team
@@ -251,8 +276,8 @@ def safe_prediction(home_team, away_team):
 
 @app.post("/predict_matchup")
 def predict_matchup(payload: dict):
-    home_team = payload["home_team"]
-    away_team = payload["away_team"]
+    home_team = normalize_team_name(payload["home_team"])
+    away_team = normalize_team_name(payload["away_team"])
 
     if history.empty:
         return {"error": "Training history is not loaded."}
@@ -344,15 +369,168 @@ def predict_matchup(payload: dict):
     }
 
 
+def get_espn_schedule_for_date(target_date: datetime):
+    """
+    ESPN is used as the primary schedule source because NBA ScoreboardV2 can return
+    incomplete team rows for future/postseason games.
+    """
+    espn_date = target_date.strftime("%Y%m%d")
+    url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+
+    response = requests.get(
+        url,
+        params={"dates": espn_date},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=30
+    )
+
+    response.raise_for_status()
+    data = response.json()
+
+    games = []
+
+    for event in data.get("events", []):
+        competition = event.get("competitions", [{}])[0]
+        competitors = competition.get("competitors", [])
+
+        home_team = ""
+        away_team = ""
+        home_score = 0
+        away_score = 0
+
+        for competitor in competitors:
+            team = competitor.get("team", {})
+            display_name = normalize_team_name(team.get("displayName", ""))
+
+            score = safe_int(competitor.get("score", 0))
+
+            if competitor.get("homeAway") == "home":
+                home_team = display_name
+                home_score = score
+            elif competitor.get("homeAway") == "away":
+                away_team = display_name
+                away_score = score
+
+        if not home_team or not away_team:
+            continue
+
+        prediction = safe_prediction(home_team, away_team)
+
+        prediction["game_id"] = str(event.get("id", ""))
+        prediction["game_date"] = target_date.strftime("%m/%d/%Y")
+        prediction["selected_date"] = target_date.strftime("%m/%d/%Y")
+        prediction["schedule_source_date"] = target_date.strftime("%m/%d/%Y")
+        prediction["home_score"] = home_score
+        prediction["away_score"] = away_score
+        prediction["game_status"] = event.get("status", {}).get("type", {}).get("description", "")
+        prediction["game_time"] = event.get("date", "")
+        prediction["schedule_provider"] = "espn_scoreboard"
+
+        games.append(prediction)
+
+    return games
+
+
+def get_nba_scoreboard_games_for_date(target_date: datetime):
+    """
+    Fallback schedule source. Uses NBA ScoreboardV2.
+    """
+    formatted_date = target_date.strftime("%m/%d/%Y")
+
+    scoreboard = scoreboardv2.ScoreboardV2(game_date=formatted_date)
+    frames = scoreboard.get_data_frames()
+
+    if len(frames) < 1:
+        return [], {"date": formatted_date, "frame0_rows": 0, "frame1_rows": 0}
+
+    game_header = frames[0].fillna("")
+    line_score = frames[1].fillna("") if len(frames) > 1 else pd.DataFrame()
+
+    debug = {
+        "date": formatted_date,
+        "frame0_rows": len(game_header),
+        "frame1_rows": len(line_score),
+    }
+
+    if game_header.empty:
+        return [], debug
+
+    games = []
+
+    for _, game_row in game_header.iterrows():
+        game_id = str(game_row.get("GAME_ID", "")).strip()
+        if not game_id:
+            continue
+
+        home_team_id = game_row.get("HOME_TEAM_ID", None)
+        away_team_id = game_row.get("VISITOR_TEAM_ID", None)
+
+        home_team = team_name_from_id(home_team_id)
+        away_team = team_name_from_id(away_team_id)
+
+        game_lines = pd.DataFrame()
+        if not line_score.empty and "GAME_ID" in line_score.columns:
+            game_lines = line_score[line_score["GAME_ID"].astype(str) == game_id]
+
+        if game_lines is not None and not game_lines.empty and "TEAM_ID" in game_lines.columns:
+            for _, line in game_lines.iterrows():
+                line_team_id = normalize_team_id(line.get("TEAM_ID", None))
+                line_team_name = normalize_team_name(
+                    f"{line.get('TEAM_CITY_NAME', '')} {line.get('TEAM_NAME', '')}".strip()
+                )
+
+                if line_team_id == normalize_team_id(home_team_id):
+                    home_team = line_team_name or home_team
+                elif line_team_id == normalize_team_id(away_team_id):
+                    away_team = line_team_name or away_team
+                elif not away_team and line_team_id != normalize_team_id(home_team_id):
+                    away_team = line_team_name
+
+        if not home_team or not away_team:
+            continue
+
+        prediction = safe_prediction(home_team, away_team)
+
+        home_score = 0
+        away_score = 0
+
+        if game_lines is not None and not game_lines.empty and "TEAM_ID" in game_lines.columns:
+            for _, line in game_lines.iterrows():
+                line_team_id = normalize_team_id(line.get("TEAM_ID", None))
+                if line_team_id == normalize_team_id(home_team_id):
+                    home_score = safe_int(line.get("PTS", 0))
+                elif line_team_id == normalize_team_id(away_team_id):
+                    away_score = safe_int(line.get("PTS", 0))
+
+        prediction["game_id"] = game_id
+        prediction["game_date"] = formatted_date
+        prediction["selected_date"] = formatted_date
+        prediction["schedule_source_date"] = formatted_date
+        prediction["home_score"] = home_score
+        prediction["away_score"] = away_score
+        prediction["game_status"] = str(game_row.get("GAME_STATUS_TEXT", ""))
+        prediction["schedule_provider"] = "nba_scoreboardv2"
+
+        games.append(prediction)
+
+    return games, debug
+
+
 @app.get("/predict_today")
 def predict_today(date: str = None):
     """
-    Reliable date-window ScoreboardV2 schedule loader.
+    Final schedule endpoint.
 
-    Fixes the previous bug where a valid game was found in the date window
-    but skipped/failed because ScoreboardV2 sometimes returns only one
-    line_score row before full box-score data is populated.
+    Primary source:
+    - ESPN scoreboard for the exact selected date.
+
+    Fallback source:
+    - NBA ScoreboardV2 date window: selected date, previous day, next day.
+
+    This avoids the ScoreboardV2 bug where the playoff/future game can have
+    home team only and a blank visitor team.
     """
+
     try:
         try:
             parsed_date = parse_selected_date(date)
@@ -366,7 +544,35 @@ def predict_today(date: str = None):
             }
 
         selected_date = parsed_date.strftime("%m/%d/%Y")
+        checked_sources = []
 
+        # 1. ESPN exact-date schedule first.
+        try:
+            espn_games = get_espn_schedule_for_date(parsed_date)
+
+            checked_sources.append({
+                "source": "espn_scoreboard",
+                "date": selected_date,
+                "games_found": len(espn_games)
+            })
+
+            if espn_games:
+                return {
+                    "date": selected_date,
+                    "games": espn_games,
+                    "games_found": len(espn_games),
+                    "mode": "espn_scoreboard_primary",
+                    "checked_sources": checked_sources
+                }
+
+        except Exception as e:
+            checked_sources.append({
+                "source": "espn_scoreboard",
+                "date": selected_date,
+                "error": str(e)
+            })
+
+        # 2. NBA ScoreboardV2 fallback date window.
         search_dates = [
             parsed_date,
             parsed_date - timedelta(days=1),
@@ -375,174 +581,42 @@ def predict_today(date: str = None):
 
         games = []
         seen_game_ids = set()
-        checked_dates = []
 
         for search_date in search_dates:
-            formatted_date = search_date.strftime("%m/%d/%Y")
+            fallback_games, debug = get_nba_scoreboard_games_for_date(search_date)
 
-            try:
-                scoreboard = scoreboardv2.ScoreboardV2(
-                    game_date=formatted_date
-                )
-                frames = scoreboard.get_data_frames()
-            except Exception as e:
-                checked_dates.append({
-                    "date": formatted_date,
-                    "frame0_rows": 0,
-                    "frame1_rows": 0,
-                    "error": str(e)
-                })
-                continue
-
-            frame0_rows = len(frames[0]) if len(frames) > 0 else 0
-            frame1_rows = len(frames[1]) if len(frames) > 1 else 0
-
-            checked_dates.append({
-                "date": formatted_date,
-                "frame0_rows": frame0_rows,
-                "frame1_rows": frame1_rows,
+            checked_sources.append({
+                "source": "nba_scoreboardv2",
+                **debug
             })
 
-            if len(frames) < 1:
-                continue
-
-            game_header = frames[0].fillna("")
-            if game_header.empty:
-                continue
-
-            line_score = (
-                frames[1].fillna("")
-                if len(frames) > 1
-                else pd.DataFrame()
-            )
-
-            for _, game_row in game_header.iterrows():
-                game_id = str(game_row.get("GAME_ID", "")).strip()
-
-                if not game_id or game_id in seen_game_ids:
+            for game in fallback_games:
+                game_id = str(game.get("game_id", ""))
+                if game_id and game_id in seen_game_ids:
                     continue
 
-                home_team_id = game_row.get("HOME_TEAM_ID", None)
-                away_team_id = game_row.get("VISITOR_TEAM_ID", None)
+                game["selected_date"] = selected_date
 
-                home_line_row = None
-                away_line_row = None
-                game_lines = pd.DataFrame()
+                games.append(game)
+                if game_id:
+                    seen_game_ids.add(game_id)
 
-                if not line_score.empty and "GAME_ID" in line_score.columns:
-                    game_lines = line_score[
-                        line_score["GAME_ID"].astype(str) == game_id
-                    ]
-
-                    if not game_lines.empty and "TEAM_ID" in game_lines.columns:
-                        for _, possible_line in game_lines.iterrows():
-                            possible_team_id = normalize_team_id(
-                                possible_line.get("TEAM_ID", None)
-                            )
-                    
-                            normalized_home_id = normalize_team_id(home_team_id)
-                            normalized_away_id = normalize_team_id(away_team_id)
-                    
-                            if possible_team_id == normalized_home_id:
-                                home_line_row = possible_line
-                    
-                            if normalized_away_id is not None and possible_team_id == normalized_away_id:
-                                away_line_row = possible_line
-                    
-                        if away_line_row is None and len(game_lines) >= 1:
-                            for _, possible_line in game_lines.iterrows():
-                                possible_team_id = normalize_team_id(
-                                    possible_line.get("TEAM_ID", None)
-                                )
-                    
-                                if possible_team_id != normalize_team_id(home_team_id):
-                                    away_line_row = possible_line
-                                    away_team_id = possible_team_id
-                                    break
-
-                # Always resolve team names from the official IDs first.
-                home_team = team_name_from_id(home_team_id)
-                away_team = team_name_from_id(away_team_id)
-
-                if not home_team:
-                    home_team = team_name_from_line(
-                        home_line_row,
-                        fallback_team_id=home_team_id
-                    )
-
-                if not away_team:
-                    away_team = team_name_from_line(
-                        away_line_row,
-                        fallback_team_id=away_team_id
-                    )
-
-                if not home_team or not away_team:
-                    # Do not drop the game. Return a safe placeholder so the
-                    # frontend still shows the schedule issue clearly.
-                    home_team = home_team or str(home_team_id)
-                    away_team = away_team or str(away_team_id)
-                    prediction = {
-                        "home_team": home_team,
-                        "away_team": away_team,
-                        "home_win_probability": 0.5,
-                        "away_win_probability": 0.5,
-                        "prediction": "No Bet",
-                        "best_bet": "No Bet",
-                        "confidence": 0,
-                        "model_status": model_status,
-                        "warning": "Could not fully resolve team names from NBA team IDs."
-                    }
-                else:
-                    prediction = safe_prediction(
-                        home_team,
-                        away_team
-                    )
-
-                # IMPORTANT: initialize scores before checking line rows.
-                # This fixes the bug where a game with only one line_score row
-                # caused an exception and made the endpoint return zero games.
-                home_score = 0
-                away_score = 0
-
-                if home_line_row is not None:
-                    home_score = safe_int(
-                        home_line_row.get("PTS", 0)
-                    )
-
-                if away_line_row is not None:
-                    away_score = safe_int(
-                        away_line_row.get("PTS", 0)
-                    )
-
-                prediction["game_id"] = game_id
-                prediction["game_date"] = formatted_date
-                prediction["selected_date"] = selected_date
-                prediction["schedule_source_date"] = formatted_date
-                prediction["home_score"] = home_score
-                prediction["away_score"] = away_score
-                prediction["game_status"] = str(
-                    game_row.get("GAME_STATUS_TEXT", "")
-                )
-
-                games.append(prediction)
-                seen_game_ids.add(game_id)
-
-        if not games:
+        if games:
             return {
                 "date": selected_date,
-                "games": [],
-                "games_found": 0,
-                "mode": "scoreboardv2_date_window_v3",
-                "message": "No real NBA games found for this selected date.",
-                "checked_dates": checked_dates
+                "games": games,
+                "games_found": len(games),
+                "mode": "nba_scoreboardv2_fallback_window",
+                "checked_sources": checked_sources
             }
 
         return {
             "date": selected_date,
-            "games": games,
-            "games_found": len(games),
-            "mode": "scoreboardv2_date_window_v3",
-            "checked_dates": checked_dates
+            "games": [],
+            "games_found": 0,
+            "mode": "schedule_not_found",
+            "message": "No real NBA games found for this selected date.",
+            "checked_sources": checked_sources
         }
 
     except Exception as e:
@@ -550,7 +624,7 @@ def predict_today(date: str = None):
             "date": date,
             "games": [],
             "games_found": 0,
-            "mode": "scoreboardv2_error",
+            "mode": "predict_today_error",
             "error": str(e)
         }
 
@@ -604,6 +678,63 @@ def raw_scoreboard(date: str):
         }
 
 
+@app.get("/raw_espn_scoreboard")
+def raw_espn_scoreboard(date: str):
+    try:
+        parsed_date = parse_selected_date(date)
+        espn_date = parsed_date.strftime("%Y%m%d")
+
+        url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+
+        response = requests.get(
+            url,
+            params={"dates": espn_date},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=30
+        )
+
+        response.raise_for_status()
+        data = response.json()
+
+        events = []
+
+        for event in data.get("events", []):
+            competition = event.get("competitions", [{}])[0]
+            competitors = competition.get("competitors", [])
+
+            event_teams = []
+
+            for competitor in competitors:
+                team = competitor.get("team", {})
+                event_teams.append({
+                    "homeAway": competitor.get("homeAway"),
+                    "displayName": team.get("displayName"),
+                    "score": competitor.get("score")
+                })
+
+            events.append({
+                "id": event.get("id"),
+                "name": event.get("name"),
+                "date": event.get("date"),
+                "status": event.get("status", {}).get("type", {}).get("description", ""),
+                "teams": event_teams
+            })
+
+        return {
+            "input_date": date,
+            "espn_date": espn_date,
+            "events_found": len(events),
+            "events": events
+        }
+
+    except Exception as e:
+        return {
+            "input_date": date,
+            "mode": "raw_espn_scoreboard_error",
+            "error": str(e)
+        }
+
+
 @app.get("/score_result")
 def score_result(
     date: str,
@@ -613,6 +744,50 @@ def score_result(
 ):
     try:
         parsed_date = parse_selected_date(date)
+
+        # Use ESPN first for final scores because it resolves both teams reliably.
+        try:
+            espn_games = get_espn_schedule_for_date(parsed_date)
+
+            for game in espn_games:
+                teams_match = sorted([
+                    str(game.get("home_team", "")).lower(),
+                    str(game.get("away_team", "")).lower()
+                ]) == sorted([
+                    home_team.lower(),
+                    away_team.lower()
+                ])
+
+                if not teams_match:
+                    continue
+
+                home_score = safe_int(game.get("home_score", 0))
+                away_score = safe_int(game.get("away_score", 0))
+
+                if home_score <= 0 and away_score <= 0:
+                    return {
+                        "status": "pending",
+                        "message": "Game has no final score yet."
+                    }
+
+                winner = home_team if home_score > away_score else away_team
+                result = "Win" if winner.lower() == best_bet.lower() else "Loss"
+
+                return {
+                    "status": "completed",
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "home_score": home_score,
+                    "away_score": away_score,
+                    "winner": winner,
+                    "best_bet": best_bet,
+                    "result": result
+                }
+
+        except Exception:
+            pass
+
+        # Fallback to NBA ScoreboardV2.
         scoreboard = scoreboardv2.ScoreboardV2(game_date=parsed_date.strftime("%m/%d/%Y"))
         frames = scoreboard.get_data_frames()
 
