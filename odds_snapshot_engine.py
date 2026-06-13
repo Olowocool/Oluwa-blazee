@@ -2,7 +2,6 @@ import os
 import pandas as pd
 from datetime import datetime
 
-
 ODDS_FILE = "odds_snapshots.csv"
 
 
@@ -14,10 +13,20 @@ def save_odds_snapshot(games):
 
         rows.append({
             "timestamp": datetime.now().isoformat(),
+
             "game_date": game.get("game_date"),
+
             "home_team": game.get("home_team"),
             "away_team": game.get("away_team"),
-            "odds": game.get("odds", 0)
+
+            # Winner Market
+            "home_odds": game.get("home_odds"),
+            "away_odds": game.get("away_odds"),
+
+            # Totals Market
+            "total_line": game.get("total_line"),
+            "over_odds": game.get("over_odds"),
+            "under_odds": game.get("under_odds")
         })
 
     snapshot_df = pd.DataFrame(rows)
@@ -38,5 +47,6 @@ def save_odds_snapshot(games):
 
     return {
         "status": "success",
-        "saved_rows": len(rows)
+        "saved_rows": len(rows),
+        "file": ODDS_FILE
     }
