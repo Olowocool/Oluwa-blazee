@@ -275,7 +275,7 @@ def calculate_matchup_pace(
 
     # Each pace point above/below 100 moves the total by about 1.25 points.
     # Example: combined pace 102.0 -> +2.5 total points.
-    pace_adjustment = pace_gap * 1.25
+    pace_adjustment = pace_gap * 2.5
 
     return {
         "home_pace": round(float(home_pace["weighted_pace"]), 2),
