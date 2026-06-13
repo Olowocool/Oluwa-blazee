@@ -780,7 +780,6 @@ def raw_scoreboard(date: str):
             "error": str(e)
         }
 
-
 @app.get("/score_result")
 def score_result(
     date: str,
@@ -794,45 +793,69 @@ def score_result(
         espn_games, _ = get_espn_schedule_window(parsed_date)
 
         for game in espn_games:
+            api_home = str(game.get("home_team", "")).strip()
+            api_away = str(game.get("away_team", "")).strip()
+
             teams_match = sorted([
-                str(game.get("home_team", "")).lower(),
-                str(game.get("away_team", "")).lower()
+                api_home.lower(),
+                api_away.lower()
             ]) == sorted([
-                home_team.lower(),
-                away_team.lower()
+                home_team.strip().lower(),
+                away_team.strip().lower()
             ])
 
             if not teams_match:
                 continue
 
+            game_status = str(
+                game.get("game_status", "")
+            ).lower()
+
+            if "final" not in game_status:
+                return {
+                    "status": "pending",
+                    "message": f"Game not final yet. Current status: {game.get('game_status')}"
+                }
+
             home_score = safe_int(game.get("home_score", 0))
             away_score = safe_int(game.get("away_score", 0))
 
-            if home_score <= 0 and away_score <= 0:
+            if home_score == away_score:
                 return {
                     "status": "pending",
-                    "message": "Game has no final score yet."
+                    "message": "Game score is tied or not valid yet."
                 }
 
-            winner = home_team if home_score > away_score else away_team
-            result = "Win" if winner.lower() == best_bet.lower() else "Loss"
+            winner = api_home if home_score > away_score else api_away
+
+            result = (
+                "Win"
+                if winner.strip().lower() == best_bet.strip().lower()
+                else "Loss"
+            )
 
             return {
                 "status": "completed",
-                "home_team": home_team,
-                "away_team": away_team,
+                "home_team": api_home,
+                "away_team": api_away,
                 "home_score": home_score,
                 "away_score": away_score,
                 "winner": winner,
                 "best_bet": best_bet,
-                "result": result
+                "result": result,
+                "game_status": game.get("game_status")
             }
 
-        return {"status": "not_found", "message": "Game not found."}
+        return {
+            "status": "not_found",
+            "message": "Game not found."
+        }
 
     except Exception as e:
-        return {"status": "error", "message": str(e)}
-
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 @app.get("/debug_injuries")
 def debug_injuries():
