@@ -263,6 +263,15 @@ def get_historical_odds(game_date):
         home_team = normalize_team_name(row["home_team"]).lower()
         away_team = normalize_team_name(row["away_team"]).lower()
 
+        def safe_row_float(column, default=None):
+            try:
+                value = row.get(column, default)
+                if pd.isna(value):
+                    return default
+                return float(value)
+            except Exception:
+                return default
+
         odds_map[(home_team, away_team)] = {
             home_team: {
                 "price": float(row["home_odds"]),
@@ -272,10 +281,18 @@ def get_historical_odds(game_date):
                 "price": float(row["away_odds"]),
                 "bookmaker": "Historical Odds"
             },
-            "home_line_move_pct": float(row.get("home_line_move_pct", 0)),
-            "away_line_move_pct": float(row.get("away_line_move_pct", 0)),
-            "opening_home_odds": float(row.get("opening_home_odds", row["home_odds"])),
-            "opening_away_odds": float(row.get("opening_away_odds", row["away_odds"]))
+
+            "home_line_move_pct": safe_row_float("home_line_move_pct", 0),
+            "away_line_move_pct": safe_row_float("away_line_move_pct", 0),
+            "opening_home_odds": safe_row_float("opening_home_odds", row["home_odds"]),
+            "opening_away_odds": safe_row_float("opening_away_odds", row["away_odds"]),
+
+            "opening_total_line": safe_row_float("opening_total_line", None),
+            "total_line": safe_row_float("total_line", None),
+            "over_odds": safe_row_float("over_odds", None),
+            "under_odds": safe_row_float("under_odds", None),
+            "totals_bookmaker": row.get("totals_bookmaker", "Historical Totals"),
+            "total_line_move": safe_row_float("total_line_move", 0)
         }
 
     return odds_map
@@ -312,6 +329,10 @@ def market_movement_signal(move_pct):
 
 
 def save_live_odds_to_history(game_date, odds_map):
+    """
+    Saves both moneyline odds and totals market data.
+    """
+
     if not isinstance(odds_map, dict):
         return
 
@@ -337,12 +358,18 @@ def save_live_odds_to_history(game_date, odds_map):
         opening_home_odds = home_data["price"]
         opening_away_odds = away_data["price"]
 
+        current_total_line = odds.get("total_line")
+        opening_total_line = current_total_line
+
         if existing_df is not None:
             for needed_col in [
                 "opening_home_odds",
                 "opening_away_odds",
                 "home_line_move_pct",
-                "away_line_move_pct"
+                "away_line_move_pct",
+                "opening_total_line",
+                "total_line",
+                "total_line_move"
             ]:
                 if needed_col not in existing_df.columns:
                     existing_df[needed_col] = 0
@@ -356,6 +383,7 @@ def save_live_odds_to_history(game_date, odds_map):
             if not existing_match.empty:
                 opening_home_odds = existing_match.iloc[0].get("opening_home_odds", home_data["price"])
                 opening_away_odds = existing_match.iloc[0].get("opening_away_odds", away_data["price"])
+                opening_total_line = existing_match.iloc[0].get("opening_total_line", current_total_line)
 
                 if pd.isna(opening_home_odds) or float(opening_home_odds) <= 0:
                     opening_home_odds = existing_match.iloc[0].get("home_odds", home_data["price"])
@@ -363,19 +391,38 @@ def save_live_odds_to_history(game_date, odds_map):
                 if pd.isna(opening_away_odds) or float(opening_away_odds) <= 0:
                     opening_away_odds = existing_match.iloc[0].get("away_odds", away_data["price"])
 
+                try:
+                    if pd.isna(opening_total_line) or float(opening_total_line or 0) <= 0:
+                        opening_total_line = existing_match.iloc[0].get("total_line", current_total_line)
+                except Exception:
+                    opening_total_line = current_total_line
+
         home_line_move = calculate_line_movement(opening_home_odds, home_data["price"])
         away_line_move = calculate_line_movement(opening_away_odds, away_data["price"])
+
+        try:
+            total_line_move = float(current_total_line) - float(opening_total_line)
+        except Exception:
+            total_line_move = 0
 
         rows.append({
             "game_date": game_date,
             "home_team": home_team.title(),
             "away_team": away_team.title(),
+
             "opening_home_odds": opening_home_odds,
             "opening_away_odds": opening_away_odds,
             "home_odds": home_data["price"],
             "away_odds": away_data["price"],
             "home_line_move_pct": round(home_line_move, 2),
-            "away_line_move_pct": round(away_line_move, 2)
+            "away_line_move_pct": round(away_line_move, 2),
+
+            "opening_total_line": opening_total_line,
+            "total_line": current_total_line,
+            "over_odds": odds.get("over_odds"),
+            "under_odds": odds.get("under_odds"),
+            "totals_bookmaker": odds.get("totals_bookmaker"),
+            "total_line_move": round(total_line_move, 2)
         })
 
     if not rows:
@@ -1167,15 +1214,51 @@ if data and "games" in data and len(data["games"]) > 0:
 
         st.subheader("Totals / Over-Under Model")
 
+        live_total_line = odds.get("total_line")
+        opening_total_line = odds.get("opening_total_line")
+        over_odds = odds.get("over_odds")
+        under_odds = odds.get("under_odds")
+        totals_bookmaker = odds.get("totals_bookmaker", "N/A")
+        total_line_move = odds.get("total_line_move", 0)
+
+        try:
+            default_total_line = float(live_total_line)
+        except Exception:
+            default_total_line = 220.5
+
         bookmaker_total = st.number_input(
             f"Bookmaker Total Line for {game['away_team']} @ {game['home_team']}",
             min_value=150.0,
             max_value=300.0,
-            value=220.5,
+            value=default_total_line,
             step=0.5,
             key=f"total_line_{game['away_team']}_{game['home_team']}"
         )
-        
+
+        if live_total_line is not None:
+            market_col1, market_col2, market_col3 = st.columns(3)
+
+            with market_col1:
+                st.metric("Live Total Line", live_total_line)
+                st.caption(f"Bookmaker: {totals_bookmaker}")
+
+            with market_col2:
+                st.metric("Over Odds", over_odds if over_odds is not None else "N/A")
+                st.metric("Under Odds", under_odds if under_odds is not None else "N/A")
+
+            with market_col3:
+                st.metric("Opening Total", opening_total_line if opening_total_line is not None else live_total_line)
+                st.metric("Total Line Move", total_line_move)
+
+            if float(total_line_move or 0) >= 2:
+                st.info("Market Signal: Over money / total moving up")
+            elif float(total_line_move or 0) <= -2:
+                st.info("Market Signal: Under money / total moving down")
+            else:
+                st.info("Market Signal: Stable totals market")
+        else:
+            st.warning("No live totals line found. Using manual bookmaker total input.")
+
         totals_result = predict_game_total(
             home_team=game["home_team"],
             away_team=game["away_team"],
