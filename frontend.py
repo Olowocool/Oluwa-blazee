@@ -1265,6 +1265,26 @@ if data and "games" in data and len(data["games"]) > 0:
             bookmaker_total=bookmaker_total
         )
         
+        points_col1, points_col2, points_col3 = st.columns(3)
+
+        with points_col1:
+            st.metric(
+                "Projected Home Points",
+                totals_result.get("projected_home_points", "N/A")
+            )
+
+        with points_col2:
+            st.metric(
+                "Projected Away Points",
+                totals_result.get("projected_away_points", "N/A")
+            )
+
+        with points_col3:
+            st.metric(
+                "Points Engine Total",
+                totals_result.get("points_engine_total", "N/A")
+            )
+
         t1, t2, t3 = st.columns(3)
         
         with t1:
@@ -1308,6 +1328,27 @@ if data and "games" in data and len(data["games"]) > 0:
                 "Combined Pace Score",
                 totals_result["combined_pace_score"]
             )
+
+        h2h_col1, h2h_col2, h2h_col3 = st.columns(3)
+
+        with h2h_col1:
+            st.metric(
+                "H2H Avg Total",
+                totals_result.get("points_engine_h2h_average_total", "N/A")
+            )
+
+        with h2h_col2:
+            st.metric(
+                "H2H Adjustment",
+                totals_result.get("points_engine_h2h_adjustment", "N/A")
+            )
+
+        with h2h_col3:
+            st.metric(
+                "H2H Games Used",
+                totals_result.get("points_engine_h2h_games_used", "N/A")
+            )
+
         st.metric(
             "History Rows Loaded",
             totals_result["history_rows"]
