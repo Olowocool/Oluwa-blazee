@@ -1140,8 +1140,7 @@ if data and "games" in data and len(data["games"]) > 0:
         opening_home_odds = odds.get("opening_home_odds", home_odds)
         opening_away_odds = odds.get("opening_away_odds", away_odds)
 
-        if home_odds and away_odds:
-            st.subheader("Totals / Over-Under Model")
+        st.subheader("Totals / Over-Under Model")
 
         bookmaker_total = st.number_input(
             f"Bookmaker Total Line for {game['away_team']} @ {game['home_team']}",
@@ -1359,6 +1358,7 @@ if data and "games" in data and len(data["games"]) > 0:
             st.success("Totals pick saved.")
         with st.expander("Totals Model Details"):
             st.json(totals_result)
+        if home_odds and away_odds:
             st.subheader("Betting Analytics")
 
             calibrated_home_prob = calibrate_probability(
