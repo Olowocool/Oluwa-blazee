@@ -153,36 +153,61 @@ def get_odds():
             home_team = normalize_team_name(game["home_team"]).lower()
             away_team = normalize_team_name(game["away_team"]).lower()
 
-            bookmakers = game.get("bookmakers", [])
-            if not bookmakers:
-                continue
+            current_odds = {
+                home_team: None,
+                away_team: None,
+                "total_line": None,
+                "over_odds": None,
+                "under_odds": None,
+                "totals_bookmaker": None
+            }
 
-            current_odds = {}
+            bookmakers = game.get("bookmakers", [])
 
             for bookmaker in bookmakers:
                 bookmaker_name = bookmaker.get("title", "Unknown Sportsbook")
-                markets = bookmaker.get("markets", [])
 
-                if not markets:
-                    continue
+                for market in bookmaker.get("markets", []):
+                    market_key = market.get("key")
 
-                outcomes = markets[0].get("outcomes", [])
+                    # Moneyline market
+                    if market_key == "h2h":
+                        for outcome in market.get("outcomes", []):
+                            team_name = normalize_team_name(
+                                outcome.get("name", "")
+                            ).lower()
 
-                for outcome in outcomes:
-                    fixed_name = normalize_team_name(outcome["name"]).lower()
-                    price = float(outcome["price"])
+                            price = float(outcome.get("price", 0))
 
-                    if fixed_name not in current_odds:
-                        current_odds[fixed_name] = {
-                            "price": price,
-                            "bookmaker": bookmaker_name
-                        }
+                            if team_name in [home_team, away_team]:
+                                if (
+                                    current_odds.get(team_name) is None
+                                    or price > current_odds[team_name]["price"]
+                                ):
+                                    current_odds[team_name] = {
+                                        "price": price,
+                                        "bookmaker": bookmaker_name
+                                    }
 
-                    elif price > current_odds[fixed_name]["price"]:
-                        current_odds[fixed_name] = {
-                            "price": price,
-                            "bookmaker": bookmaker_name
-                        }
+                    # Totals / Over-Under market
+                    if market_key == "totals":
+                        for outcome in market.get("outcomes", []):
+                            outcome_name = str(outcome.get("name", "")).lower()
+                            price = float(outcome.get("price", 0))
+                            point = outcome.get("point", None)
+
+                            if point is None:
+                                continue
+
+                            if outcome_name == "over":
+                                current_odds["total_line"] = float(point)
+                                current_odds["over_odds"] = price
+                                current_odds["totals_bookmaker"] = bookmaker_name
+
+                            elif outcome_name == "under":
+                                current_odds["total_line"] = float(point)
+                                current_odds["under_odds"] = price
+                                current_odds["totals_bookmaker"] = bookmaker_name
 
             odds_map[(home_team, away_team)] = current_odds
 
