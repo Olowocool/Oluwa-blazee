@@ -876,17 +876,24 @@ if data and "games" in data and len(data["games"]) > 0:
         home_score = game.get("home_score", 0)
         away_score = game.get("away_score", 0)
         
-        if "final" in game_status:
-            st.success(
-                f"Final Result: {game['away_team']} {away_score} - {home_score} {game['home_team']}"
-            )
+        if home_score > away_score:
+            actual_winner = game["home_team"]
+        elif away_score > home_score:
+            actual_winner = game["away_team"]
+        else:
+            actual_winner = "Tie"
         
-            if home_score > away_score:
-                st.info(f"Winner: {game['home_team']}")
-            elif away_score > home_score:
-                st.info(f"Winner: {game['away_team']}")
-            else:
-                st.info("Result: Tie")
+        st.info(f"Actual Winner: {actual_winner}")
+        
+        st.warning(
+            f"Model Prediction: {game['prediction']}"
+        )
+        
+        if actual_winner != "Tie":
+            if str(game["prediction"]).strip().lower() == str(actual_winner).strip().lower():
+                st.success("Prediction Result: CORRECT")
+    else:
+        st.error("Prediction Result: INCORRECT")
         else:
             st.info(f"Game Status: {game.get('game_status', 'Scheduled')}")
 
@@ -933,7 +940,10 @@ if data and "games" in data and len(data["games"]) > 0:
             unsafe_allow_html=True
         )
 
-        st.header(game["prediction"])
+        if "final" in str(game.get("game_status", "")).lower():
+            st.header(f"Model Prediction: {game['prediction']}")
+        else:
+            st.header(f"Model Prediction: {game['prediction']}")
         st.progress(confidence)
         st.info(betting_note)
         
