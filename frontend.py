@@ -952,19 +952,13 @@ if data and "games" in data and len(data["games"]) > 0:
         st.header(f"Model Prediction: {game['prediction']}")
         st.progress(confidence)
         st.info(betting_note)
-        confidence_result = classify_confidence(
-            model_probability=model_probability,
-            expected_value=expected_value,
-            kelly=kelly,
-            disagreement=disagreement,
-            line_movement_diff=line_movement_diff,
-            sharp_support_pct=sharp_support_pct,
-        
-            ensemble_probability=(
-                ensemble_result.get("ensemble_probability")
-                if ensemble_result.get("status") == "success"
-                else None
-            )
+        base_confidence_result = classify_confidence(
+            model_probability=confidence,
+            expected_value=0,
+            kelly=0,
+            disagreement=0,
+            line_movement_diff=0,
+            sharp_support_pct=0
         )
         
         st.subheader("Confidence Engine")
@@ -1646,7 +1640,13 @@ if data and "games" in data and len(data["games"]) > 0:
                 kelly=candidate_kelly,
                 disagreement=ensemble_result.get("disagreement", 0) if isinstance(ensemble_result, dict) else 0,
                 line_movement_diff=candidate_line_move,
-                sharp_support_pct=game.get("sharp_books_support", 0) / max(game.get("total_books", 1), 1)
+                sharp_support_pct=game.get("sharp_books_support", 0) / max(game.get("total_books", 1), 1),
+                ensemble_probability=(
+                    ensemble_result.get("ensemble_probability")
+                    if isinstance(ensemble_result, dict)
+                    and ensemble_result.get("status") == "success"
+                    else None
+                )
             )
 
             st.subheader("Confidence Engine")
