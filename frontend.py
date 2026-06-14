@@ -872,6 +872,24 @@ if data and "games" in data and len(data["games"]) > 0:
         with col_text:
             st.subheader(f"{game['away_team']} @ {game['home_team']}")
 
+        game_status = str(game.get("game_status", "")).lower()
+        home_score = game.get("home_score", 0)
+        away_score = game.get("away_score", 0)
+        
+        if "final" in game_status:
+            st.success(
+                f"Final Result: {game['away_team']} {away_score} - {home_score} {game['home_team']}"
+            )
+        
+            if home_score > away_score:
+                st.info(f"Winner: {game['home_team']}")
+            elif away_score > home_score:
+                st.info(f"Winner: {game['away_team']}")
+            else:
+                st.info("Result: Tie")
+        else:
+            st.info(f"Game Status: {game.get('game_status', 'Scheduled')}")
+
         with col_logo2:
             home_logo = TEAM_LOGOS.get(game["home_team"])
             if home_logo:
