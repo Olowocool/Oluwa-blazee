@@ -35,21 +35,16 @@ FEATURE_COLUMNS = [
     "away_ppg_last_5",
     "home_ppg_last_10",
     "away_ppg_last_10",
-
     "home_points_allowed_last_5",
     "away_points_allowed_last_5",
     "home_points_allowed_last_10",
     "away_points_allowed_last_10",
-
     "home_net_points_last_10",
     "away_net_points_last_10",
-
     "home_avg_margin_last_10",
     "away_avg_margin_last_10",
-
     "ppg_diff_last_5",
     "ppg_diff_last_10",
-
     "points_allowed_diff_last_10",
     "net_points_diff_last_10",
     "avg_margin_diff_last_10",
@@ -59,6 +54,8 @@ FEATURE_COLUMNS = [
 def safe_float(value, default=0):
     try:
         if value is None:
+            return default
+        if pd.isna(value):
             return default
         return float(value)
     except Exception:
@@ -90,58 +87,6 @@ def build_consensus_input(data):
         "model_probability": model_probability,
         "expected_value": safe_float(row.get("expected_value", 0), 0),
         "kelly": safe_float(row.get("kelly", 0), 0),
-        "home_ppg_last_5": safe_float(row.get("home_ppg_last_5", 112)),
-        "away_ppg_last_5": safe_float(row.get("away_ppg_last_5", 112)),
-        
-        "home_ppg_last_10": safe_float(row.get("home_ppg_last_10", 112)),
-        "away_ppg_last_10": safe_float(row.get("away_ppg_last_10", 112)),
-        
-        "home_points_allowed_last_5": safe_float(
-            row.get("home_points_allowed_last_5", 112)
-        ),
-        "away_points_allowed_last_5": safe_float(
-            row.get("away_points_allowed_last_5", 112)
-        ),
-        
-        "home_points_allowed_last_10": safe_float(
-            row.get("home_points_allowed_last_10", 112)
-        ),
-        "away_points_allowed_last_10": safe_float(
-            row.get("away_points_allowed_last_10", 112)
-        ),
-        
-        "home_net_points_last_10": safe_float(
-            row.get("home_net_points_last_10", 0)
-        ),
-        "away_net_points_last_10": safe_float(
-            row.get("away_net_points_last_10", 0)
-        ),
-        
-        "home_avg_margin_last_10": safe_float(
-            row.get("home_avg_margin_last_10", 0)
-        ),
-        "away_avg_margin_last_10": safe_float(
-            row.get("away_avg_margin_last_10", 0)
-        ),
-        
-        "ppg_diff_last_5": safe_float(
-            row.get("ppg_diff_last_5", 0)
-        ),
-        "ppg_diff_last_10": safe_float(
-            row.get("ppg_diff_last_10", 0)
-        ),
-        
-        "points_allowed_diff_last_10": safe_float(
-            row.get("points_allowed_diff_last_10", 0)
-        ),
-        
-        "net_points_diff_last_10": safe_float(
-            row.get("net_points_diff_last_10", 0)
-        ),
-        
-        "avg_margin_diff_last_10": safe_float(
-            row.get("avg_margin_diff_last_10", 0)
-        ),
 
         "rest_days_diff": safe_float(
             row.get(
@@ -230,6 +175,40 @@ def build_consensus_input(data):
         "fatigue_edge": safe_float(row.get("fatigue_edge", 0), 0),
         "steam_move": safe_float(row.get("steam_move", 0), 0),
         "reverse_line_movement": safe_float(row.get("reverse_line_movement", 0), 0),
+
+        "home_ppg_last_5": safe_float(row.get("home_ppg_last_5", 112), 112),
+        "away_ppg_last_5": safe_float(row.get("away_ppg_last_5", 112), 112),
+        "home_ppg_last_10": safe_float(row.get("home_ppg_last_10", 112), 112),
+        "away_ppg_last_10": safe_float(row.get("away_ppg_last_10", 112), 112),
+
+        "home_points_allowed_last_5": safe_float(
+            row.get("home_points_allowed_last_5", 112),
+            112
+        ),
+        "away_points_allowed_last_5": safe_float(
+            row.get("away_points_allowed_last_5", 112),
+            112
+        ),
+        "home_points_allowed_last_10": safe_float(
+            row.get("home_points_allowed_last_10", 112),
+            112
+        ),
+        "away_points_allowed_last_10": safe_float(
+            row.get("away_points_allowed_last_10", 112),
+            112
+        ),
+
+        "home_net_points_last_10": safe_float(row.get("home_net_points_last_10", 0), 0),
+        "away_net_points_last_10": safe_float(row.get("away_net_points_last_10", 0), 0),
+
+        "home_avg_margin_last_10": safe_float(row.get("home_avg_margin_last_10", 0), 0),
+        "away_avg_margin_last_10": safe_float(row.get("away_avg_margin_last_10", 0), 0),
+
+        "ppg_diff_last_5": safe_float(row.get("ppg_diff_last_5", 0), 0),
+        "ppg_diff_last_10": safe_float(row.get("ppg_diff_last_10", 0), 0),
+        "points_allowed_diff_last_10": safe_float(row.get("points_allowed_diff_last_10", 0), 0),
+        "net_points_diff_last_10": safe_float(row.get("net_points_diff_last_10", 0), 0),
+        "avg_margin_diff_last_10": safe_float(row.get("avg_margin_diff_last_10", 0), 0),
     }
 
     return pd.DataFrame(
@@ -261,8 +240,7 @@ def consensus_prediction(data):
             "status": "error",
             "message": (
                 "No trained ensemble model available yet. "
-                "Train the ensemble model, then commit models/ensemble_model.joblib "
-                "to GitHub so Streamlit can load it after redeploy."
+                "models/ensemble_model.joblib was not found."
             )
         }
 
@@ -317,5 +295,8 @@ def consensus_prediction(data):
     except Exception as e:
         return {
             "status": "error",
-            "message": str(e)
+            "message": str(e),
+            "features_sent": FEATURE_COLUMNS,
+            "model_path": model_path
         }
+
