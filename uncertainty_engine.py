@@ -1,6 +1,3 @@
-import numpy as np
-
-
 def classify_uncertainty(
     ensemble_probability,
     disagreement,
@@ -10,61 +7,29 @@ def classify_uncertainty(
 
     risk_score = 0
 
-    # =========================
-    # DISAGREEMENT RISK
-    # =========================
-
-    if disagreement >= 0.10:
+    if disagreement >= 0.20:
         risk_score += 3
-
-    elif disagreement >= 0.06:
+    elif disagreement >= 0.15:
         risk_score += 2
-
-    elif disagreement >= 0.03:
+    elif disagreement >= 0.10:
         risk_score += 1
 
-    # =========================
-    # MODEL RANGE RISK
-    # =========================
-
-    if probability_range >= 0.20:
+    if probability_range >= 0.35:
         risk_score += 3
-
-    elif probability_range >= 0.12:
+    elif probability_range >= 0.25:
         risk_score += 2
-
-    elif probability_range >= 0.06:
+    elif probability_range >= 0.15:
         risk_score += 1
 
-    # =========================
-    # EXTREME CONFIDENCE RISK
-    # =========================
-
-    if ensemble_probability >= 0.90:
-        risk_score += 2
-
-    elif ensemble_probability >= 0.82:
+    if ensemble_probability >= 0.92:
         risk_score += 1
 
-    # =========================
-    # LOW EDGE RISK
-    # =========================
-
-    if expected_value <= 0:
+    if expected_value <= -0.03:
         risk_score += 3
-
-    elif expected_value <= 0.03:
-        risk_score += 2
-
-    elif expected_value <= 0.06:
+    elif expected_value <= 0:
         risk_score += 1
 
-    # =========================
-    # FINAL CLASSIFICATION
-    # =========================
-
-    if risk_score >= 8:
-
+    if risk_score >= 7:
         return {
             "uncertainty_level": "Extreme",
             "recommendation": "Avoid Bet",
@@ -72,7 +37,6 @@ def classify_uncertainty(
         }
 
     if risk_score >= 5:
-
         return {
             "uncertainty_level": "High",
             "recommendation": "Very Risky",
@@ -80,7 +44,6 @@ def classify_uncertainty(
         }
 
     if risk_score >= 3:
-
         return {
             "uncertainty_level": "Moderate",
             "recommendation": "Caution",
