@@ -1208,7 +1208,8 @@ if data and "games" in data and len(data["games"]) > 0:
                     ensemble_result["model_probabilities"]
                 )
         else:
-            st.info("No trained ensemble model available yet.")
+            st.warning("Ensemble model did not load.")
+            st.json(ensemble_result)
 
         odds = {}
 
@@ -2529,7 +2530,7 @@ if st.button("Train Ensemble Model"):
 
             result = train_ensemble_model()
 
-            if result.get("status") == "success":
+            if result["status"] == "success":
 
                 st.success(
                     f"Ensemble trained successfully. "
@@ -2554,11 +2555,6 @@ if st.button("Train Ensemble Model"):
                             mime="application/octet-stream"
                         )
 
-                    st.info(
-                        "After downloading, upload ensemble_model.joblib "
-                        "into the GitHub models folder so it persists after redeploy."
-                    )
-
                 else:
 
                     st.warning(
@@ -2574,6 +2570,7 @@ if st.button("Train Ensemble Model"):
                         "Ensemble training failed."
                     )
                 )
+
                 st.json(result)
 
         except Exception as e:
