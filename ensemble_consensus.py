@@ -4,7 +4,11 @@ import pandas as pd
 import numpy as np
 
 
-MODEL_PATH = "models/ensemble_model.joblib"
+MODEL_PATHS = [
+    "models/ensemble_model.joblib",
+    "ensemble_model.joblib",
+    "data/ensemble_model.joblib"
+]
 
 FEATURE_COLUMNS = [
     "odds",
@@ -151,14 +155,21 @@ def get_win_probability(model, X):
 
 
 def consensus_prediction(data):
-    if not os.path.isfile(MODEL_PATH):
+    model_path = None
+
+    for path in MODEL_PATHS:
+        if os.path.isfile(path):
+            model_path = path
+            break
+    
+    if model_path is None:
         return {
             "status": "error",
-            "message": "No trained ensemble model available yet."
+            "message": "No trained ensemble model available yet. Train the ensemble model, then commit models/ensemble_model.joblib to GitHub so Streamlit can load it after redeploy."
         }
-
+    
     try:
-        model = joblib.load(MODEL_PATH)
+    model = joblib.load(model_path)
         X = build_consensus_input(data)
 
         ensemble_probability = get_win_probability(model, X)
