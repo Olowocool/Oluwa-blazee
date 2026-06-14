@@ -69,51 +69,65 @@ def build_consensus_input(data):
         "kelly": safe_float(row.get("kelly", 0), 0),
 
         "rest_days_diff": safe_float(
-            row.get("rest_days_diff",
-                    safe_float(row.get("home_rest_days", 2), 2)
-                    - safe_float(row.get("away_rest_days", 2), 2)),
+            row.get(
+                "rest_days_diff",
+                safe_float(row.get("home_rest_days", 2), 2)
+                - safe_float(row.get("away_rest_days", 2), 2)
+            ),
             0
         ),
 
         "off_rating_diff": safe_float(
-            row.get("off_rating_diff",
-                    safe_float(row.get("home_off_rating", 112), 112)
-                    - safe_float(row.get("away_off_rating", 112), 112)),
+            row.get(
+                "off_rating_diff",
+                safe_float(row.get("home_off_rating", 112), 112)
+                - safe_float(row.get("away_off_rating", 112), 112)
+            ),
             0
         ),
 
         "def_rating_diff": safe_float(
-            row.get("def_rating_diff",
-                    safe_float(row.get("away_def_rating", 112), 112)
-                    - safe_float(row.get("home_def_rating", 112), 112)),
+            row.get(
+                "def_rating_diff",
+                safe_float(row.get("away_def_rating", 112), 112)
+                - safe_float(row.get("home_def_rating", 112), 112)
+            ),
             0
         ),
 
         "pace_diff": safe_float(
-            row.get("pace_diff",
-                    safe_float(row.get("home_pace", 100), 100)
-                    - safe_float(row.get("away_pace", 100), 100)),
+            row.get(
+                "pace_diff",
+                safe_float(row.get("home_pace", 100), 100)
+                - safe_float(row.get("away_pace", 100), 100)
+            ),
             0
         ),
 
         "recent_form_diff": safe_float(
-            row.get("recent_form_diff",
-                    safe_float(row.get("home_recent_wins", 5), 5)
-                    - safe_float(row.get("away_recent_wins", 5), 5)),
+            row.get(
+                "recent_form_diff",
+                safe_float(row.get("home_recent_wins", 5), 5)
+                - safe_float(row.get("away_recent_wins", 5), 5)
+            ),
             0
         ),
 
         "injury_diff": safe_float(
-            row.get("injury_diff",
-                    safe_float(row.get("away_injury_penalty", 0), 0)
-                    - safe_float(row.get("home_injury_penalty", 0), 0)),
+            row.get(
+                "injury_diff",
+                safe_float(row.get("away_injury_penalty", 0), 0)
+                - safe_float(row.get("home_injury_penalty", 0), 0)
+            ),
             0
         ),
 
         "line_movement_diff": safe_float(
-            row.get("line_movement_diff",
-                    safe_float(row.get("home_line_move_pct", 0), 0)
-                    - safe_float(row.get("away_line_move_pct", 0), 0)),
+            row.get(
+                "line_movement_diff",
+                safe_float(row.get("home_line_move_pct", 0), 0)
+                - safe_float(row.get("away_line_move_pct", 0), 0)
+            ),
             0
         ),
 
@@ -127,9 +141,11 @@ def build_consensus_input(data):
         ),
 
         "home_venue_edge": safe_float(
-            row.get("home_venue_edge",
-                    safe_float(row.get("home_home_win_pct", 0.6), 0.6)
-                    - safe_float(row.get("away_away_win_pct", 0.4), 0.4)),
+            row.get(
+                "home_venue_edge",
+                safe_float(row.get("home_home_win_pct", 0.6), 0.6)
+                - safe_float(row.get("away_away_win_pct", 0.4), 0.4)
+            ),
             0
         ),
 
@@ -141,7 +157,10 @@ def build_consensus_input(data):
         "reverse_line_movement": safe_float(row.get("reverse_line_movement", 0), 0),
     }
 
-    return pd.DataFrame([[values[col] for col in FEATURE_COLUMNS]], columns=FEATURE_COLUMNS)
+    return pd.DataFrame(
+        [[values[col] for col in FEATURE_COLUMNS]],
+        columns=FEATURE_COLUMNS
+    )
 
 
 def get_win_probability(model, X):
@@ -161,15 +180,19 @@ def consensus_prediction(data):
         if os.path.isfile(path):
             model_path = path
             break
-    
+
     if model_path is None:
         return {
             "status": "error",
-            "message": "No trained ensemble model available yet. Train the ensemble model, then commit models/ensemble_model.joblib to GitHub so Streamlit can load it after redeploy."
+            "message": (
+                "No trained ensemble model available yet. "
+                "Train the ensemble model, then commit models/ensemble_model.joblib "
+                "to GitHub so Streamlit can load it after redeploy."
+            )
         }
-    
+
     try:
-    model = joblib.load(model_path)
+        model = joblib.load(model_path)
         X = build_consensus_input(data)
 
         ensemble_probability = get_win_probability(model, X)
@@ -212,7 +235,8 @@ def consensus_prediction(data):
             "probability_range": round(probability_range, 4),
             "consensus_grade": consensus_grade,
             "model_probabilities": individual_probs,
-            "features_used": FEATURE_COLUMNS
+            "features_used": FEATURE_COLUMNS,
+            "model_path": model_path
         }
 
     except Exception as e:
