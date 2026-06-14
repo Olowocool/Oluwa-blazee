@@ -79,8 +79,7 @@ def train_ensemble_model():
     
     df = pd.read_csv(bet_file)
 
-    df = pd.read_csv(dataset_path)
-
+    
     if "result" not in df.columns:
         return {
             "status": "error",
