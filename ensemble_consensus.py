@@ -90,6 +90,58 @@ def build_consensus_input(data):
         "model_probability": model_probability,
         "expected_value": safe_float(row.get("expected_value", 0), 0),
         "kelly": safe_float(row.get("kelly", 0), 0),
+        "home_ppg_last_5": safe_float(row.get("home_ppg_last_5", 112)),
+        "away_ppg_last_5": safe_float(row.get("away_ppg_last_5", 112)),
+        
+        "home_ppg_last_10": safe_float(row.get("home_ppg_last_10", 112)),
+        "away_ppg_last_10": safe_float(row.get("away_ppg_last_10", 112)),
+        
+        "home_points_allowed_last_5": safe_float(
+            row.get("home_points_allowed_last_5", 112)
+        ),
+        "away_points_allowed_last_5": safe_float(
+            row.get("away_points_allowed_last_5", 112)
+        ),
+        
+        "home_points_allowed_last_10": safe_float(
+            row.get("home_points_allowed_last_10", 112)
+        ),
+        "away_points_allowed_last_10": safe_float(
+            row.get("away_points_allowed_last_10", 112)
+        ),
+        
+        "home_net_points_last_10": safe_float(
+            row.get("home_net_points_last_10", 0)
+        ),
+        "away_net_points_last_10": safe_float(
+            row.get("away_net_points_last_10", 0)
+        ),
+        
+        "home_avg_margin_last_10": safe_float(
+            row.get("home_avg_margin_last_10", 0)
+        ),
+        "away_avg_margin_last_10": safe_float(
+            row.get("away_avg_margin_last_10", 0)
+        ),
+        
+        "ppg_diff_last_5": safe_float(
+            row.get("ppg_diff_last_5", 0)
+        ),
+        "ppg_diff_last_10": safe_float(
+            row.get("ppg_diff_last_10", 0)
+        ),
+        
+        "points_allowed_diff_last_10": safe_float(
+            row.get("points_allowed_diff_last_10", 0)
+        ),
+        
+        "net_points_diff_last_10": safe_float(
+            row.get("net_points_diff_last_10", 0)
+        ),
+        
+        "avg_margin_diff_last_10": safe_float(
+            row.get("avg_margin_diff_last_10", 0)
+        ),
 
         "rest_days_diff": safe_float(
             row.get(
