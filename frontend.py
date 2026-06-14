@@ -1888,7 +1888,89 @@ else:
         save_bet_history(updated_df)
 
         st.success("All bets graded and dashboard updated.")
+        
+st.header("Totals Performance Dashboard")
 
+totals_df = load_totals_history()
+
+if totals_df.empty:
+
+    st.info("No totals picks saved yet.")
+
+else:
+
+    settled_totals = totals_df[
+        totals_df["result"].isin(["Win", "Loss"])
+    ]
+
+    total_picks = len(totals_df)
+
+    wins = len(
+        settled_totals[
+            settled_totals["result"] == "Win"
+        ]
+    )
+
+    losses = len(
+        settled_totals[
+            settled_totals["result"] == "Loss"
+        ]
+    )
+
+    win_rate = 0
+
+    if len(settled_totals) > 0:
+
+        win_rate = round(
+            wins / len(settled_totals) * 100,
+            2
+        )
+
+    profit = settled_totals[
+        "profit_loss"
+    ].sum()
+
+    stake = len(settled_totals) * 100
+
+    roi = 0
+
+    if stake > 0:
+
+        roi = round(
+            profit / stake * 100,
+            2
+        )
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        st.metric(
+            "Totals Picks",
+            total_picks
+        )
+
+    with c2:
+        st.metric(
+            "Win Rate",
+            f"{win_rate}%"
+        )
+
+    with c3:
+        st.metric(
+            "Profit",
+            f"${profit:.2f}"
+        )
+
+    with c4:
+        st.metric(
+            "ROI",
+            f"{roi}%"
+        )
+
+    st.dataframe(
+        totals_df.tail(50),
+        use_container_width=True
+    )
     updated_df = load_bet_history()
 
     updated_df["closing_odds"] = updated_df["closing_odds"].astype("object")
