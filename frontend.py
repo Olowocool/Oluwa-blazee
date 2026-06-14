@@ -872,35 +872,44 @@ if data and "games" in data and len(data["games"]) > 0:
         with col_text:
             st.subheader(f"{game['away_team']} @ {game['home_team']}")
 
-        game_status = str(game.get("game_status", "")).lower()
-        home_score = game.get("home_score", 0)
-        away_score = game.get("away_score", 0)
-        
-        if home_score > away_score:
-            actual_winner = game["home_team"]
-        elif away_score > home_score:
-            actual_winner = game["away_team"]
-        else:
-            actual_winner = "Tie"
-        
-        st.info(f"Actual Winner: {actual_winner}")
-        
-        st.warning(
-            f"Model Prediction: {game['prediction']}"
-        )
-        
-        if actual_winner != "Tie":
-            if str(game["prediction"]).strip().lower() == str(actual_winner).strip().lower():
-                st.success("Prediction Result: CORRECT")
-    else:
-        st.error("Prediction Result: INCORRECT")
-        else:
-            st.info(f"Game Status: {game.get('game_status', 'Scheduled')}")
-
         with col_logo2:
             home_logo = TEAM_LOGOS.get(game["home_team"])
             if home_logo:
                 st.image(home_logo, width=70)
+
+        game_status = str(game.get("game_status", "")).lower()
+        home_score = game.get("home_score", 0)
+        away_score = game.get("away_score", 0)
+
+        if "final" in game_status:
+
+            st.success(
+                f"Final Result: {game['away_team']} {away_score} - {home_score} {game['home_team']}"
+            )
+
+            if home_score > away_score:
+                actual_winner = game["home_team"]
+            elif away_score > home_score:
+                actual_winner = game["away_team"]
+            else:
+                actual_winner = "Tie"
+
+            st.info(f"Actual Winner: {actual_winner}")
+
+            st.warning(
+                f"Model Prediction: {game['prediction']}"
+            )
+
+            if actual_winner != "Tie":
+                if str(game["prediction"]).strip().lower() == str(actual_winner).strip().lower():
+                    st.success("Prediction Result: CORRECT")
+                else:
+                    st.error("Prediction Result: INCORRECT")
+
+        else:
+            st.info(
+                f"Game Status: {game.get('game_status', 'Scheduled')}"
+            )
 
         confidence = max(
             game["home_win_probability"],
@@ -940,13 +949,40 @@ if data and "games" in data and len(data["games"]) > 0:
             unsafe_allow_html=True
         )
 
-        if "final" in str(game.get("game_status", "")).lower():
-            st.header(f"Model Prediction: {game['prediction']}")
-        else:
-            st.header(f"Model Prediction: {game['prediction']}")
+        st.header(f"Model Prediction: {game['prediction']}")
         st.progress(confidence)
         st.info(betting_note)
+        base_confidence_result = classify_confidence(
+            model_probability=confidence,
+            expected_value=0,
+            kelly=0,
+            disagreement=0,
+            line_movement_diff=0,
+            sharp_support_pct=0
+        )
         
+        st.subheader("Confidence Engine")
+        
+        conf_col1, conf_col2, conf_col3 = st.columns(3)
+        
+        with conf_col1:
+            st.metric(
+                "Confidence Score",
+                base_confidence_result["confidence_score"]
+            )
+        
+        with conf_col2:
+            st.metric(
+                "Confidence Tier",
+                base_confidence_result["confidence_tier"]
+            )
+        
+        with conf_col3:
+            st.metric(
+                "Recommended Action",
+                base_confidence_result["recommended_action"]
+            )
+
         save_prediction_log(game, active_date)
 
         col1, col2 = st.columns(2)
