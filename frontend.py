@@ -2531,12 +2531,27 @@ if st.button("Train Ensemble Model"):
 
             if result["status"] == "success":
 
-                st.success(
-                    f"Ensemble trained successfully. "
-                    f"Accuracy: {result['ensemble_accuracy']}%"
+            st.success(
+                f"Ensemble trained successfully. "
+                f"Accuracy: {result['ensemble_accuracy']}%"
+            )
+        
+            st.json(result)
+        
+            model_path = result.get("model_path", "models/ensemble_model.joblib")
+        
+            if os.path.isfile(model_path):
+                with open(model_path, "rb") as model_file:
+                    st.download_button(
+                        label="Download Ensemble Model",
+                        data=model_file,
+                        file_name="ensemble_model.joblib",
+                        mime="application/octet-stream"
+                    )
+            else:
+                st.warning(
+                    "Model trained, but ensemble_model.joblib was not found for download."
                 )
-
-                st.json(result)
 
             else:
 
