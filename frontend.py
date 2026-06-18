@@ -1550,44 +1550,41 @@ if data and "games" in data and len(data["games"]) > 0:
 
         st.subheader("Best Bet Selector")
 
-        best_market = select_best_bet(
-            moneyline_pick=game.get("prediction", "No Bet"),
-            moneyline_ev=0,
-            moneyline_confidence=0,
-            totals_edge=totals_result.get("edge", 0),
-            totals_recommendation=totals_result.get("recommendation", "No Bet")
+        best_bet_v2 = select_best_bet_v2(
+            moneyline_confidence=confidence * 100,
+            moneyline_pick=game["prediction"],
+            totals_confidence=ai_totals.get("confidence", 0),
+            totals_pick=totals_result["recommendation"]
         )
 
-        selector_col1, selector_col2 = st.columns(2)
+        selector_col1, selector_col2, selector_col3 = st.columns(3)
 
         with selector_col1:
             st.metric(
                 "Recommended Market",
-                best_market["market"]
+                best_bet_v2["market"]
             )
 
         with selector_col2:
             st.metric(
                 "Recommended Pick",
-                best_market["pick"]
+                best_bet_v2["pick"]
             )
-            
-            best_bet = select_best_bet_v2(
-                moneyline_confidence=confidence * 100,
-                moneyline_pick=game["prediction"],
-                totals_confidence=ai_totals.get("confidence", 0),
-                totals_pick=totals_result["recommendation"]
+
+        with selector_col3:
+            st.metric(
+                "Confidence",
+                f"{best_bet_v2['confidence']}%"
             )
-                
-            st.success(
-                f"🔥 OFFICIAL BEST BET: "
-                f"{best_bet['market']} | "
-                f"{best_bet['pick']} | "
-                f"{best_bet['confidence']}%"
-            )
-    
-            if home_odds and away_odds:
-            
+
+        st.success(
+            f"🔥 OFFICIAL BEST BET: "
+            f"{best_bet_v2['market']} | "
+            f"{best_bet_v2['pick']} | "
+            f"{best_bet_v2['confidence']}%"
+        )
+
+        if home_odds and away_odds:
             st.subheader("Betting Analytics")
 
             calibrated_home_prob = calibrate_probability(
@@ -1730,16 +1727,19 @@ if data and "games" in data and len(data["games"]) > 0:
                     best_market["pick"]
                 )
 
-            if best_market["market"] == "Totals":
-                st.success(
-                    f"🔥 OFFICIAL BEST BET: {best_market['pick']}"
-                )
-            elif best_market["market"] == "Moneyline":
-                st.success(
-                    f"🔥 OFFICIAL BEST BET: {best_market['pick']}"
-                )
-            else:
-                st.warning("🚫 OFFICIAL RECOMMENDATION: NO BET")
+            best_bet_v2_moneyline = select_best_bet_v2(
+                moneyline_confidence=confidence_result["confidence_score"],
+                moneyline_pick=candidate_bet,
+                totals_confidence=ai_totals.get("confidence", 0),
+                totals_pick=totals_result["recommendation"]
+            )
+
+            st.success(
+                f"🔥 OFFICIAL BEST BET: "
+                f"{best_bet_v2_moneyline['market']} | "
+                f"{best_bet_v2_moneyline['pick']} | "
+                f"{best_bet_v2_moneyline['confidence']}%"
+            )
 
             uncertainty_level = "Low"
 
