@@ -8,6 +8,7 @@ from totals_tracker import (
     load_totals_history
 )
 from datetime import date, datetime
+from totals_auto_learning import build_totals_learning_dataset
 from totals_result_grader import grade_totals_results
 from injury_data_collector import collect_injury_data
 from injury_impact_engine import get_injury_impact
@@ -2537,6 +2538,22 @@ if st.button("Add 10 Wins + 10 Losses for Testing"):
     st.success("Added 20 testing rows to bet_history.csv. Now click Build Learning Dataset, then Train Ensemble Model.")
 
 st.title("Auto Learning Pipeline")
+
+if st.button("Build Totals Learning Dataset"):
+
+    totals_learning_result = build_totals_learning_dataset()
+
+    if totals_learning_result["status"] == "success":
+        st.success(
+            f"Totals learning dataset built with "
+            f"{totals_learning_result['rows']} rows."
+        )
+    else:
+        st.error(
+            totals_learning_result["message"]
+        )
+
+    st.json(totals_learning_result)
 
 if st.button("Build Learning Dataset"):
     summary = summarize_learning()
