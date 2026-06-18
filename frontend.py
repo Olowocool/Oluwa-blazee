@@ -1233,9 +1233,9 @@ if data and "games" in data and len(data["games"]) > 0:
         total_line_move = odds.get("total_line_move", 0)
        
         ai_totals = totals_ai_prediction(
-            projected_total=projected_total,
-            sportsbook_total=bookmaker_total,
-            edge=edge
+            projected_total=totals_result["projected_total"],
+            sportsbook_total=totals_result["bookmaker_total"],
+            edge=totals_result["edge"]
         )
         
         if ai_totals["status"] == "success":
