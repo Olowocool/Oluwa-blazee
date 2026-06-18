@@ -8,6 +8,7 @@ from totals_tracker import (
     load_totals_history
 )
 from datetime import date, datetime
+from best_bet_selector_v2 import select_best_bet_v2
 from generate_totals_test_data import add_totals_test_data
 from train_totals_model import train_totals_model
 from totals_ai_predictor import totals_ai_prediction
@@ -1571,16 +1572,19 @@ if data and "games" in data and len(data["games"]) > 0:
                 best_market["pick"]
             )
 
-        if best_market["market"] == "Totals":
-            st.success(
-                f"🔥 OFFICIAL BEST BET: {best_market['pick']}"
-            )
-        elif best_market["market"] == "Moneyline":
-            st.success(
-                f"🔥 OFFICIAL BEST BET: {best_market['pick']}"
-            )
-        else:
-            st.warning("🚫 OFFICIAL RECOMMENDATION: NO BET")
+        best_bet = select_best_bet_v2(
+            moneyline_confidence=confidence_result["confidence_score"],
+            moneyline_pick=game["prediction"],
+            totals_confidence=ai_totals["confidence"],
+            totals_pick=totals_result["recommendation"]
+        )
+        
+        st.success(
+            f"🔥 OFFICIAL BEST BET: "
+            f"{best_bet['market']} | "
+            f"{best_bet['pick']} | "
+            f"{best_bet['confidence']}%"
+        )
 
         if home_odds and away_odds:
             st.subheader("Betting Analytics")
