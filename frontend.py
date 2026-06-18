@@ -8,6 +8,7 @@ from totals_tracker import (
     load_totals_history
 )
 from datetime import date, datetime
+from generate_totals_test_data import add_totals_test_data
 from train_totals_model import train_totals_model
 from totals_auto_learning import build_totals_learning_dataset
 from totals_result_grader import grade_totals_results
@@ -2540,6 +2541,17 @@ if st.button("Add 10 Wins + 10 Losses for Testing"):
 
 st.title("Auto Learning Pipeline")
 
+if st.button("Add 20 Totals Samples For Testing"):
+
+    result = add_totals_test_data()
+
+    if result["status"] == "success":
+        st.success(
+            f"Added {result['rows_added']} totals samples."
+        )
+
+    st.json(result)
+    
 if st.button("Build Totals Learning Dataset"):
 
     totals_learning_result = build_totals_learning_dataset()
