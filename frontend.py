@@ -2010,6 +2010,54 @@ if st.button("Auto Grade Totals Bets"):
         )
 
 totals_df = load_totals_history()
+clv_col1, clv_col2, clv_col3 = st.columns(3)
+
+if "clv" in totals_df.columns:
+
+    avg_clv = pd.to_numeric(
+        totals_df["clv"],
+        errors="coerce"
+    ).mean()
+
+    positive_clv = (
+        pd.to_numeric(
+            totals_df["clv"],
+            errors="coerce"
+        ) > 0
+    ).sum()
+
+    negative_clv = (
+        pd.to_numeric(
+            totals_df["clv"],
+            errors="coerce"
+        ) < 0
+    ).sum()
+
+else:
+
+    avg_clv = 0
+    positive_clv = 0
+    negative_clv = 0
+
+with clv_col1:
+    st.metric(
+        "Average CLV",
+        round(avg_clv, 2)
+        if pd.notna(avg_clv)
+        else 0
+    )
+
+with clv_col2:
+    st.metric(
+        "Positive CLV",
+        int(positive_clv)
+    )
+
+with clv_col3:
+    st.metric(
+        "Negative CLV",
+        int(negative_clv)
+    )
 
 if totals_df.empty:
 
