@@ -8,6 +8,7 @@ from totals_tracker import (
     load_totals_history
 )
 from datetime import date, datetime
+from best_bet_selector import select_best_bet
 from injury_data_collector import collect_injury_data
 from injury_impact_engine import get_injury_impact
 
