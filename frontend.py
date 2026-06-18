@@ -10,6 +10,7 @@ from totals_tracker import (
 from datetime import date, datetime
 from generate_totals_test_data import add_totals_test_data
 from train_totals_model import train_totals_model
+from totals_ai_predictor import totals_ai_prediction
 from totals_auto_learning import build_totals_learning_dataset
 from totals_result_grader import grade_totals_results
 from injury_data_collector import collect_injury_data
@@ -1230,7 +1231,34 @@ if data and "games" in data and len(data["games"]) > 0:
         under_odds = odds.get("under_odds")
         totals_bookmaker = odds.get("totals_bookmaker", "N/A")
         total_line_move = odds.get("total_line_move", 0)
-
+       
+        ai_totals = totals_ai_prediction(
+            projected_total=projected_total,
+            sportsbook_total=bookmaker_total,
+            edge=edge
+        )
+        
+        if ai_totals["status"] == "success":
+        
+            ai1, ai2, ai3 = st.columns(3)
+        
+            with ai1:
+                st.metric(
+                    "AI Over Probability",
+                    f"{ai_totals['over_probability']}%"
+                )
+        
+            with ai2:
+                st.metric(
+                    "AI Under Probability",
+                    f"{ai_totals['under_probability']}%"
+                )
+        
+            with ai3:
+                st.metric(
+                    "AI Confidence",
+                    f"{ai_totals['confidence']}%"
+                )
         try:
             default_total_line = float(live_total_line)
         except Exception:
