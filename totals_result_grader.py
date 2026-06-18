@@ -5,39 +5,59 @@ import requests
 
 TOTALS_HISTORY_FILE = "totals_history.csv"
 API_URL = "https://oluwa-blazee-new.onrender.com"
+
 STAKE = 100
 WIN_PROFIT = 91
 
 
 def fetch_final_score(game_date, home_team, away_team):
 
-    try:
-        response = requests.get(
-            f"{API_URL}/score_result",
-            params={
-                "date": game_date,
-                "home_team": home_team,
-                "away_team": away_team,
-                "best_bet": home_team
-            },
-            timeout=30
-        )
-
-        if response.status_code != 200:
-            return None
-
-        data = response.json()
-
-        if data.get("status") != "completed":
-            return None
-
-        return {
-            "home_score": float(data.get("home_score", 0)),
-            "away_score": float(data.get("away_score", 0))
+    attempts = [
+        {
+            "home_team": home_team,
+            "away_team": away_team,
+            "best_bet": home_team
+        },
+        {
+            "home_team": away_team,
+            "away_team": home_team,
+            "best_bet": away_team
         }
+    ]
 
-    except Exception:
-        return None
+    for params in attempts:
+
+        try:
+            response = requests.get(
+                f"{API_URL}/score_result",
+                params={
+                    "date": game_date,
+                    "home_team": params["home_team"],
+                    "away_team": params["away_team"],
+                    "best_bet": params["best_bet"]
+                },
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                continue
+
+            data = response.json()
+
+            if data.get("status") != "completed":
+                continue
+
+            return {
+                "home_score": float(data.get("home_score", 0)),
+                "away_score": float(data.get("away_score", 0)),
+                "matched_home_team": params["home_team"],
+                "matched_away_team": params["away_team"]
+            }
+
+        except Exception:
+            continue
+
+    return None
 
 
 def grade_totals_results():
@@ -60,6 +80,8 @@ def grade_totals_results():
         "actual_total",
         "home_score",
         "away_score",
+        "matched_home_team",
+        "matched_away_team",
         "result",
         "profit_loss"
     ]:
@@ -117,6 +139,8 @@ def grade_totals_results():
 
         df.loc[idx, "home_score"] = home_score
         df.loc[idx, "away_score"] = away_score
+        df.loc[idx, "matched_home_team"] = score_data["matched_home_team"]
+        df.loc[idx, "matched_away_team"] = score_data["matched_away_team"]
         df.loc[idx, "actual_total"] = actual_total
         df.loc[idx, "result"] = result
         df.loc[idx, "profit_loss"] = profit_loss
