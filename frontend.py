@@ -8,6 +8,7 @@ from totals_tracker import (
     load_totals_history
 )
 from datetime import date, datetime
+from train_totals_model import train_totals_model
 from totals_auto_learning import build_totals_learning_dataset
 from totals_result_grader import grade_totals_results
 from injury_data_collector import collect_injury_data
@@ -2555,6 +2556,19 @@ if st.button("Build Totals Learning Dataset"):
 
     st.json(totals_learning_result)
 
+if st.button("Train Totals Model"):
+
+    result = train_totals_model()
+
+    if result["status"] == "success":
+        st.success(
+            f"Totals model trained. Accuracy: {result['accuracy']}%"
+        )
+    else:
+        st.error(result["message"])
+
+    st.json(result)
+    
 if st.button("Build Learning Dataset"):
     summary = summarize_learning()
 
