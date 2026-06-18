@@ -1572,10 +1572,10 @@ if data and "games" in data and len(data["games"]) > 0:
                 best_market["pick"]
             )
 
-        best_bet = select_best_bet_v2(
-            moneyline_confidence=confidence_result["confidence_score"],
+       best_bet = select_best_bet_v2(
+            moneyline_confidence=confidence * 100,
             moneyline_pick=game["prediction"],
-            totals_confidence=ai_totals["confidence"],
+            totals_confidence=ai_totals.get("confidence", 0),
             totals_pick=totals_result["recommendation"]
         )
         
