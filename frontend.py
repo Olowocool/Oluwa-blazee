@@ -1650,6 +1650,30 @@ if data and "games" in data and len(data["games"]) > 0:
 
             if TEST_MODE:
                 passes_filter = True
+                
+            best_market = select_best_bet(
+                moneyline_pick=candidate_bet,
+                moneyline_ev=candidate_ev,
+                moneyline_confidence=confidence_result["confidence_score"],
+                totals_edge=totals_result.get("edge", 0),
+                totals_recommendation=totals_result.get("recommendation", "No Bet")
+            )
+            
+            st.subheader("Best Bet Selector")
+            
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                st.metric(
+                    "Recommended Market",
+                    best_market["market"]
+                )
+            
+            with col_b:
+                st.metric(
+                    "Recommended Pick",
+                    best_market["pick"]
+                )
 
             if passes_filter:
                 best_bet = candidate_bet
