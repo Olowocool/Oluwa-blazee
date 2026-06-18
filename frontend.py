@@ -1964,6 +1964,19 @@ else:
         
 st.header("Totals Performance Dashboard")
 
+if st.button("Auto Grade Totals Bets"):
+
+    result = grade_totals_results()
+
+    if result["status"] == "success":
+        st.success(
+            f"Updated {result['updated_rows']} totals bets."
+        )
+    else:
+        st.error(
+            result["message"]
+        )
+
 totals_df = load_totals_history()
 
 if totals_df.empty:
