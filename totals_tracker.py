@@ -31,15 +31,15 @@ def save_totals_pick(
         "pick_type": pick_type,
         "projected_total": projected_total,
         "sportsbook_total": sportsbook_total,
+        "saved_total": sportsbook_total,
+        "closing_total": None,
+        "clv": None,
         "edge": round(edge, 2),
         "recommendation": recommendation,
         "stake": STAKE,
         "actual_total": None,
         "result": "Pending",
         "profit_loss": 0
-        "saved_total": sportsbook_total,
-        "closing_total": None,
-        "clv": None,
     }
 
     if os.path.exists(TOTALS_HISTORY_FILE):
@@ -60,36 +60,6 @@ def save_totals_pick(
     return True
 
 
-def grade_totals_pick(row):
-    actual_total = row.get("actual_total")
-    sportsbook_total = row.get("sportsbook_total")
-    pick_type = row.get("pick_type")
-
-    try:
-        actual_total = float(actual_total)
-        sportsbook_total = float(sportsbook_total)
-    except Exception:
-        return row
-
-    if pick_type == "Over":
-        result = "Win" if actual_total > sportsbook_total else "Loss"
-    elif pick_type == "Under":
-        result = "Win" if actual_total < sportsbook_total else "Loss"
-    else:
-        result = "Pending"
-
-    row["result"] = result
-
-    if result == "Win":
-        row["profit_loss"] = STAKE * 0.91
-    elif result == "Loss":
-        row["profit_loss"] = -STAKE
-    else:
-        row["profit_loss"] = 0
-
-    return row
-
-
 def load_totals_history():
     if not os.path.exists(TOTALS_HISTORY_FILE):
         return pd.DataFrame()
@@ -101,6 +71,9 @@ def load_totals_history():
         "pick_type",
         "edge",
         "stake",
+        "saved_total",
+        "closing_total",
+        "clv",
         "actual_total",
         "result",
         "profit_loss"
