@@ -1354,7 +1354,30 @@ if data and "games" in data and len(data["games"]) > 0:
                 "H2H Games Used",
                 totals_result.get("points_engine_h2h_games_used", "N/A")
             )
-
+        st.subheader("Best Bet Selector")
+        
+        best_market = select_best_bet(
+            moneyline_pick=game["prediction"],
+            moneyline_ev=candidate_ev,
+            moneyline_confidence=confidence_result["confidence_score"],
+            totals_edge=totals_result.get("edge", 0),
+            totals_recommendation=totals_result.get("recommendation", "No Bet")
+        )
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric(
+                "Recommended Market",
+                best_market["market"]
+            )
+        
+        with col2:
+            st.metric(
+                "Recommended Pick",
+                best_market["pick"]
+            )
+            
         st.metric(
             "History Rows Loaded",
             totals_result["history_rows"]
