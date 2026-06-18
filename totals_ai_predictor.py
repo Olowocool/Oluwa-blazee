@@ -8,6 +8,8 @@ MODEL_PATH = "models/totals_model_v2.joblib"
 
 def safe_float(value, default=0):
     try:
+        if value is None:
+            return default
         return float(value)
     except Exception:
         return default
@@ -27,57 +29,73 @@ def totals_ai_prediction(
             "confidence": 0
         }
 
-    model = joblib.load(MODEL_PATH)
+    try:
+        model = joblib.load(MODEL_PATH)
 
-    projected_total = safe_float(projected_total)
-    sportsbook_total = safe_float(sportsbook_total)
-    edge = safe_float(edge)
+        projected_total = safe_float(projected_total)
+        sportsbook_total = safe_float(sportsbook_total)
+        edge = safe_float(edge)
 
-    is_under = 1 if edge < 0 else 0
-    is_over = 1 if edge > 0 else 0
+        base_values = {
+            "projected_total": projected_total,
+            "sportsbook_total": sportsbook_total,
+            "edge": edge,
+            "actual_total": 0,
+            "is_under": 1 if edge < 0 else 0,
+            "is_over": 1 if edge > 0 else 0,
+            "profit_loss": 0
+        }
 
-    features = pd.DataFrame(
-        [[
-            projected_total,
-            sportsbook_total,
-            edge,
-            0,
-            is_under,
-            is_over,
-            0
-        ]],
-        columns=[
-            "projected_total",
-            "sportsbook_total",
-            "edge",
-            "actual_total",
-            "is_under",
-            "is_over",
-            "profit_loss"
-        ]
-    )
+        if hasattr(model, "feature_names_in_"):
+            expected_features = list(model.feature_names_in_)
+        else:
+            expected_features = [
+                "projected_total",
+                "sportsbook_total",
+                "edge",
+                "actual_total",
+                "is_under",
+                "is_over",
+                "profit_loss"
+            ]
 
-    probabilities = model.predict_proba(features)[0]
+        row = {
+            feature: base_values.get(feature, 0)
+            for feature in expected_features
+        }
 
-    classes = list(model.classes_)
-
-    if 1 in classes:
-        win_probability = float(
-            probabilities[classes.index(1)]
+        features = pd.DataFrame(
+            [row],
+            columns=expected_features
         )
-    else:
-        win_probability = float(max(probabilities))
 
-    if edge > 0:
-        over_probability = win_probability
-        under_probability = 1 - win_probability
-    else:
-        under_probability = win_probability
-        over_probability = 1 - win_probability
+        probabilities = model.predict_proba(features)[0]
+        classes = list(model.classes_)
 
-    return {
-        "status": "success",
-        "over_probability": round(over_probability * 100, 1),
-        "under_probability": round(under_probability * 100, 1),
-        "confidence": round(max(over_probability, under_probability) * 100, 1)
-    }
+        if 1 in classes:
+            win_probability = float(probabilities[classes.index(1)])
+        else:
+            win_probability = float(max(probabilities))
+
+        if edge > 0:
+            over_probability = win_probability
+            under_probability = 1 - win_probability
+        else:
+            under_probability = win_probability
+            over_probability = 1 - win_probability
+
+        return {
+            "status": "success",
+            "over_probability": round(over_probability * 100, 1),
+            "under_probability": round(under_probability * 100, 1),
+            "confidence": round(max(over_probability, under_probability) * 100, 1)
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "over_probability": 0,
+            "under_probability": 0,
+            "confidence": 0
+        }
