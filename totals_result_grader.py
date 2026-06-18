@@ -2,6 +2,8 @@ import os
 import pandas as pd
 import requests
 
+from totals_clv import calculate_totals_clv
+
 
 TOTALS_HISTORY_FILE = "totals_history.csv"
 API_URL = "https://oluwa-blazee-new.onrender.com"
@@ -77,6 +79,9 @@ def grade_totals_results():
         }
 
     for col in [
+        "saved_total",
+        "closing_total",
+        "clv",
         "actual_total",
         "home_score",
         "away_score",
@@ -90,6 +95,8 @@ def grade_totals_results():
                 df[col] = "Pending"
             elif col == "profit_loss":
                 df[col] = 0
+            elif col == "saved_total":
+                df[col] = df.get("sportsbook_total", None)
             else:
                 df[col] = None
 
@@ -111,7 +118,6 @@ def grade_totals_results():
 
         home_score = score_data["home_score"]
         away_score = score_data["away_score"]
-
         actual_total = home_score + away_score
 
         try:
@@ -119,9 +125,7 @@ def grade_totals_results():
         except Exception:
             continue
 
-        recommendation = str(
-            row.get("recommendation", "")
-        ).lower()
+        recommendation = str(row.get("recommendation", "")).lower()
 
         if "over" in recommendation:
             result = "Win" if actual_total > sportsbook_total else "Loss"
@@ -132,65 +136,38 @@ def grade_totals_results():
         else:
             continue
 
-        if result == "Win":
-            profit_loss = WIN_PROFIT
-        else:
-            profit_loss = -STAKE
+        profit_loss = WIN_PROFIT if result == "Win" else -STAKE
+
+        saved_total = row.get("saved_total", sportsbook_total)
+        closing_total = row.get("closing_total", sportsbook_total)
+
+        if pd.isna(saved_total):
+            saved_total = sportsbook_total
+
+        if pd.isna(closing_total):
+            closing_total = sportsbook_total
+
+        clv = calculate_totals_clv(
+            saved_total,
+            closing_total
+        )
 
         df.loc[idx, "home_score"] = home_score
         df.loc[idx, "away_score"] = away_score
         df.loc[idx, "matched_home_team"] = score_data["matched_home_team"]
         df.loc[idx, "matched_away_team"] = score_data["matched_away_team"]
         df.loc[idx, "actual_total"] = actual_total
+        df.loc[idx, "saved_total"] = saved_total
+        df.loc[idx, "closing_total"] = closing_total
+        df.loc[idx, "clv"] = clv
         df.loc[idx, "result"] = result
         df.loc[idx, "profit_loss"] = profit_loss
 
         updated_rows += 1
 
-    df.to_csv(
-        TOTALS_HISTORY_FILE,
-        index=False
-    )
-
-    settled = df[
-        df["result"].astype(str).str.lower().isin(["win", "loss"])
-    ]
-
-    wins = len(
-        settled[
-            settled["result"].astype(str).str.lower() == "win"
-        ]
-    )
-
-    losses = len(
-        settled[
-            settled["result"].astype(str).str.lower() == "loss"
-        ]
-    )
-
-    total_profit = pd.to_numeric(
-        settled["profit_loss"],
-        errors="coerce"
-    ).fillna(0).sum()
-
-    roi = 0
-
-    if len(settled) > 0:
-        roi = round(
-            total_profit / (len(settled) * STAKE) * 100,
-            2
-        )
+    df.to_csv(TOTALS_HISTORY_FILE, index=False)
 
     return {
         "status": "success",
-        "updated_rows": updated_rows,
-        "settled": len(settled),
-        "wins": wins,
-        "losses": losses,
-        "profit": round(float(total_profit), 2),
-        "roi": roi
+        "updated_rows": updated_rows
     }
-
-
-if __name__ == "__main__":
-    print(grade_totals_results())
