@@ -37,6 +37,9 @@ def save_totals_pick(
         "actual_total": None,
         "result": "Pending",
         "profit_loss": 0
+        "saved_total": sportsbook_total,
+        "closing_total": None,
+        "clv": None,
     }
 
     if os.path.exists(TOTALS_HISTORY_FILE):
