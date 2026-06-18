@@ -1513,6 +1513,42 @@ if data and "games" in data and len(data["games"]) > 0:
             st.success("Totals pick saved.")
         with st.expander("Totals Model Details"):
             st.json(totals_result)
+
+        st.subheader("Best Bet Selector")
+
+        best_market = select_best_bet(
+            moneyline_pick=game.get("prediction", "No Bet"),
+            moneyline_ev=0,
+            moneyline_confidence=0,
+            totals_edge=totals_result.get("edge", 0),
+            totals_recommendation=totals_result.get("recommendation", "No Bet")
+        )
+
+        selector_col1, selector_col2 = st.columns(2)
+
+        with selector_col1:
+            st.metric(
+                "Recommended Market",
+                best_market["market"]
+            )
+
+        with selector_col2:
+            st.metric(
+                "Recommended Pick",
+                best_market["pick"]
+            )
+
+        if best_market["market"] == "Totals":
+            st.success(
+                f"🔥 OFFICIAL BEST BET: {best_market['pick']}"
+            )
+        elif best_market["market"] == "Moneyline":
+            st.success(
+                f"🔥 OFFICIAL BEST BET: {best_market['pick']}"
+            )
+        else:
+            st.warning("🚫 OFFICIAL RECOMMENDATION: NO BET")
+
         if home_odds and away_odds:
             st.subheader("Betting Analytics")
 
@@ -1632,7 +1668,7 @@ if data and "games" in data and len(data["games"]) > 0:
             with conf_col3:
                 st.metric("Recommended Action", confidence_result["recommended_action"])
 
-            st.subheader("Best Bet Selector")
+            st.subheader("Best Bet Selector — With Moneyline Odds")
 
             best_market = select_best_bet(
                 moneyline_pick=candidate_bet,
@@ -1655,6 +1691,17 @@ if data and "games" in data and len(data["games"]) > 0:
                     "Recommended Pick",
                     best_market["pick"]
                 )
+
+            if best_market["market"] == "Totals":
+                st.success(
+                    f"🔥 OFFICIAL BEST BET: {best_market['pick']}"
+                )
+            elif best_market["market"] == "Moneyline":
+                st.success(
+                    f"🔥 OFFICIAL BEST BET: {best_market['pick']}"
+                )
+            else:
+                st.warning("🚫 OFFICIAL RECOMMENDATION: NO BET")
 
             uncertainty_level = "Low"
 
