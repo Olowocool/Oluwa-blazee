@@ -1571,22 +1571,22 @@ if data and "games" in data and len(data["games"]) > 0:
                 "Recommended Pick",
                 best_market["pick"]
             )
-
-       best_bet = select_best_bet_v2(
+        best_bet = select_best_bet_v2(
             moneyline_confidence=confidence * 100,
             moneyline_pick=game["prediction"],
             totals_confidence=ai_totals.get("confidence", 0),
             totals_pick=totals_result["recommendation"]
         )
-        
+            
         st.success(
             f"🔥 OFFICIAL BEST BET: "
             f"{best_bet['market']} | "
             f"{best_bet['pick']} | "
             f"{best_bet['confidence']}%"
         )
-
-        if home_odds and away_odds:
+    
+            if home_odds and away_odds:
+            
             st.subheader("Betting Analytics")
 
             calibrated_home_prob = calibrate_probability(
