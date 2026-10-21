@@ -652,42 +652,58 @@ def calculate_clv(saved_odds, closing_odds):
         return ""
 
 
+
 def load_bet_history():
+    required_columns = [
+        "timestamp",
+        "game_date",
+        "home_team",
+        "away_team",
+        "best_bet",
+        "odds",
+        "model_probability",
+        "expected_value",
+        "kelly",
+        "stake",
+        "result",
+        "profit_loss",
+        "closing_odds",
+        "clv",
+    ]
+
     if not os.path.isfile("bet_history.csv"):
-        return None
+        return pd.DataFrame(columns=required_columns)
 
-    df = pd.read_csv("bet_history.csv")
+    try:
+        df = pd.read_csv("bet_history.csv")
+    except Exception as exc:
+        print(f"Could not load bet_history.csv: {exc}")
+        return pd.DataFrame(columns=required_columns)
 
-    if "stake" not in df.columns:
-        df["stake"] = STAKE
-
-    if "result" not in df.columns:
-        df["result"] = "Pending"
-
-    if "profit_loss" not in df.columns:
-        df["profit_loss"] = 0
-
-    if "closing_odds" not in df.columns:
-        df["closing_odds"] = ""
-
-    if "clv" not in df.columns:
-        df["clv"] = ""
+    for col in required_columns:
+        if col not in df.columns:
+            if col == "stake":
+                df[col] = STAKE
+            elif col == "result":
+                df[col] = "Pending"
+            elif col in ["profit_loss", "expected_value", "kelly"]:
+                df[col] = 0.0
+            else:
+                df[col] = ""
 
     df["closing_odds"] = df["closing_odds"].astype("object")
-
-    df["stake"] = pd.to_numeric(df["stake"], errors="coerce")
-    df["stake"] = df["stake"].fillna(STAKE)
+    df["stake"] = pd.to_numeric(df["stake"], errors="coerce").fillna(STAKE)
     df.loc[df["stake"] <= 0, "stake"] = STAKE
-
     df["result"] = df["result"].fillna("Pending")
-    df["profit_loss"] = df.apply(calculate_profit_loss, axis=1)
 
+    df["profit_loss"] = df.apply(calculate_profit_loss, axis=1)
     df["clv"] = df.apply(
         lambda row: calculate_clv(row["odds"], row["closing_odds"]),
-        axis=1
+        axis=1,
     )
 
     return df
+
 
 
 def save_bet_history(df):
