@@ -8,6 +8,7 @@ from totals_tracker import (
     load_totals_history
 )
 from datetime import date, datetime
+from prediction_history_logger import log_prediction
 from best_bet_selector_v2 import select_best_bet_v2
 from generate_totals_test_data import add_totals_test_data
 from train_totals_model import train_totals_model
@@ -1550,17 +1551,31 @@ if data and "games" in data and len(data["games"]) > 0:
         if st.button(
             f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
         ):
-        
-            save_totals_pick(
-                game_date=active_date,
-                home_team=game["home_team"],
-                away_team=game["away_team"],
-                projected_total=totals_result["projected_total"],
-                sportsbook_total=totals_result["bookmaker_total"],
-                recommendation=totals_result["recommendation"]
-            )
-        
-            st.success("Totals pick saved.")
+            try:
+                save_totals_pick(
+                    game_date=active_date,
+                    home_team=game["home_team"],
+                    away_team=game["away_team"],
+                    projected_total=totals_result["projected_total"],
+                    sportsbook_total=totals_result["bookmaker_total"],
+                    recommendation=totals_result["recommendation"],
+                )
+
+                log_prediction(
+                    prediction=totals_result,
+                    game_date=active_date,
+                )
+
+                st.success(
+                    "Totals pick and prediction history saved."
+                )
+
+            except Exception as e:
+                st.error(
+                    f"Saving was incomplete: {e}. "
+                    "Check both history files before retrying."
+                )
+
         with st.expander("Totals Model Details"):
             st.json(totals_result)
 
