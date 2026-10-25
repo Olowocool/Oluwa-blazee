@@ -780,6 +780,7 @@ def raw_scoreboard(date: str):
             "error": str(e)
         }
 
+
 @app.get("/score_result")
 def score_result(
     date: str,
@@ -788,74 +789,145 @@ def score_result(
     best_bet: str
 ):
     try:
+        from datetime import timedelta
+        import requests
+
         parsed_date = parse_selected_date(date)
+        dates_to_check = [
+            parsed_date,
+            parsed_date - timedelta(days=1),
+            parsed_date + timedelta(days=1),
+        ]
 
-        espn_games, _ = get_espn_schedule_window(parsed_date)
+        normalized_home = home_team.strip().lower()
+        normalized_away = away_team.strip().lower()
 
-        for game in espn_games:
-            api_home = str(game.get("home_team", "")).strip()
-            api_away = str(game.get("away_team", "")).strip()
-
-            teams_match = sorted([
-                api_home.lower(),
-                api_away.lower()
-            ]) == sorted([
-                home_team.strip().lower(),
-                away_team.strip().lower()
-            ])
-
-            if not teams_match:
-                continue
-
-            game_status = str(
-                game.get("game_status", "")
-            ).lower()
-
-            if "final" not in game_status:
-                return {
-                    "status": "pending",
-                    "message": f"Game not final yet. Current status: {game.get('game_status')}"
-                }
-
-            home_score = safe_int(game.get("home_score", 0))
-            away_score = safe_int(game.get("away_score", 0))
-
-            if home_score == away_score:
-                return {
-                    "status": "pending",
-                    "message": "Game score is tied or not valid yet."
-                }
-
-            winner = api_home if home_score > away_score else api_away
-
-            result = (
-                "Win"
-                if winner.strip().lower() == best_bet.strip().lower()
-                else "Loss"
+        for schedule_date in dates_to_check:
+            espn_date = schedule_date.strftime("%Y%m%d")
+            url = (
+                "https://site.api.espn.com/apis/site/v2/"
+                "sports/basketball/nba/scoreboard"
             )
 
-            return {
-                "status": "completed",
-                "home_team": api_home,
-                "away_team": api_away,
-                "home_score": home_score,
-                "away_score": away_score,
-                "winner": winner,
-                "best_bet": best_bet,
-                "result": result,
-                "game_status": game.get("game_status")
-            }
+            try:
+                response = requests.get(
+                    url,
+                    params={"dates": espn_date},
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=12,
+                )
+                response.raise_for_status()
+                events = response.json().get("events", [])
+            except requests.RequestException:
+                continue
+
+            for event in events:
+                competitors = (
+                    event.get("competitions") or [{}]
+                )[0].get("competitors", [])
+
+                home = next(
+                    (
+                        item for item in competitors
+                        if item.get("homeAway") == "home"
+                    ),
+                    None,
+                )
+                away = next(
+                    (
+                        item for item in competitors
+                        if item.get("homeAway") == "away"
+                    ),
+                    None,
+                )
+
+                if not home or not away:
+                    continue
+
+                api_home = home.get("team", {}).get("displayName", "").strip()
+                api_away = away.get("team", {}).get("displayName", "").strip()
+
+                if sorted([api_home.lower(), api_away.lower()]) != sorted(
+                    [normalized_home, normalized_away]
+                ):
+                    continue
+
+                status = (
+                    event.get("status", {})
+                    .get("type", {})
+                    .get("name", "")
+                )
+                game_status = (
+                    event.get("status", {})
+                    .get("type", {})
+                    .get("description", status)
+                )
+
+                if status != "STATUS_FINAL":
+                    return {
+                        "status": "pending",
+                        "message": (
+                            f"Game not final yet. "
+                            f"Current status: {game_status}"
+                        ),
+                    }
+
+                home_score = safe_int(home.get("score", 0))
+                away_score = safe_int(away.get("score", 0))
+                actual_total = home_score + away_score
+
+                if home_score == away_score:
+                    return {
+                        "status": "pending",
+                        "message": "Game score is tied or not valid yet.",
+                    }
+
+                winner = (
+                    api_home if home_score > away_score else api_away
+                )
+
+                # Totals are graded by totals_result_grader.py.
+                # This endpoint supplies the final score only.
+                if best_bet.strip().lower() in {"over", "under"}:
+                    result = None
+                else:
+                    result = (
+                        "Win"
+                        if winner.lower() == best_bet.strip().lower()
+                        else "Loss"
+                    )
+
+                return {
+                    "status": "completed",
+                    "home_team": api_home,
+                    "away_team": api_away,
+                    "home_score": home_score,
+                    "away_score": away_score,
+                    "actual_total": actual_total,
+                    "winner": winner,
+                    "best_bet": best_bet,
+                    "result": result,
+                    "game_status": game_status,
+                    "espn_query_date": espn_date,
+                }
 
         return {
             "status": "not_found",
-            "message": "Game not found."
+            "message": (
+                "Game not found in ESPN results for the selected date "
+                "or adjacent dates."
+            ),
+            "dates_checked": [
+                item.strftime("%Y%m%d") for item in dates_to_check
+            ],
         }
 
     except Exception as e:
         return {
             "status": "error",
-            "message": str(e)
+            "message": str(e),
         }
+
 
 @app.get("/debug_injuries")
 def debug_injuries():
