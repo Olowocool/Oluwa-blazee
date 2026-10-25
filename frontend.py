@@ -1,0 +1,3043 @@
+import streamlit as st
+import requests
+import csv
+import os
+import pandas as pd
+from totals_tracker import (
+    save_totals_pick,
+    load_totals_history
+)
+from datetime import date, datetime
+from prediction_history_logger import log_prediction
+from best_bet_selector_v2 import select_best_bet_v2
+from train_totals_model import train_totals_model
+from totals_ai_predictor import totals_ai_prediction
+from totals_auto_learning import build_totals_learning_dataset
+from totals_result_grader import grade_totals_results
+from injury_data_collector import collect_injury_data
+from injury_impact_engine import get_injury_impact
+
+try:
+    collect_injury_data()
+except Exception as e:
+    print("Injury update failed:", e)
+from totals_model import predict_game_total
+from retrain_model import retrain_pipeline
+from confidence_engine import classify_confidence
+from automation_runner import run_daily_automation
+from model_health import get_model_health
+from odds_snapshot_engine import save_odds_snapshot
+from model_rollback import restore_model_version
+from historical_backfill_engine import generate_historical_backfill
+from historical_data_engine import (
+    create_historical_training_file,
+    add_historical_game,
+    merge_historical_into_bet_history
+)
+from model_evaluation import evaluate_ensemble_model
+from train_ensemble_model import train_ensemble_model
+from model_manager import (
+    register_model,
+    get_model_versions,
+    get_best_model,
+    rollback_model
+)
+from feature_engineering import build_feature_vector
+from ensemble_consensus import consensus_prediction
+from auto_learning import summarize_learning, build_learning_dataset
+from auto_update_results import update_bet_results
+from uncertainty_engine import classify_uncertainty
+from best_bet_selector import select_best_bet
+API_URL = "https://oluwa-blazee-new.onrender.com"
+STAKE = 100
+TEST_MODE = False
+
+
+def load_odds_api_key():
+    env_key = os.getenv("ODDS_API_KEY")
+    if env_key:
+        return env_key
+
+    try:
+        return st.secrets.get("ODDS_API_KEY", "")
+    except Exception:
+        return ""
+
+
+ODDS_API_KEY = load_odds_api_key()
+
+
+TEAM_LOGOS = {
+    "Atlanta Hawks": "https://cdn.nba.com/logos/nba/1610612737/global/L/logo.svg",
+    "Boston Celtics": "https://cdn.nba.com/logos/nba/1610612738/global/L/logo.svg",
+    "Brooklyn Nets": "https://cdn.nba.com/logos/nba/1610612751/global/L/logo.svg",
+    "Charlotte Hornets": "https://cdn.nba.com/logos/nba/1610612766/global/L/logo.svg",
+    "Chicago Bulls": "https://cdn.nba.com/logos/nba/1610612741/global/L/logo.svg",
+    "Cleveland Cavaliers": "https://cdn.nba.com/logos/nba/1610612739/global/L/logo.svg",
+    "Dallas Mavericks": "https://cdn.nba.com/logos/nba/1610612742/global/L/logo.svg",
+    "Denver Nuggets": "https://cdn.nba.com/logos/nba/1610612743/global/L/logo.svg",
+    "Detroit Pistons": "https://cdn.nba.com/logos/nba/1610612765/global/L/logo.svg",
+    "Golden State Warriors": "https://cdn.nba.com/logos/nba/1610612744/global/L/logo.svg",
+    "Houston Rockets": "https://cdn.nba.com/logos/nba/1610612745/global/L/logo.svg",
+    "Indiana Pacers": "https://cdn.nba.com/logos/nba/1610612754/global/L/logo.svg",
+    "Los Angeles Clippers": "https://cdn.nba.com/logos/nba/1610612746/global/L/logo.svg",
+    "Los Angeles Lakers": "https://cdn.nba.com/logos/nba/1610612747/global/L/logo.svg",
+    "Memphis Grizzlies": "https://cdn.nba.com/logos/nba/1610612763/global/L/logo.svg",
+    "Miami Heat": "https://cdn.nba.com/logos/nba/1610612748/global/L/logo.svg",
+    "Milwaukee Bucks": "https://cdn.nba.com/logos/nba/1610612749/global/L/logo.svg",
+    "Minnesota Timberwolves": "https://cdn.nba.com/logos/nba/1610612750/global/L/logo.svg",
+    "New Orleans Pelicans": "https://cdn.nba.com/logos/nba/1610612740/global/L/logo.svg",
+    "New York Knicks": "https://cdn.nba.com/logos/nba/1610612752/global/L/logo.svg",
+    "Oklahoma City Thunder": "https://cdn.nba.com/logos/nba/1610612760/global/L/logo.svg",
+    "Orlando Magic": "https://cdn.nba.com/logos/nba/1610612753/global/L/logo.svg",
+    "Philadelphia 76ers": "https://cdn.nba.com/logos/nba/1610612755/global/L/logo.svg",
+    "Phoenix Suns": "https://cdn.nba.com/logos/nba/1610612756/global/L/logo.svg",
+    "Portland Trail Blazers": "https://cdn.nba.com/logos/nba/1610612757/global/L/logo.svg",
+    "Sacramento Kings": "https://cdn.nba.com/logos/nba/1610612758/global/L/logo.svg",
+    "San Antonio Spurs": "https://cdn.nba.com/logos/nba/1610612759/global/L/logo.svg",
+    "Toronto Raptors": "https://cdn.nba.com/logos/nba/1610612761/global/L/logo.svg",
+    "Utah Jazz": "https://cdn.nba.com/logos/nba/1610612762/global/L/logo.svg",
+    "Washington Wizards": "https://cdn.nba.com/logos/nba/1610612764/global/L/logo.svg",
+}
+
+
+TEAM_NAME_FIXES = {
+    "Philadelphia Sixers": "Philadelphia 76ers",
+    "LA Clippers": "Los Angeles Clippers",
+}
+
+
+def normalize_team_name(name):
+    return TEAM_NAME_FIXES.get(str(name).strip(), str(name).strip())
+
+
+def canonical_team_name(name):
+    name = normalize_team_name(name)
+    lookup = {team.lower(): team for team in TEAM_LOGOS.keys()}
+    return lookup.get(name.lower(), name)
+
+
+def parse_game_date(date_text):
+    try:
+        return datetime.strptime(date_text, "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def should_fetch_live_odds(date_text):
+    game_date = parse_game_date(date_text)
+    if game_date is None:
+        return True
+    return game_date >= date.today()
+
+
+@st.cache_data(ttl=300)
+def get_odds():
+    if not ODDS_API_KEY:
+        st.warning("Odds API key is not configured.")
+        return {}
+
+    url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
+
+    params = {
+        "apiKey": ODDS_API_KEY,
+        "regions": "us",
+        "markets": "h2h,totals",
+        "oddsFormat": "decimal"
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=60)
+
+        if response.status_code != 200:
+            st.warning(f"Odds API Error: {response.status_code}")
+            return {}
+
+        games = response.json()
+        odds_map = {}
+
+        for game in games:
+            home_team = normalize_team_name(game["home_team"]).lower()
+            away_team = normalize_team_name(game["away_team"]).lower()
+
+            current_odds = {
+                home_team: None,
+                away_team: None,
+                "total_line": None,
+                "over_odds": None,
+                "under_odds": None,
+                "totals_bookmaker": None
+            }
+
+            bookmakers = game.get("bookmakers", [])
+
+            for bookmaker in bookmakers:
+                bookmaker_name = bookmaker.get("title", "Unknown Sportsbook")
+
+                for market in bookmaker.get("markets", []):
+                    market_key = market.get("key")
+
+                    # Moneyline market
+                    if market_key == "h2h":
+                        for outcome in market.get("outcomes", []):
+                            team_name = normalize_team_name(
+                                outcome.get("name", "")
+                            ).lower()
+
+                            price = float(outcome.get("price", 0))
+
+                            if team_name in [home_team, away_team]:
+                                if (
+                                    current_odds.get(team_name) is None
+                                    or price > current_odds[team_name]["price"]
+                                ):
+                                    current_odds[team_name] = {
+                                        "price": price,
+                                        "bookmaker": bookmaker_name
+                                    }
+
+                    # Totals / Over-Under market
+                    if market_key == "totals":
+                        for outcome in market.get("outcomes", []):
+                            outcome_name = str(outcome.get("name", "")).lower()
+                            price = float(outcome.get("price", 0))
+                            point = outcome.get("point", None)
+
+                            if point is None:
+                                continue
+
+                            if outcome_name == "over":
+                                current_odds["total_line"] = float(point)
+                                current_odds["over_odds"] = price
+                                current_odds["totals_bookmaker"] = bookmaker_name
+
+                            elif outcome_name == "under":
+                                current_odds["total_line"] = float(point)
+                                current_odds["under_odds"] = price
+                                current_odds["totals_bookmaker"] = bookmaker_name
+
+            odds_map[(home_team, away_team)] = current_odds
+
+        return odds_map
+
+    except Exception as e:
+        st.warning(f"Odds fetch failed: {e}")
+        return {}
+
+
+def get_latest_closing_odds(home_team, away_team):
+    odds_map = get_odds()
+
+    if not isinstance(odds_map, dict):
+        return None
+
+    target_home = normalize_team_name(home_team).lower()
+    target_away = normalize_team_name(away_team).lower()
+
+    for (home, away), value in odds_map.items():
+        if (
+            normalize_team_name(home).lower() == target_home
+            and normalize_team_name(away).lower() == target_away
+        ):
+            return value
+
+    return None
+
+
+def get_historical_odds(game_date):
+    if not os.path.isfile("historical_odds.csv"):
+        return {}
+
+    try:
+        df = pd.read_csv("historical_odds.csv")
+    except Exception as e:
+        st.warning(f"Historical odds file error: {e}")
+        return {}
+
+    required_cols = ["game_date", "home_team", "away_team", "home_odds", "away_odds"]
+
+    for col in required_cols:
+        if col not in df.columns:
+            st.warning(f"historical_odds.csv missing column: {col}")
+            return {}
+
+    df["game_date"] = df["game_date"].astype(str).str.strip()
+    filtered = df[df["game_date"] == str(game_date).strip()]
+
+    odds_map = {}
+
+    for _, row in filtered.iterrows():
+        home_team = normalize_team_name(row["home_team"]).lower()
+        away_team = normalize_team_name(row["away_team"]).lower()
+
+        def safe_row_float(column, default=None):
+            try:
+                value = row.get(column, default)
+                if pd.isna(value):
+                    return default
+                return float(value)
+            except Exception:
+                return default
+
+        odds_map[(home_team, away_team)] = {
+            home_team: {
+                "price": float(row["home_odds"]),
+                "bookmaker": "Historical Odds"
+            },
+            away_team: {
+                "price": float(row["away_odds"]),
+                "bookmaker": "Historical Odds"
+            },
+
+            "home_line_move_pct": safe_row_float("home_line_move_pct", 0),
+            "away_line_move_pct": safe_row_float("away_line_move_pct", 0),
+            "opening_home_odds": safe_row_float("opening_home_odds", row["home_odds"]),
+            "opening_away_odds": safe_row_float("opening_away_odds", row["away_odds"]),
+
+            "opening_total_line": safe_row_float("opening_total_line", None),
+            "total_line": safe_row_float("total_line", None),
+            "over_odds": safe_row_float("over_odds", None),
+            "under_odds": safe_row_float("under_odds", None),
+            "totals_bookmaker": row.get("totals_bookmaker", "Historical Totals"),
+            "total_line_move": safe_row_float("total_line_move", 0)
+        }
+
+    return odds_map
+
+
+def calculate_line_movement(opening_odds, current_odds):
+    try:
+        opening_odds = float(opening_odds)
+        current_odds = float(current_odds)
+
+        if opening_odds <= 0 or current_odds <= 0:
+            return 0
+
+        return ((current_odds / opening_odds) - 1) * 100
+
+    except Exception:
+        return 0
+
+
+def market_movement_signal(move_pct):
+    try:
+        move_pct = float(move_pct)
+
+        if move_pct >= 3:
+            return "Market drifting — worse price now"
+
+        if move_pct <= -3:
+            return "Market shortening — stronger support"
+
+        return "Market stable"
+
+    except Exception:
+        return "Market stable"
+
+
+def save_live_odds_to_history(game_date, odds_map):
+    """
+    Saves both moneyline odds and totals market data.
+    """
+
+    if not isinstance(odds_map, dict):
+        return
+
+    rows = []
+    existing_df = None
+
+    if os.path.isfile("historical_odds.csv"):
+        try:
+            existing_df = pd.read_csv("historical_odds.csv")
+        except Exception:
+            existing_df = None
+
+    for (home_team, away_team), odds in odds_map.items():
+        if not isinstance(odds, dict):
+            continue
+
+        home_data = odds.get(home_team)
+        away_data = odds.get(away_team)
+
+        if not home_data or not away_data:
+            continue
+
+        opening_home_odds = home_data["price"]
+        opening_away_odds = away_data["price"]
+
+        current_total_line = odds.get("total_line")
+        opening_total_line = current_total_line
+
+        if existing_df is not None:
+            for needed_col in [
+                "opening_home_odds",
+                "opening_away_odds",
+                "home_line_move_pct",
+                "away_line_move_pct",
+                "opening_total_line",
+                "total_line",
+                "total_line_move"
+            ]:
+                if needed_col not in existing_df.columns:
+                    existing_df[needed_col] = 0
+
+            existing_match = existing_df[
+                (existing_df["game_date"].astype(str).str.strip() == str(game_date).strip())
+                & (existing_df["home_team"].astype(str).str.lower() == home_team.lower())
+                & (existing_df["away_team"].astype(str).str.lower() == away_team.lower())
+            ]
+
+            if not existing_match.empty:
+                opening_home_odds = existing_match.iloc[0].get("opening_home_odds", home_data["price"])
+                opening_away_odds = existing_match.iloc[0].get("opening_away_odds", away_data["price"])
+                opening_total_line = existing_match.iloc[0].get("opening_total_line", current_total_line)
+
+                if pd.isna(opening_home_odds) or float(opening_home_odds) <= 0:
+                    opening_home_odds = existing_match.iloc[0].get("home_odds", home_data["price"])
+
+                if pd.isna(opening_away_odds) or float(opening_away_odds) <= 0:
+                    opening_away_odds = existing_match.iloc[0].get("away_odds", away_data["price"])
+
+                try:
+                    if pd.isna(opening_total_line) or float(opening_total_line or 0) <= 0:
+                        opening_total_line = existing_match.iloc[0].get("total_line", current_total_line)
+                except Exception:
+                    opening_total_line = current_total_line
+
+        home_line_move = calculate_line_movement(opening_home_odds, home_data["price"])
+        away_line_move = calculate_line_movement(opening_away_odds, away_data["price"])
+
+        try:
+            total_line_move = float(current_total_line) - float(opening_total_line)
+        except Exception:
+            total_line_move = 0
+
+        rows.append({
+            "game_date": game_date,
+            "home_team": home_team.title(),
+            "away_team": away_team.title(),
+
+            "opening_home_odds": opening_home_odds,
+            "opening_away_odds": opening_away_odds,
+            "home_odds": home_data["price"],
+            "away_odds": away_data["price"],
+            "home_line_move_pct": round(home_line_move, 2),
+            "away_line_move_pct": round(away_line_move, 2),
+
+            "opening_total_line": opening_total_line,
+            "total_line": current_total_line,
+            "over_odds": odds.get("over_odds"),
+            "under_odds": odds.get("under_odds"),
+            "totals_bookmaker": odds.get("totals_bookmaker"),
+            "total_line_move": round(total_line_move, 2)
+        })
+
+    if not rows:
+        return
+
+    new_df = pd.DataFrame(rows)
+
+    if existing_df is not None:
+        final_df = pd.concat([existing_df, new_df], ignore_index=True)
+        final_df = final_df.drop_duplicates(
+            subset=["game_date", "home_team", "away_team"],
+            keep="last"
+        )
+    else:
+        final_df = new_df
+
+    final_df.to_csv("historical_odds.csv", index=False)
+
+
+def calculate_ev(model_prob, decimal_odds):
+    implied_prob = 1 / decimal_odds
+    ev = (model_prob * (decimal_odds - 1)) - (1 - model_prob)
+    return ev, implied_prob
+
+
+def calculate_model_edge(model_prob, implied_prob):
+    return model_prob - implied_prob
+
+
+def classify_edge(edge):
+    if edge >= 0.10:
+        return "Elite Edge"
+    if edge >= 0.06:
+        return "Strong Edge"
+    if edge >= 0.03:
+        return "Playable Edge"
+    if edge > 0:
+        return "Small Edge"
+    return "No Edge"
+
+
+def calibrate_probability(probability, strength=0.75, min_prob=0.05, max_prob=0.95):
+    probability = max(min(float(probability), max_prob), min_prob)
+    return 0.5 + ((probability - 0.5) * strength)
+
+
+def kelly_fraction(probability, decimal_odds):
+    b = decimal_odds - 1
+    q = 1 - probability
+
+    if b <= 0:
+        return 0
+
+    kelly = ((b * probability) - q) / b
+    return max(kelly, 0)
+
+
+def save_prediction_log(game, game_date):
+    file_exists = os.path.isfile("prediction_history.csv")
+
+    with open("prediction_history.csv", "a", newline="") as file:
+        writer = csv.writer(file)
+
+        if not file_exists:
+            writer.writerow([
+                "timestamp",
+                "game_date",
+                "home_team",
+                "away_team",
+                "prediction",
+                "home_probability",
+                "away_probability"
+            ])
+
+        writer.writerow([
+            datetime.now().isoformat(),
+            game_date,
+            game["home_team"],
+            game["away_team"],
+            game["prediction"],
+            game["home_win_probability"],
+            game["away_win_probability"]
+        ])
+
+
+def save_bet_pick(game, game_date, best_bet, odds, model_prob, expected_value, kelly):
+    file_exists = os.path.isfile("bet_history.csv")
+
+    with open("bet_history.csv", "a", newline="") as file:
+        writer = csv.writer(file)
+
+        if not file_exists:
+            writer.writerow([
+                "timestamp",
+                "game_date",
+                "home_team",
+                "away_team",
+                "best_bet",
+                "odds",
+                "model_probability",
+                "expected_value",
+                "kelly",
+                "stake",
+                "result",
+                "profit_loss",
+                "closing_odds",
+                "clv"
+            ])
+
+        writer.writerow([
+            datetime.now().isoformat(),
+            game_date,
+            game["home_team"],
+            game["away_team"],
+            best_bet,
+            odds,
+            model_prob,
+            expected_value,
+            kelly,
+            STAKE,
+            "Pending",
+            0,
+            "",
+            ""
+        ])
+
+
+
+
+def save_manual_training_pick(game_date, home_team, away_team, best_bet, odds, result):
+    file_exists = os.path.isfile("bet_history.csv")
+
+    try:
+        odds = float(odds)
+    except Exception:
+        odds = 2.0
+
+    result = str(result).strip()
+    if result not in ["Pending", "Win", "Loss"]:
+        result = "Pending"
+
+    profit_loss = 0
+    if result == "Win":
+        profit_loss = (odds - 1) * STAKE
+    elif result == "Loss":
+        profit_loss = -STAKE
+
+    with open("bet_history.csv", "a", newline="") as file:
+        writer = csv.writer(file)
+
+        if not file_exists:
+            writer.writerow([
+                "timestamp",
+                "game_date",
+                "home_team",
+                "away_team",
+                "best_bet",
+                "odds",
+                "model_probability",
+                "expected_value",
+                "kelly",
+                "stake",
+                "result",
+                "profit_loss",
+                "closing_odds",
+                "clv"
+            ])
+
+        writer.writerow([
+            datetime.now().isoformat(),
+            game_date,
+            home_team,
+            away_team,
+            best_bet,
+            odds,
+            0.55,
+            0.03,
+            0.01,
+            STAKE,
+            result,
+            profit_loss,
+            "",
+            ""
+        ])
+
+def calculate_profit_loss(row):
+    result = str(row.get("result", "Pending")).lower()
+
+    try:
+        odds = float(row.get("odds", 0))
+    except Exception:
+        odds = 0
+
+    try:
+        stake = float(row.get("stake", STAKE))
+    except Exception:
+        stake = STAKE
+
+    if result == "win":
+        return (odds - 1) * stake
+
+    if result == "loss":
+        return -stake
+
+    return 0
+
+
+def calculate_clv(saved_odds, closing_odds):
+    try:
+        saved_odds = float(saved_odds)
+        closing_odds = float(closing_odds)
+
+        if saved_odds <= 0 or closing_odds <= 0:
+            return ""
+
+        clv = (saved_odds / closing_odds) - 1
+        return round(clv, 4)
+
+    except Exception:
+        return ""
+
+
+
+def load_bet_history():
+    required_columns = [
+        "timestamp",
+        "game_date",
+        "home_team",
+        "away_team",
+        "best_bet",
+        "odds",
+        "model_probability",
+        "expected_value",
+        "kelly",
+        "stake",
+        "result",
+        "profit_loss",
+        "closing_odds",
+        "clv",
+    ]
+
+    if not os.path.isfile("bet_history.csv"):
+        return pd.DataFrame(columns=required_columns)
+
+    try:
+        df = pd.read_csv("bet_history.csv")
+    except Exception as exc:
+        print(f"Could not load bet_history.csv: {exc}")
+        return pd.DataFrame(columns=required_columns)
+
+    for col in required_columns:
+        if col not in df.columns:
+            if col == "stake":
+                df[col] = STAKE
+            elif col == "result":
+                df[col] = "Pending"
+            elif col in ["profit_loss", "expected_value", "kelly"]:
+                df[col] = 0.0
+            else:
+                df[col] = ""
+
+    df["closing_odds"] = df["closing_odds"].astype("object")
+    df["stake"] = pd.to_numeric(df["stake"], errors="coerce").fillna(STAKE)
+    df.loc[df["stake"] <= 0, "stake"] = STAKE
+    df["result"] = df["result"].fillna("Pending")
+
+    df["profit_loss"] = df.apply(calculate_profit_loss, axis=1)
+    df["clv"] = df.apply(
+        lambda row: calculate_clv(row["odds"], row["closing_odds"]),
+        axis=1,
+    )
+
+    return df
+
+
+
+def save_bet_history(df):
+    df.to_csv("bet_history.csv", index=False)
+
+
+def auto_grade_bet(row):
+    try:
+        latest_odds = get_latest_closing_odds(
+            row["home_team"],
+            row["away_team"]
+        )
+
+        if latest_odds:
+            home_key = normalize_team_name(row["home_team"]).lower()
+            away_key = normalize_team_name(row["away_team"]).lower()
+            best_bet_key = normalize_team_name(row["best_bet"]).lower()
+
+            if best_bet_key == home_key:
+                closing_data = latest_odds.get(home_key)
+            elif best_bet_key == away_key:
+                closing_data = latest_odds.get(away_key)
+            else:
+                closing_data = None
+
+            if closing_data:
+                row["closing_odds"] = closing_data["price"]
+
+        response = requests.get(
+            f"{API_URL}/score_result",
+            params={
+                "date": row["game_date"],
+                "home_team": row["home_team"],
+                "away_team": row["away_team"],
+                "best_bet": row["best_bet"]
+            },
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return row
+
+        data = response.json()
+
+        if data.get("status") == "completed":
+            row["result"] = data["result"]
+            row["profit_loss"] = calculate_profit_loss({
+                "result": data["result"],
+                "odds": row["odds"],
+                "stake": row["stake"]
+            })
+
+        return row
+
+    except Exception:
+        return row
+
+
+def build_predictions_from_live_odds(odds_map):
+    predictions = []
+
+    for (home_team, away_team), odds in odds_map.items():
+        home_team_clean = canonical_team_name(home_team)
+        away_team_clean = canonical_team_name(away_team)
+
+        try:
+            response = requests.post(
+                f"{API_URL}/predict_matchup",
+                json={
+                    "home_team": home_team_clean,
+                    "away_team": away_team_clean
+                },
+                timeout=60
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+
+                if "error" not in result:
+                    predictions.append(result)
+
+        except Exception:
+            continue
+
+    return predictions
+
+
+if "daily_data" not in st.session_state:
+    st.session_state["daily_data"] = None
+
+if "last_loaded_date" not in st.session_state:
+    st.session_state["last_loaded_date"] = None
+
+
+st.title("NBA Games")
+
+date_input = st.text_input(
+    "Game Date (MM/DD/YYYY)",
+    value="05/21/2026"
+)
+
+# Clear previously loaded games when the date changes.
+if st.session_state.get("last_input_date") != date_input:
+    st.session_state["daily_data"] = None
+    st.session_state["last_loaded_date"] = None
+    st.session_state["last_input_date"] = date_input
+
+
+if st.button("Load Daily Predictions"):
+    try:
+        response = requests.get(
+            f"{API_URL}/predict_today",
+            params={"date": date_input},
+            timeout=90
+        )
+
+        if response.status_code != 200:
+            st.error(f"Prediction API failed with status {response.status_code}")
+            st.write(response.text)
+            st.stop()
+
+        data = response.json()
+
+        st.session_state["daily_data"] = data
+        st.session_state["last_loaded_date"] = date_input
+
+        if data and "games" in data and len(data["games"]) > 0:
+            try:
+                snapshot_result = save_odds_snapshot(data["games"])
+                st.info(f"Saved {snapshot_result['saved_rows']} odds snapshots.")
+            except Exception as e:
+                st.warning(f"Odds snapshot save skipped: {e}")
+
+            st.success(
+                f"Loaded {len(data['games'])} real NBA game(s) from backend schedule."
+            )
+
+            if "mode" in data:
+                st.caption(f"Schedule source: {data['mode']}")
+
+        else:
+            st.warning(
+                data.get(
+                    "message",
+                    "No real NBA games found for this selected date."
+                )
+            )
+
+            if "mode" in data:
+                st.caption(f"Schedule source: {data['mode']}")
+
+    except Exception as e:
+        st.error(f"Prediction request failed: {e}")
+        st.stop()
+
+data = st.session_state["daily_data"]
+active_date = st.session_state["last_loaded_date"] or date_input
+live_odds_mode = should_fetch_live_odds(active_date)
+
+if data and "games" in data and len(data["games"]) > 0:
+    if live_odds_mode:
+        odds_map = get_odds()
+
+        if not isinstance(odds_map, dict):
+            odds_map = {}
+
+        if odds_map:
+            save_live_odds_to_history(active_date, odds_map)
+            st.success("Live odds saved into historical odds file.")
+    else:
+        odds_map = get_historical_odds(active_date)
+
+        if not isinstance(odds_map, dict):
+            odds_map = {}
+
+        if odds_map:
+            st.success("Historical odds loaded.")
+        else:
+            st.info("No stored historical odds found for this date.")
+
+    for game in data["games"]:
+        col_logo1, col_text, col_logo2 = st.columns([1, 3, 1])
+
+        with col_logo1:
+            away_logo = TEAM_LOGOS.get(game["away_team"])
+            if away_logo:
+                st.image(away_logo, width=70)
+
+        with col_text:
+            st.subheader(f"{game['away_team']} @ {game['home_team']}")
+
+        with col_logo2:
+            home_logo = TEAM_LOGOS.get(game["home_team"])
+            if home_logo:
+                st.image(home_logo, width=70)
+
+        game_status = str(game.get("game_status", "")).lower()
+        home_score = game.get("home_score", 0)
+        away_score = game.get("away_score", 0)
+
+        if "final" in game_status:
+
+            st.success(
+                f"Final Result: {game['away_team']} {away_score} - {home_score} {game['home_team']}"
+            )
+
+            if home_score > away_score:
+                actual_winner = game["home_team"]
+            elif away_score > home_score:
+                actual_winner = game["away_team"]
+            else:
+                actual_winner = "Tie"
+
+            st.info(f"Actual Winner: {actual_winner}")
+
+            st.warning(
+                f"Model Prediction: {game['prediction']}"
+            )
+
+            if actual_winner != "Tie":
+                if str(game["prediction"]).strip().lower() == str(actual_winner).strip().lower():
+                    st.success("Prediction Result: CORRECT")
+                else:
+                    st.error("Prediction Result: INCORRECT")
+
+        else:
+            st.info(
+                f"Game Status: {game.get('game_status', 'Scheduled')}"
+            )
+
+        confidence = max(
+            game["home_win_probability"],
+            game["away_win_probability"]
+        )
+
+        if confidence >= 0.75:
+            confidence_label = "Elite"
+            betting_note = "Strong model position"
+            confidence_color = "green"
+        elif confidence >= 0.65:
+            confidence_label = "Good"
+            betting_note = "Moderate confidence"
+            confidence_color = "orange"
+        elif confidence >= 0.55:
+            confidence_label = "Risky"
+            betting_note = "Weak betting profile"
+            confidence_color = "red"
+        else:
+            confidence_label = "Avoid"
+            betting_note = "No predictive edge"
+            confidence_color = "red"
+
+        st.markdown(
+            f"""
+            <div style="
+                padding:10px;
+                border-radius:10px;
+                background-color:{confidence_color};
+                color:white;
+                font-weight:bold;
+                width:fit-content;
+            ">
+                Predicted Winner — {confidence_label}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.header(f"Model Prediction: {game['prediction']}")
+        st.progress(confidence)
+        st.info(betting_note)
+        
+        save_prediction_log(game, active_date)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.metric(
+                label=game["home_team"],
+                value=f"{game['home_win_probability'] * 100:.1f}%"
+            )
+
+        with col2:
+            st.metric(
+                label=game["away_team"],
+                value=f"{game['away_win_probability'] * 100:.1f}%"
+            )
+
+        st.subheader("Injury Impact")
+
+        live_injury_result = get_injury_impact(
+            game["home_team"],
+            game["away_team"]
+        )
+
+        home_penalty = float(
+            live_injury_result.get(
+                "home_injury_penalty",
+                0.0
+            )
+        )
+
+        away_penalty = float(
+            live_injury_result.get(
+                "away_injury_penalty",
+                0.0
+            )
+        )
+
+        injury_diff = float(
+            live_injury_result.get(
+                "injury_adjustment",
+                0.0
+            )
+        )
+
+        probability_adjustment = injury_diff
+
+        injury_col1, injury_col2, injury_col3 = st.columns(3)
+
+        with injury_col1:
+            st.metric(
+                "Home Penalty",
+                round(home_penalty, 2)
+            )
+
+        with injury_col2:
+            st.metric(
+                "Away Penalty",
+                round(away_penalty, 2)
+            )
+
+        with injury_col3:
+            st.metric(
+                "Injury Diff",
+                round(injury_diff, 2)
+            )
+
+        st.metric(
+            "Totals Adjustment",
+            round(injury_diff, 2)
+        )
+
+        with st.expander("Current Missing Players"):
+            st.write("Home missing players")
+            st.json(
+                live_injury_result.get(
+                    "home_missing_players",
+                    []
+                )
+            )
+
+            st.write("Away missing players")
+            st.json(
+                live_injury_result.get(
+                    "away_missing_players",
+                    []
+                )
+            )
+
+        feature_input = {
+
+            # Base probabilities
+        
+            "home_probability":
+            game["home_win_probability"],
+        
+            "away_probability":
+            game["away_win_probability"],
+        
+            # Rest days
+        
+            "home_rest_days":
+            game.get("home_rest_days", 2),
+        
+            "away_rest_days":
+            game.get("away_rest_days", 2),
+        
+            # Home / away splits
+        
+            "home_home_win_pct":
+            game.get("home_home_win_pct", 0.55),
+        
+            "away_away_win_pct":
+            game.get("away_away_win_pct", 0.45),
+        
+            # Recent form
+        
+            "home_recent_wins":
+            game.get("home_recent_wins", 5),
+        
+            "away_recent_wins":
+            game.get("away_recent_wins", 5),
+        
+            # Ratings
+        
+            "home_off_rating":
+            game.get("home_off_rating", 112),
+        
+            "home_def_rating":
+            game.get("home_def_rating", 110),
+        
+            "away_off_rating":
+            game.get("away_off_rating", 110),
+        
+            "away_def_rating":
+            game.get("away_def_rating", 112),
+        
+            # Pace
+        
+            "home_pace":
+            game.get("home_pace", 100),
+        
+            "away_pace":
+            game.get("away_pace", 100),
+        
+            # Travel
+        
+            "home_travel_km":
+            game.get("home_travel_km", 0),
+        
+            "away_travel_km":
+            game.get("away_travel_km", 0),
+        
+            # Market movement
+        
+            "home_line_move_pct":
+            abs(game.get("home_line_move_pct", 0)),
+            
+            "away_line_move_pct":
+            abs(game.get("away_line_move_pct", 0)),
+        
+            # Sharp support
+        
+            "sharp_books_support":
+            game.get("sharp_books_support", 3),
+        
+            "total_books":
+            game.get("total_books", 5)
+        }
+        
+        ensemble_input = build_feature_vector(
+            feature_input
+        )
+    
+        ensemble_result = consensus_prediction(ensemble_input)
+
+        uncertainty_result = {"uncertainty_level": "Low"}
+
+        if ensemble_result.get("status") == "success":
+            st.subheader("Ensemble Consensus")
+
+            st.metric(
+                "Ensemble Probability",
+                f"{ensemble_result['ensemble_probability'] * 100:.1f}%"
+            )
+
+            st.metric(
+                "Model Disagreement",
+                f"{ensemble_result['disagreement'] * 100:.1f}%"
+            )
+
+            st.info(
+                ensemble_result["consensus_grade"]
+            )
+
+            uncertainty_result = classify_uncertainty(
+                ensemble_probability=ensemble_result["ensemble_probability"],
+                disagreement=ensemble_result["disagreement"],
+                probability_range=ensemble_result["probability_range"],
+                expected_value=0
+            )
+
+            st.subheader("Uncertainty Detection")
+
+            st.metric(
+                "Risk Score",
+                uncertainty_result["risk_score"]
+            )
+
+            st.metric(
+                "Uncertainty Level",
+                uncertainty_result["uncertainty_level"]
+            )
+
+            if uncertainty_result["recommendation"] == "Stable":
+                st.success("Stable betting profile")
+            elif uncertainty_result["recommendation"] == "Caution":
+                st.warning("Caution — moderate uncertainty")
+            else:
+                st.error(f"{uncertainty_result['recommendation']}")
+
+            with st.expander("Individual Model Probabilities"):
+                st.json(
+                    ensemble_result["model_probabilities"]
+                )
+        else:
+            st.warning("Ensemble model did not load.")
+            st.json(ensemble_result)
+
+        odds = {}
+
+        game_home = normalize_team_name(game["home_team"]).lower()
+        game_away = normalize_team_name(game["away_team"]).lower()
+
+        if not isinstance(odds_map, dict):
+            odds_map = {}
+
+        for (home, away), value in odds_map.items():
+            odds_home = normalize_team_name(home).lower()
+            odds_away = normalize_team_name(away).lower()
+
+            teams_match = (
+                odds_home == game_home
+                and odds_away == game_away
+            )
+
+            if teams_match:
+                odds = value
+                break
+
+        home_odds_data = odds.get(game_home)
+        away_odds_data = odds.get(game_away)
+
+        home_odds = home_odds_data["price"] if home_odds_data else None
+        away_odds = away_odds_data["price"] if away_odds_data else None
+
+        home_bookmaker = home_odds_data["bookmaker"] if home_odds_data else "N/A"
+        away_bookmaker = away_odds_data["bookmaker"] if away_odds_data else "N/A"
+
+        home_line_move = float(odds.get("home_line_move_pct", 0))
+        away_line_move = float(odds.get("away_line_move_pct", 0))
+
+        opening_home_odds = odds.get("opening_home_odds", home_odds)
+        opening_away_odds = odds.get("opening_away_odds", away_odds)
+
+        st.subheader("Totals / Over-Under Model")
+
+        live_total_line = odds.get("total_line")
+        opening_total_line = odds.get("opening_total_line")
+        over_odds = odds.get("over_odds")
+        under_odds = odds.get("under_odds")
+        totals_bookmaker = odds.get("totals_bookmaker", "N/A")
+        total_line_move = odds.get("total_line_move", 0)
+       
+        try:
+            default_total_line = float(live_total_line)
+        except Exception:
+            default_total_line = 220.5
+
+        bookmaker_total = st.number_input(
+            f"Bookmaker Total Line for {game['away_team']} @ {game['home_team']}",
+            min_value=150.0,
+            max_value=300.0,
+            value=default_total_line,
+            step=0.5,
+            key=f"total_line_{game['away_team']}_{game['home_team']}"
+        )
+
+        if live_total_line is not None:
+            market_col1, market_col2, market_col3 = st.columns(3)
+
+            with market_col1:
+                st.metric("Live Total Line", live_total_line)
+                st.caption(f"Bookmaker: {totals_bookmaker}")
+
+            with market_col2:
+                st.metric("Over Odds", over_odds if over_odds is not None else "N/A")
+                st.metric("Under Odds", under_odds if under_odds is not None else "N/A")
+
+            with market_col3:
+                st.metric("Opening Total", opening_total_line if opening_total_line is not None else live_total_line)
+                st.metric("Total Line Move", total_line_move)
+
+            if float(total_line_move or 0) >= 2:
+                st.info("Market Signal: Over money / total moving up")
+            elif float(total_line_move or 0) <= -2:
+                st.info("Market Signal: Under money / total moving down")
+            else:
+                st.info("Market Signal: Stable totals market")
+        else:
+            st.warning("No live totals line found. Using manual bookmaker total input.")
+
+        totals_result = predict_game_total(
+            home_team=game["home_team"],
+            away_team=game["away_team"],
+            bookmaker_total=bookmaker_total
+        )
+
+        ai_totals = totals_ai_prediction(
+            projected_total=totals_result["projected_total"],
+            sportsbook_total=totals_result["bookmaker_total"],
+            edge=totals_result["edge"]
+        )
+
+        if ai_totals["status"] == "success":
+
+            ai1, ai2, ai3 = st.columns(3)
+
+            with ai1:
+                st.metric(
+                    "AI Over Probability",
+                    f"{ai_totals['over_probability']}%"
+                )
+
+            with ai2:
+                st.metric(
+                    "AI Under Probability",
+                    f"{ai_totals['under_probability']}%"
+                )
+
+            with ai3:
+                st.metric(
+                    "AI Confidence",
+                    f"{ai_totals['confidence']}%"
+                )
+        
+        else:
+            st.info(
+                ai_totals.get(
+                    "message",
+                    "AI totals probabilities are currently unavailable."
+                )
+            )
+
+        points_col1, points_col2, points_col3 = st.columns(3)
+
+        with points_col1:
+            st.metric(
+                "Projected Home Points",
+                totals_result.get("projected_home_points", "N/A")
+            )
+
+        with points_col2:
+            st.metric(
+                "Projected Away Points",
+                totals_result.get("projected_away_points", "N/A")
+            )
+
+        with points_col3:
+            st.metric(
+                "Points Engine Total",
+                totals_result.get("points_engine_total", "N/A")
+            )
+
+        t1, t2, t3 = st.columns(3)
+        
+        with t1:
+            st.metric(
+                "Projected Total",
+                totals_result["projected_total"]
+            )
+        
+        with t2:
+            st.metric(
+                "Bookmaker Line",
+                totals_result["bookmaker_total"]
+            )
+        
+        with t3:
+            st.metric(
+                "Edge",
+                totals_result["edge"]
+            )
+        
+        st.info(
+            f"Recommendation: {totals_result['recommendation']} — "
+            f"{totals_result['confidence_note']}"
+        )
+        pace_col1, pace_col2, pace_col3 = st.columns(3)
+
+        with pace_col1:
+            st.metric(
+                "Raw Total Before Pace",
+                totals_result["raw_projected_total"]
+            )
+        
+        with pace_col2:
+            st.metric(
+                "Pace Adjustment",
+                totals_result["pace_adjustment"]
+            )
+        
+        with pace_col3:
+            st.metric(
+                "Combined Pace Score",
+                totals_result["combined_pace_score"]
+            )
+
+        h2h_col1, h2h_col2, h2h_col3 = st.columns(3)
+
+        with h2h_col1:
+            st.metric(
+                "H2H Avg Total",
+                totals_result.get("points_engine_h2h_average_total", "N/A")
+            )
+
+        with h2h_col2:
+            st.metric(
+                "H2H Adjustment",
+                totals_result.get("points_engine_h2h_adjustment", "N/A")
+            )
+
+        with h2h_col3:
+            st.metric(
+                "H2H Games Used",
+                totals_result.get("points_engine_h2h_games_used", "N/A")
+            )
+
+        st.metric(
+            "History Rows Loaded",
+            totals_result["history_rows"]
+        )
+        st.text(
+            totals_result["history_columns"]
+        )
+        off_col1, off_col2, off_col3 = st.columns(3)
+        def_col1, def_col2, def_col3 = st.columns(3)
+        
+        with def_col1:
+            st.metric(
+                "Home Defensive Rating",
+                totals_result["home_defensive_rating"]
+            )
+        
+        with def_col2:
+            st.metric(
+                "Away Defensive Rating",
+                totals_result["away_defensive_rating"]
+            )
+        
+        with def_col3:
+            st.metric(
+                "Defensive Adjustment",
+                totals_result["defensive_adjustment"]
+            )
+        split_col1, split_col2, split_col3 = st.columns(3)
+
+        with split_col1:
+            st.metric(
+                "Home Split",
+                totals_result["home_split"]
+            )
+        
+        with split_col2:
+            st.metric(
+                "Away Split",
+                totals_result["away_split"]
+            )
+        
+        with split_col3:
+            st.metric(
+                "Home/Away Adjustment",
+                totals_result["home_away_adjustment"]
+            )
+
+        with off_col1:
+            st.metric(
+                "Home Offensive Rating",
+                totals_result["home_offensive_rating"]
+            )
+        
+        with off_col2:
+            st.metric(
+                "Away Offensive Rating",
+                totals_result["away_offensive_rating"]
+            )
+        
+        with off_col3:
+            st.metric(
+                "Offensive Adjustment",
+                totals_result["offensive_adjustment"]
+            )
+
+        rest_col1, rest_col2, rest_col3 = st.columns(3)
+
+        with rest_col1:
+            st.metric(
+                "Home Rest Days",
+                totals_result["home_rest_days"]
+            )
+        
+        with rest_col2:
+            st.metric(
+                "Away Rest Days",
+                totals_result["away_rest_days"]
+            )
+        
+        with rest_col3:
+            st.metric(
+                "Rest Adjustment",
+                totals_result["rest_adjustment"]
+            )
+
+        totals_injury_col1, totals_injury_col2, totals_injury_col3 = st.columns(3)
+
+        with totals_injury_col1:
+            st.metric(
+                "Totals Home Injury Penalty",
+                totals_result.get(
+                    "home_injury_penalty",
+                    0.0
+                )
+            )
+
+        with totals_injury_col2:
+            st.metric(
+                "Totals Away Injury Penalty",
+                totals_result.get(
+                    "away_injury_penalty",
+                    0.0
+                )
+            )
+
+        with totals_injury_col3:
+            st.metric(
+                "Totals Injury Adjustment",
+                totals_result.get(
+                    "injury_adjustment",
+                    0.0
+                )
+            )
+
+        with st.expander("Totals Injury Debug"):
+            st.write(
+                {
+                    "home_injury_penalty": totals_result.get(
+                        "home_injury_penalty"
+                    ),
+                    "away_injury_penalty": totals_result.get(
+                        "away_injury_penalty"
+                    ),
+                    "injury_adjustment": totals_result.get(
+                        "injury_adjustment"
+                    ),
+                }
+            )
+            st.write("Home missing players")
+            st.json(
+                totals_result.get(
+                    "home_missing_players",
+                    []
+                )
+            )
+            st.write("Away missing players")
+            st.json(
+                totals_result.get(
+                    "away_missing_players",
+                    []
+                )
+            )
+        if live_total_line is not None and st.button(
+            f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
+        ):
+            try:
+                save_totals_pick(
+                    game_date=active_date,
+                    home_team=game["home_team"],
+                    away_team=game["away_team"],
+                    projected_total=totals_result["projected_total"],
+                    sportsbook_total=totals_result["bookmaker_total"],
+                    recommendation=totals_result["recommendation"],
+                )
+
+                log_prediction(
+                    prediction=totals_result,
+                    game_date=active_date,
+                )
+
+                st.success("Totals pick and prediction history saved.")
+
+            except Exception as e:
+                st.error(
+                    f"Saving was incomplete: {e}. "
+                    "Check both history files before retrying."
+                )
+
+        with st.expander("Totals Model Details"):
+            st.json(totals_result)
+
+        st.subheader("Best Bet Selector")
+
+        best_bet_v2 = select_best_bet_v2(
+            moneyline_confidence=confidence * 100,
+            moneyline_pick=game["prediction"],
+            totals_confidence=(
+                ai_totals.get("confidence")
+                if ai_totals.get("status") == "success"
+                else None
+            ),
+            totals_pick=totals_result["recommendation"]
+        )
+
+        selector_col1, selector_col2, selector_col3 = st.columns(3)
+
+        with selector_col1:
+            st.metric(
+                "Recommended Market",
+                best_bet_v2["market"]
+            )
+
+        with selector_col2:
+            st.metric(
+                "Recommended Pick",
+                best_bet_v2["pick"]
+            )
+
+        with selector_col3:
+            st.metric(
+                "Confidence",
+                f"{best_bet_v2['confidence']}%"
+            )
+
+        st.success(
+            f"🔥 MODEL COMPARISON (NOT A VERIFIED BET): "
+            f"{best_bet_v2['market']} | "
+            f"{best_bet_v2['pick']} | "
+            f"{best_bet_v2['confidence']}%"
+        )
+
+        if home_odds and away_odds:
+            st.subheader("Betting Analytics")
+
+            calibrated_home_prob = calibrate_probability(
+                game["home_win_probability"]
+            )
+
+            calibrated_away_prob = calibrate_probability(
+                game["away_win_probability"]
+            )
+
+            home_ev, home_implied = calculate_ev(
+                calibrated_home_prob,
+                home_odds
+            )
+
+            away_ev, away_implied = calculate_ev(
+                calibrated_away_prob,
+                away_odds
+            )
+
+            home_edge = calculate_model_edge(
+                calibrated_home_prob,
+                home_implied
+            )
+
+            away_edge = calculate_model_edge(
+                calibrated_away_prob,
+                away_implied
+            )
+
+            home_edge_label = classify_edge(home_edge)
+            away_edge_label = classify_edge(away_edge)
+
+            home_kelly = kelly_fraction(
+                calibrated_home_prob,
+                home_odds
+            )
+
+            away_kelly = kelly_fraction(
+                calibrated_away_prob,
+                away_odds
+            )
+
+            analytics_col1, analytics_col2 = st.columns(2)
+
+            with analytics_col1:
+                st.metric(f"{game['home_team']} Odds", f"{home_odds:.2f}")
+                st.caption(f"Best book: {home_bookmaker}")
+                st.metric("Opening Odds", f"{float(opening_home_odds):.2f}")
+                st.metric("Line Movement", f"{home_line_move:.1f}%")
+                st.caption(market_movement_signal(home_line_move))
+                st.metric("Implied Probability", f"{home_implied * 100:.1f}%")
+                st.metric("Model Edge", f"{home_edge * 100:.1f}%")
+                st.caption(home_edge_label)
+                st.metric("Expected Value", f"{home_ev * 100:.1f}%")
+                st.metric("Kelly %", f"{home_kelly * 100:.1f}%")
+
+            with analytics_col2:
+                st.metric(f"{game['away_team']} Odds", f"{away_odds:.2f}")
+                st.caption(f"Best book: {away_bookmaker}")
+                st.metric("Opening Odds", f"{float(opening_away_odds):.2f}")
+                st.metric("Line Movement", f"{away_line_move:.1f}%")
+                st.caption(market_movement_signal(away_line_move))
+                st.metric("Implied Probability", f"{away_implied * 100:.1f}%")
+                st.metric("Model Edge", f"{away_edge * 100:.1f}%")
+                st.caption(away_edge_label)
+                st.metric("Expected Value", f"{away_ev * 100:.1f}%")
+                st.metric("Kelly %", f"{away_kelly * 100:.1f}%")
+
+            best_bet = None
+            best_ev = 0
+            best_confidence = confidence
+
+            MIN_EV = 0.02
+            MIN_EDGE = 0.01
+            MIN_KELLY = 0.01
+            MIN_CONFIDENCE = 0.52
+
+            if home_ev > away_ev:
+                candidate_bet = game["home_team"]
+                candidate_ev = home_ev
+                candidate_edge = home_edge
+                candidate_kelly = home_kelly
+                candidate_line_move = home_line_move
+            else:
+                candidate_bet = game["away_team"]
+                candidate_ev = away_ev
+                candidate_edge = away_edge
+                candidate_kelly = away_kelly
+                candidate_line_move = away_line_move
+
+            confidence_result = classify_confidence(
+                model_probability=best_confidence,
+                expected_value=candidate_ev,
+                kelly=candidate_kelly,
+                disagreement=ensemble_result.get("disagreement", 0) if isinstance(ensemble_result, dict) else 0,
+                line_movement_diff=candidate_line_move,
+                sharp_support_pct=game.get("sharp_books_support", 0) / max(game.get("total_books", 1), 1),
+                ensemble_probability=(
+                    ensemble_result.get("ensemble_probability")
+                    if isinstance(ensemble_result, dict)
+                    and ensemble_result.get("status") == "success"
+                    else None
+                )
+            )
+
+            st.subheader("Confidence Engine")
+            conf_col1, conf_col2, conf_col3 = st.columns(3)
+
+            with conf_col1:
+                st.metric("Confidence Score", confidence_result["confidence_score"])
+
+            with conf_col2:
+                st.metric("Confidence Tier", confidence_result["confidence_tier"])
+
+            with conf_col3:
+                st.metric("Recommended Action", confidence_result["recommended_action"])
+
+            st.subheader("Best Bet Selector — With Moneyline Odds")
+
+            best_market = select_best_bet(
+                moneyline_pick=candidate_bet,
+                moneyline_ev=candidate_ev,
+                moneyline_confidence=confidence_result["confidence_score"],
+                totals_edge=totals_result.get("edge", 0),
+                totals_recommendation=totals_result.get("recommendation", "No Bet")
+            )
+
+            selector_col1, selector_col2 = st.columns(2)
+
+            with selector_col1:
+                st.metric(
+                    "Recommended Market",
+                    best_market["market"]
+                )
+
+            with selector_col2:
+                st.metric(
+                    "Recommended Pick",
+                    best_market["pick"]
+                )
+
+            best_bet_v2_moneyline = select_best_bet_v2(
+                moneyline_confidence=confidence_result["confidence_score"],
+                moneyline_pick=candidate_bet,
+                totals_confidence=(
+			    ai_totals.get("confidence")
+			    if ai_totals.get("status") == "success"
+			    else None
+			),
+                totals_pick=totals_result["recommendation"]
+            )
+
+            st.success(
+                f"🔥 MODEL COMPARISON (NOT A VERIFIED BET): "
+                f"{best_bet_v2_moneyline['market']} | "
+                f"{best_bet_v2_moneyline['pick']} | "
+                f"{best_bet_v2_moneyline['confidence']}%"
+            )
+
+            uncertainty_level = "Low"
+
+            try:
+                uncertainty_level = uncertainty_result.get("uncertainty_level", "Low")
+            except Exception:
+                uncertainty_level = "Low"
+
+            passes_filter = (
+                candidate_ev >= MIN_EV
+                and candidate_edge >= MIN_EDGE
+                and candidate_kelly >= MIN_KELLY
+                and best_confidence >= MIN_CONFIDENCE
+                and uncertainty_level not in ["High", "Extreme"]
+                and confidence_result["recommended_action"] in ["Bet", "Bet Small"]
+            )
+
+            if TEST_MODE:
+                passes_filter = True
+
+            if passes_filter:
+                best_bet = candidate_bet
+                best_ev = candidate_ev
+
+            if best_bet:
+                st.success(
+                    f"🔥 BEST BET: {best_bet} | Expected Value: {best_ev * 100:.1f}%"
+                )
+
+                if best_bet == game["home_team"]:
+                    selected_odds = home_odds
+                    selected_prob = calibrated_home_prob
+                    selected_kelly = home_kelly
+                else:
+                    selected_odds = away_odds
+                    selected_prob = calibrated_away_prob
+                    selected_kelly = away_kelly
+
+                button_key = f"button_{game['home_team']}_{game['away_team']}_{best_bet}"
+                saved_key = f"saved_{game['home_team']}_{game['away_team']}_{best_bet}"
+
+                if saved_key not in st.session_state:
+                    st.session_state[saved_key] = False
+
+                if st.button(f"Save Bet Pick: {best_bet}", key=button_key):
+                    save_bet_pick(
+                        game,
+                        active_date,
+                        best_bet,
+                        selected_odds,
+                        selected_prob,
+                        best_ev,
+                        selected_kelly
+                    )
+
+                    st.session_state[saved_key] = True
+
+                if st.session_state[saved_key]:
+                    st.success("Bet pick saved successfully!")
+
+            else:
+                st.error("🚫 NO BET — failed professional value filter")
+
+                st.info("For testing/training, you can still save the best candidate below. This is not a professional value bet.")
+
+                if candidate_bet == game["home_team"]:
+                    test_selected_odds = home_odds
+                    test_selected_prob = calibrated_home_prob
+                    test_selected_kelly = home_kelly
+                else:
+                    test_selected_odds = away_odds
+                    test_selected_prob = calibrated_away_prob
+                    test_selected_kelly = away_kelly
+
+                test_button_key = f"test_save_{game['home_team']}_{game['away_team']}_{candidate_bet}"
+
+                if st.button(f"Save Candidate Pick for Training: {candidate_bet}", key=test_button_key):
+                    save_bet_pick(
+                        game,
+                        active_date,
+                        candidate_bet,
+                        test_selected_odds,
+                        test_selected_prob,
+                        candidate_ev,
+                        test_selected_kelly
+                    )
+                    st.success("Candidate pick saved. Go to Manual Result Override and set Win or Loss.")
+
+                with st.expander("Why this game was rejected"):
+                    st.write(f"Required EV: at least {MIN_EV * 100:.1f}%")
+                    st.write(f"Required Edge: at least {MIN_EDGE * 100:.1f}%")
+                    st.write(f"Required Kelly: at least {MIN_KELLY * 100:.1f}%")
+                    st.write(f"Required Confidence: at least {MIN_CONFIDENCE * 100:.1f}%")
+
+                    st.write("---")
+                    st.write(f"Best Candidate: {candidate_bet}")
+                    st.write(f"Candidate EV: {candidate_ev * 100:.1f}%")
+                    st.write(f"Candidate Edge: {candidate_edge * 100:.1f}%")
+                    st.write(f"Candidate Kelly: {candidate_kelly * 100:.1f}%")
+                    st.write(f"Model Confidence: {best_confidence * 100:.1f}%")
+                    st.write(f"Uncertainty Level: {uncertainty_level}")
+                    if uncertainty_level in ["High", "Extreme"]:
+                        st.error("Rejected because uncertainty risk is too high.")
+
+        else:
+            if live_odds_mode:
+                st.warning("No sportsbook odds found for this matchup.")
+            else:
+                st.warning("Stored historical odds not found for this exact matchup.")
+
+                with st.expander("Debug historical odds matching"):
+                    st.write("Prediction matchup:")
+                    st.write(game_away, "@", game_home)
+                    st.write("Available historical odds matchups:")
+                    st.write(list(odds_map.keys()))
+
+        st.divider()
+
+elif data:
+    st.warning("No games returned from API.")
+
+st.title("Autonomous Update System")
+
+st.subheader("Model Health Dashboard")
+
+health = get_model_health()
+
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+    st.metric(
+        "Training Rows",
+        health.get("training_rows", 0)
+    )
+
+with c2:
+    st.metric(
+        "Win Rate",
+        f"{health.get('win_rate', 0)}%"
+    )
+
+with c3:
+    st.metric(
+        "ROI",
+        f"{health.get('roi', 0)}%"
+    )
+
+with c4:
+    st.metric(
+        "Last Model Update",
+        health.get("last_model_update", "N/A")
+    )
+
+st.markdown("---")
+
+st.subheader("Saved Model Versions")
+
+model_files = []
+
+if os.path.exists("models"):
+    model_files = sorted(
+        [
+            f
+            for f in os.listdir("models")
+            if f.startswith("ensemble_model_")
+            and f.endswith(".joblib")
+        ],
+        reverse=True
+    )
+
+if model_files:
+    version_df = pd.DataFrame(
+        {
+            "Model Version": model_files
+        }
+    )
+
+    st.dataframe(
+        version_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    selected_model = st.selectbox(
+        "Select Model Version",
+        model_files,
+        key="saved_model_version_select"
+    )
+
+    if st.button("Restore Selected Model"):
+        restore_result = restore_model_version(selected_model)
+
+        if restore_result.get("status") == "success":
+            st.success(
+                f"Restored model version: {selected_model}"
+            )
+        else:
+            st.error(
+                restore_result.get(
+                    "message",
+                    "Model restore failed."
+                )
+            )
+else:
+    st.info("No saved model versions found.")
+    st.info("No model available to restore yet. Run Full Daily Automation or Train Ensemble Model first.")
+
+st.markdown("---")
+
+st.subheader("Full Daily Automation")
+
+if st.button("Run Full Daily Automation"):
+    with st.spinner("Running full automation pipeline..."):
+        automation_result = run_daily_automation()
+
+    st.success("Full automation completed.")
+    st.json(automation_result)
+
+if st.button("Run Auto Result Sync"):
+
+    with st.spinner("Updating completed games..."):
+
+        result = update_bet_results()
+
+    if result["status"] == "success":
+
+        st.success(
+            f"Updated {result['updated_rows']} completed bets."
+        )
+
+    else:
+
+        st.info(result["message"])
+
+st.title("Bet Performance Dashboard")
+
+bet_history = load_bet_history()
+
+if bet_history is None or bet_history.empty:
+    st.info("No saved bet picks yet.")
+
+else:
+    st.subheader("Automated Bet Tracking")
+
+    if st.button("Auto Grade All Bets"):
+        updated_df = bet_history.copy()
+        updated_df = updated_df.apply(auto_grade_bet, axis=1)
+
+        updated_df["profit_loss"] = updated_df.apply(calculate_profit_loss, axis=1)
+
+        updated_df["clv"] = updated_df.apply(
+            lambda row: calculate_clv(row["odds"], row["closing_odds"]),
+            axis=1
+        )
+
+        save_bet_history(updated_df)
+
+        st.success("All bets graded and dashboard updated.")
+        
+st.header("Totals Performance Dashboard")
+
+if st.button("Auto Grade Totals Bets"):
+
+    result = grade_totals_results()
+
+    if result["status"] == "success":
+        st.success(
+            f"Updated {result['updated_rows']} totals bets."
+        )
+    else:
+        st.error(
+            result["message"]
+        )
+
+totals_df = load_totals_history()
+clv_col1, clv_col2, clv_col3 = st.columns(3)
+
+if "clv" in totals_df.columns:
+
+    avg_clv = pd.to_numeric(
+        totals_df["clv"],
+        errors="coerce"
+    ).mean()
+
+    positive_clv = (
+        pd.to_numeric(
+            totals_df["clv"],
+            errors="coerce"
+        ) > 0
+    ).sum()
+
+    negative_clv = (
+        pd.to_numeric(
+            totals_df["clv"],
+            errors="coerce"
+        ) < 0
+    ).sum()
+
+else:
+
+    avg_clv = 0
+    positive_clv = 0
+    negative_clv = 0
+
+with clv_col1:
+    st.metric(
+        "Average CLV",
+        round(avg_clv, 2)
+        if pd.notna(avg_clv)
+        else 0
+    )
+
+with clv_col2:
+    st.metric(
+        "Positive CLV",
+        int(positive_clv)
+    )
+
+with clv_col3:
+    st.metric(
+        "Negative CLV",
+        int(negative_clv)
+    )
+
+if totals_df.empty:
+
+    st.info("No totals picks saved yet.")
+
+else:
+
+    settled_totals = totals_df[
+        totals_df["result"].isin(["Win", "Loss"])
+    ]
+
+    total_picks = len(totals_df)
+
+    wins = len(
+        settled_totals[
+            settled_totals["result"] == "Win"
+        ]
+    )
+
+    losses = len(
+        settled_totals[
+            settled_totals["result"] == "Loss"
+        ]
+    )
+
+    win_rate = 0
+
+    if len(settled_totals) > 0:
+
+        win_rate = round(
+            wins / len(settled_totals) * 100,
+            2
+        )
+
+    profit = settled_totals[
+        "profit_loss"
+    ].sum()
+
+    stake = len(settled_totals) * 100
+
+    roi = 0
+
+    if stake > 0:
+
+        roi = round(
+            profit / stake * 100,
+            2
+        )
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        st.metric(
+            "Totals Picks",
+            total_picks
+        )
+
+    with c2:
+        st.metric(
+            "Win Rate",
+            f"{win_rate}%"
+        )
+
+    with c3:
+        st.metric(
+            "Profit",
+            f"${profit:.2f}"
+        )
+
+    with c4:
+        st.metric(
+            "ROI",
+            f"{roi}%"
+        )
+
+    st.dataframe(
+        totals_df.tail(50),
+        use_container_width=True
+    )
+    updated_df = load_bet_history()
+
+    updated_df["closing_odds"] = updated_df["closing_odds"].astype("object")
+
+    updated_df["expected_value"] = pd.to_numeric(
+        updated_df["expected_value"],
+        errors="coerce"
+    )
+
+    updated_df["kelly"] = pd.to_numeric(
+        updated_df["kelly"],
+        errors="coerce"
+    )
+
+    updated_df["profit_loss"] = pd.to_numeric(
+        updated_df["profit_loss"],
+        errors="coerce"
+    )
+
+    updated_df["clv"] = pd.to_numeric(
+        updated_df["clv"],
+        errors="coerce"
+    )
+
+    total_picks = len(updated_df)
+
+    wins = len(updated_df[updated_df["result"].str.lower() == "win"])
+    losses = len(updated_df[updated_df["result"].str.lower() == "loss"])
+    pending = len(updated_df[updated_df["result"].str.lower() == "pending"])
+
+    settled = wins + losses
+
+    win_rate = wins / settled * 100 if settled > 0 else 0
+    total_profit = updated_df["profit_loss"].sum()
+    total_staked = settled * STAKE
+    roi = total_profit / total_staked * 100 if total_staked > 0 else 0
+
+    avg_ev = updated_df["expected_value"].mean() * 100
+    avg_kelly = updated_df["kelly"].mean() * 100
+    avg_clv = updated_df["clv"].mean() * 100
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Total Picks", total_picks)
+        st.metric("Settled Bets", settled)
+
+    with col2:
+        st.metric("Wins", wins)
+        st.metric("Losses", losses)
+
+    with col3:
+        st.metric("Pending", pending)
+        st.metric("Win Rate", f"{win_rate:.1f}%")
+
+    col4, col5, col6 = st.columns(3)
+
+    with col4:
+        st.metric("Profit/Loss", f"${total_profit:.2f}")
+        st.metric("ROI", f"{roi:.1f}%")
+
+    with col5:
+        st.metric("Average EV", f"{avg_ev:.1f}%")
+        st.metric("Average Kelly", f"{avg_kelly:.1f}%")
+
+    with col6:
+        st.metric("Average CLV", f"{avg_clv:.1f}%")
+
+        if avg_clv > 0:
+            st.success("Positive CLV")
+        elif avg_clv < 0:
+            st.warning("Negative CLV")
+        else:
+            st.info("No CLV data yet")
+
+    st.subheader("Bankroll Growth")
+
+    chart_df = updated_df.copy()
+    chart_df["timestamp"] = pd.to_datetime(
+        chart_df["timestamp"],
+        errors="coerce"
+    )
+
+    chart_df = chart_df.sort_values("timestamp")
+    chart_df["cumulative_profit"] = chart_df["profit_loss"].cumsum()
+
+    st.line_chart(
+        chart_df.set_index("timestamp")["cumulative_profit"]
+    )
+
+    st.subheader("Manual Result Override")
+
+    editable_cols = [
+        "game_date",
+        "home_team",
+        "away_team",
+        "best_bet",
+        "closing_odds",
+        "result"
+    ]
+
+    for col in editable_cols:
+        if col not in updated_df.columns:
+            updated_df[col] = ""
+
+    manual_df = updated_df[editable_cols].copy()
+
+    st.info(
+        "Edit closing odds and results directly in the table, then click Save Manual Updates."
+    )
+
+    edited_manual_df = st.data_editor(
+        manual_df,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        column_config={
+            "result": st.column_config.SelectboxColumn(
+                "Result",
+                options=["Pending", "Win", "Loss"],
+                required=True
+            ),
+            "closing_odds": st.column_config.TextColumn(
+                "Closing Odds"
+            )
+        },
+        key="manual_result_editor"
+    )
+
+    if st.button("Save Manual Updates"):
+        for edited_index, edited_row in edited_manual_df.iterrows():
+            original_index = manual_df.index[edited_index]
+
+            updated_df.loc[
+                original_index,
+                "closing_odds"
+            ] = edited_row["closing_odds"]
+
+            updated_df.loc[
+                original_index,
+                "result"
+            ] = edited_row["result"]
+
+        updated_df["profit_loss"] = updated_df.apply(calculate_profit_loss, axis=1)
+
+        updated_df["clv"] = updated_df.apply(
+            lambda row: calculate_clv(row["odds"], row["closing_odds"]),
+            axis=1
+        )
+
+        save_bet_history(updated_df)
+
+        st.success("Manual updates saved.")
+
+    st.subheader("Saved Bet Picks")
+
+    display_cols = [
+        "game_date",
+        "home_team",
+        "away_team",
+        "best_bet",
+        "odds",
+        "closing_odds",
+        "clv",
+        "model_probability",
+        "expected_value",
+        "kelly",
+        "stake",
+        "result",
+        "profit_loss"
+    ]
+
+    available_cols = [
+        col for col in display_cols
+        if col in updated_df.columns
+    ]
+
+    st.dataframe(
+        updated_df[available_cols],
+        use_container_width=True
+    )
+
+    csv_data = updated_df.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Download Bet History CSV",
+        data=csv_data,
+        file_name="bet_history.csv",
+        mime="text/csv"
+    )
+
+
+st.title("Backtesting Dashboard")
+
+def load_prediction_history():
+    if not os.path.isfile("prediction_history.csv"):
+        return None
+
+    df = pd.read_csv("prediction_history.csv")
+
+    required_cols = [
+        "game_date",
+        "home_team",
+        "away_team",
+        "prediction",
+        "home_probability",
+        "away_probability"
+    ]
+
+    for col in required_cols:
+        if col not in df.columns:
+            return None
+
+    df["home_probability"] = pd.to_numeric(df["home_probability"], errors="coerce")
+    df["away_probability"] = pd.to_numeric(df["away_probability"], errors="coerce")
+    df["confidence"] = df[["home_probability", "away_probability"]].max(axis=1)
+
+    return df
+
+
+def backtest_prediction_row(row):
+    try:
+        response = requests.get(
+            f"{API_URL}/score_result",
+            params={
+                "date": row["game_date"],
+                "home_team": row["home_team"],
+                "away_team": row["away_team"],
+                "best_bet": row["prediction"]
+            },
+            timeout=20
+        )
+
+        if response.status_code != 200:
+            return "Pending"
+
+        data = response.json()
+
+        if data.get("status") == "completed":
+            return data.get("result", "Pending")
+
+        return "Pending"
+
+    except Exception:
+        return "Pending"
+
+
+prediction_history = load_prediction_history()
+bet_history_for_backtest = load_bet_history()
+
+if prediction_history is None or prediction_history.empty:
+    st.info("No prediction history found yet. Load predictions first.")
+
+else:
+    st.info("Backtesting is now button-based to keep the app fast.")
+
+    if st.button("Run Model Accuracy Backtest"):
+        st.subheader("Model Accuracy Backtest")
+
+        backtest_df = prediction_history.copy()
+        backtest_df["result"] = backtest_df.apply(backtest_prediction_row, axis=1)
+
+        completed_predictions = backtest_df[
+            backtest_df["result"].isin(["Win", "Loss"])
+        ]
+
+        if completed_predictions.empty:
+            st.info("No completed prediction results available yet.")
+
+        else:
+            total_predictions = len(completed_predictions)
+            correct_predictions = len(
+                completed_predictions[completed_predictions["result"] == "Win"]
+            )
+
+            model_accuracy = (
+                correct_predictions / total_predictions * 100
+                if total_predictions > 0
+                else 0
+            )
+
+            high_conf_df = completed_predictions[
+                completed_predictions["confidence"] >= 0.70
+            ]
+
+            high_conf_total = len(high_conf_df)
+            high_conf_wins = len(high_conf_df[high_conf_df["result"] == "Win"])
+
+            high_conf_win_rate = (
+                high_conf_wins / high_conf_total * 100
+                if high_conf_total > 0
+                else 0
+            )
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric("Total Tested Predictions", total_predictions)
+
+            with col2:
+                st.metric("Model Accuracy", f"{model_accuracy:.1f}%")
+
+            with col3:
+                st.metric("High-Confidence Win Rate", f"{high_conf_win_rate:.1f}%")
+
+            completed_predictions["confidence_bucket"] = pd.cut(
+                completed_predictions["confidence"],
+                bins=[0, 0.55, 0.65, 0.70, 1],
+                labels=["Low", "Medium", "Good", "High"]
+            )
+
+            confidence_summary = completed_predictions.groupby(
+                "confidence_bucket"
+            ).agg(
+                total_games=("result", "count"),
+                wins=("result", lambda x: (x == "Win").sum())
+            )
+
+            confidence_summary["win_rate"] = (
+                confidence_summary["wins"] / confidence_summary["total_games"] * 100
+            )
+
+            st.subheader("Confidence Breakdown")
+            st.dataframe(confidence_summary, use_container_width=True)
+
+
+st.subheader("Betting Filter Performance")
+
+if bet_history_for_backtest is None or bet_history_for_backtest.empty:
+    st.info("No saved bet picks yet. Save real filtered bets to test ROI.")
+
+else:
+    bet_df = bet_history_for_backtest.copy()
+
+    bet_df["expected_value"] = pd.to_numeric(bet_df["expected_value"], errors="coerce")
+    bet_df["kelly"] = pd.to_numeric(bet_df["kelly"], errors="coerce")
+    bet_df["profit_loss"] = pd.to_numeric(bet_df["profit_loss"], errors="coerce")
+
+    settled_bets = bet_df[
+        bet_df["result"].str.lower().isin(["win", "loss"])
+    ]
+
+    if settled_bets.empty:
+        st.info("No settled saved bets yet.")
+
+    else:
+        total_bets = len(settled_bets)
+        wins = len(settled_bets[settled_bets["result"].str.lower() == "win"])
+        losses = len(settled_bets[settled_bets["result"].str.lower() == "loss"])
+
+        win_rate = wins / total_bets * 100 if total_bets > 0 else 0
+        total_profit = settled_bets["profit_loss"].sum()
+        total_staked = total_bets * STAKE
+        roi = total_profit / total_staked * 100 if total_staked > 0 else 0
+
+        positive_ev_bets = settled_bets[settled_bets["expected_value"] > 0]
+        negative_ev_bets = settled_bets[settled_bets["expected_value"] <= 0]
+
+        positive_ev_roi = (
+            positive_ev_bets["profit_loss"].sum() / (len(positive_ev_bets) * STAKE) * 100
+            if len(positive_ev_bets) > 0
+            else 0
+        )
+
+        negative_ev_roi = (
+            negative_ev_bets["profit_loss"].sum() / (len(negative_ev_bets) * STAKE) * 100
+            if len(negative_ev_bets) > 0
+            else 0
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Filtered Bets Tested", total_bets)
+            st.metric("Wins", wins)
+
+        with col2:
+            st.metric("Losses", losses)
+            st.metric("Win Rate", f"{win_rate:.1f}%")
+
+        with col3:
+            st.metric("ROI", f"{roi:.1f}%")
+            st.metric("Profit/Loss", f"${total_profit:.2f}")
+
+        col4, col5 = st.columns(2)
+
+        with col4:
+            st.metric("Positive EV ROI", f"{positive_ev_roi:.1f}%")
+
+        with col5:
+            st.metric("Negative/Weak EV ROI", f"{negative_ev_roi:.1f}%")
+
+        if positive_ev_roi > negative_ev_roi:
+            st.success("✅ Value filter is improving results.")
+        else:
+            st.warning("⚠️ More settled bets needed.")
+
+        st.dataframe(
+            settled_bets[
+                [
+                    "game_date",
+                    "home_team",
+                    "away_team",
+                    "best_bet",
+                    "odds",
+                    "expected_value",
+                    "kelly",
+                    "result",
+                    "profit_loss",
+                    "clv"
+                ]
+            ],
+            use_container_width=True
+        )
+
+
+
+st.title("Quick Add Training Games")
+st.info("Use this only to create enough Win/Loss examples for testing the model. For real production training, use real settled bets.")
+
+with st.form("manual_training_pick_form"):
+    manual_game_date = st.text_input("Training Game Date", value=active_date)
+    manual_home_team = st.text_input("Home Team", value="San Antonio Spurs")
+    manual_away_team = st.text_input("Away Team", value="Oklahoma City Thunder")
+    manual_best_bet = st.text_input("Picked Team", value="Oklahoma City Thunder")
+    manual_odds = st.number_input("Odds", min_value=1.01, value=2.00, step=0.01)
+    manual_result = st.selectbox("Result", ["Win", "Loss", "Pending"])
+    manual_submit = st.form_submit_button("Add Manual Training Pick")
+
+if manual_submit:
+    save_manual_training_pick(
+        manual_game_date,
+        manual_home_team,
+        manual_away_team,
+        manual_best_bet,
+        manual_odds,
+        manual_result
+    )
+    st.success("Manual training pick added. Now click Build Learning Dataset.")
+
+st.subheader("Bulk Training Data Generator")
+st.warning("Testing helper only. This creates synthetic settled rows so the ensemble can pass the 20-bet minimum while we build real historical ingestion later.")
+
+if st.button("Add 10 Wins + 10 Losses for Testing"):
+    sample_games = [
+        ("05/01/2026", "Boston Celtics", "New York Knicks", "Boston Celtics", 1.85, "Win"),
+        ("05/02/2026", "Denver Nuggets", "Phoenix Suns", "Phoenix Suns", 2.05, "Loss"),
+        ("05/03/2026", "Los Angeles Lakers", "Golden State Warriors", "Golden State Warriors", 1.95, "Win"),
+        ("05/04/2026", "Milwaukee Bucks", "Miami Heat", "Milwaukee Bucks", 1.78, "Loss"),
+        ("05/05/2026", "Dallas Mavericks", "Minnesota Timberwolves", "Dallas Mavericks", 2.10, "Win"),
+        ("05/06/2026", "Cleveland Cavaliers", "Detroit Pistons", "Cleveland Cavaliers", 1.70, "Loss"),
+        ("05/07/2026", "Oklahoma City Thunder", "San Antonio Spurs", "Oklahoma City Thunder", 1.88, "Win"),
+        ("05/08/2026", "New York Knicks", "Indiana Pacers", "Indiana Pacers", 2.20, "Loss"),
+        ("05/09/2026", "Sacramento Kings", "Memphis Grizzlies", "Sacramento Kings", 1.92, "Win"),
+        ("05/10/2026", "Philadelphia 76ers", "Orlando Magic", "Philadelphia 76ers", 1.80, "Loss"),
+        ("05/11/2026", "Boston Celtics", "Cleveland Cavaliers", "Cleveland Cavaliers", 2.15, "Win"),
+        ("05/12/2026", "Denver Nuggets", "Oklahoma City Thunder", "Denver Nuggets", 1.90, "Loss"),
+        ("05/13/2026", "Los Angeles Clippers", "Phoenix Suns", "Los Angeles Clippers", 2.00, "Win"),
+        ("05/14/2026", "Miami Heat", "Chicago Bulls", "Chicago Bulls", 2.25, "Loss"),
+        ("05/15/2026", "Minnesota Timberwolves", "Dallas Mavericks", "Minnesota Timberwolves", 1.86, "Win"),
+        ("05/16/2026", "Golden State Warriors", "Houston Rockets", "Golden State Warriors", 1.75, "Loss"),
+        ("05/17/2026", "San Antonio Spurs", "Oklahoma City Thunder", "San Antonio Spurs", 2.05, "Win"),
+        ("05/18/2026", "New York Knicks", "Cleveland Cavaliers", "New York Knicks", 1.82, "Loss"),
+        ("05/19/2026", "Indiana Pacers", "Milwaukee Bucks", "Milwaukee Bucks", 2.10, "Win"),
+        ("05/20/2026", "Orlando Magic", "Philadelphia 76ers", "Orlando Magic", 2.30, "Loss"),
+    ]
+
+    for game_date_value, home_team_value, away_team_value, best_bet_value, odds_value, result_value in sample_games:
+        save_manual_training_pick(
+            game_date_value,
+            home_team_value,
+            away_team_value,
+            best_bet_value,
+            odds_value,
+            result_value
+        )
+
+    st.success("Added 20 testing rows to bet_history.csv. Now click Build Learning Dataset, then Train Ensemble Model.")
+
+st.title("Auto Learning Pipeline")
+
+if st.button("Build Totals Learning Dataset"):
+
+    totals_learning_result = build_totals_learning_dataset()
+
+    if totals_learning_result["status"] == "success":
+        st.success(
+            f"Totals learning dataset built with "
+            f"{totals_learning_result['rows']} rows."
+        )
+    else:
+        st.error(
+            totals_learning_result["message"]
+        )
+
+    st.json(totals_learning_result)
+
+if st.button("Train Totals Model"):
+
+    result = train_totals_model()
+    status = result.get("status")
+
+    if status == "candidate_saved":
+        st.success(
+            "Candidate model saved successfully. "
+            "It has NOT replaced or activated the current model."
+        )
+
+        st.write("**Candidate validation results**")
+        st.write(f"Training rows: {result.get('training_rows', 'N/A')}")
+        st.write(f"Test rows: {result.get('test_rows', 'N/A')}")
+        st.write(f"Model accuracy: {result.get('model_accuracy', 'N/A')}")
+        st.write(
+            "Model balanced accuracy: "
+            f"{result.get('model_balanced_accuracy', 'N/A')}"
+        )
+        st.write(f"Baseline accuracy: {result.get('baseline_accuracy', 'N/A')}")
+        st.write(
+            "Baseline balanced accuracy: "
+            f"{result.get('baseline_balanced_accuracy', 'N/A')}"
+        )
+        st.write(f"Candidate file: {result.get('model_path', 'N/A')}")
+
+    elif status == "rejected":
+        st.warning(
+            result.get(
+                "message",
+                "Candidate rejected because it did not beat the baseline."
+            )
+        )
+        st.write(
+            "Model balanced accuracy: "
+            f"{result.get('model_balanced_accuracy', 'N/A')}"
+        )
+        st.write(
+            "Baseline balanced accuracy: "
+            f"{result.get('baseline_balanced_accuracy', 'N/A')}"
+        )
+
+    else:
+        st.error(result.get("message", "Totals model training failed."))
+
+    st.json(result)
+if st.button("Build Learning Dataset"):
+    summary = summarize_learning()
+
+    if summary["status"] == "success":
+        st.success("Learning dataset created successfully.")
+        st.json(summary)
+    else:
+        st.info(summary["message"])
+
+if os.path.isfile("learning_dataset.csv"):
+    import os
+    os.makedirs("data", exist_ok=True)
+    import shutil
+    shutil.copy("learning_dataset.csv", "data/learning_dataset.csv")
+    
+    learning_df = pd.read_csv("learning_dataset.csv")
+
+    st.subheader("Learning Dataset Preview")
+    st.dataframe(learning_df.tail(20), use_container_width=True)
+
+    csv_data = learning_df.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Download Learning Dataset",
+        data=csv_data,
+        file_name="learning_dataset.csv",
+        mime="text/csv"
+    )
+st.title("Model Control Center")
+st.subheader("Model Evaluation Dashboard")
+st.subheader("Historical NBA Data Engine")
+st.subheader("Historical Backfill Engine")
+
+backfill_rows = st.number_input(
+    "Number of historical rows to generate",
+    min_value=100,
+    max_value=5000,
+    value=500,
+    step=100
+)
+
+if st.button("Generate Historical Backfill Data"):
+    result = generate_historical_backfill(
+        rows=int(backfill_rows)
+    )
+
+    if result["status"] == "success":
+        st.success(result["message"])
+        st.json(result)
+    else:
+        st.error(result["message"])
+if st.button("Create Historical Training File"):
+    result = create_historical_training_file()
+
+    if result["status"] == "success":
+        st.success(result["message"])
+        st.json(result)
+    else:
+        st.error(result["message"])
+
+
+st.write("Add Historical Game Manually")
+
+hist_col1, hist_col2 = st.columns(2)
+
+with hist_col1:
+    hist_game_date = st.text_input("Historical Game Date", value="05/21/2026")
+    hist_home_team = st.text_input("Historical Home Team", value="San Antonio Spurs")
+    hist_away_team = st.text_input("Historical Away Team", value="Oklahoma City Thunder")
+    hist_selected_team = st.text_input("Selected Team", value="Oklahoma City Thunder")
+
+with hist_col2:
+    hist_odds = st.number_input("Historical Odds", value=2.10)
+    hist_model_probability = st.number_input("Model Probability", value=0.60)
+    hist_expected_value = st.number_input("Expected Value", value=0.10)
+    hist_kelly = st.number_input("Kelly", value=0.05)
+    hist_result = st.selectbox("Historical Result", ["Win", "Loss"])
+
+
+if st.button("Add Historical Game"):
+    result = add_historical_game(
+        hist_game_date,
+        hist_home_team,
+        hist_away_team,
+        hist_selected_team,
+        hist_odds,
+        hist_model_probability,
+        hist_expected_value,
+        hist_kelly,
+        hist_result
+    )
+
+    if result["status"] == "success":
+        st.success(result["message"])
+        st.json(result)
+    else:
+        st.error(result["message"])
+
+
+if st.button("Merge Historical Data Into Bet History"):
+    result = merge_historical_into_bet_history()
+
+    if result["status"] == "success":
+        st.success(result["message"])
+        st.json(result)
+    else:
+        st.error(result["message"])
+if st.button("Evaluate Ensemble Model"):
+    result = evaluate_ensemble_model()
+
+    if result["status"] == "success":
+        st.success(f"Cross-validation accuracy: {result['cv_mean_accuracy']}%")
+        st.json(result)
+
+        importance_df = pd.DataFrame(result["feature_importance"])
+        st.subheader("Feature Importance")
+        st.dataframe(importance_df, use_container_width=True)
+        st.bar_chart(
+            importance_df.set_index("feature")
+        )
+
+        st.subheader("Confusion Matrix")
+        st.write(result["confusion_matrix"])
+
+    else:
+        st.error(result["message"])
+st.subheader("Ensemble AI Training")
+
+if st.button("Train Ensemble Model"):
+
+    with st.spinner("Training ensemble system..."):
+
+        try:
+
+            result = train_ensemble_model()
+
+            if result["status"] == "success":
+
+                st.success(
+                    f"Ensemble trained successfully. "
+                    f"Accuracy: {result['ensemble_accuracy']}%"
+                )
+
+                st.json(result)
+
+                model_path = result.get(
+                    "model_path",
+                    "models/ensemble_model.joblib"
+                )
+
+                if os.path.isfile(model_path):
+
+                    with open(model_path, "rb") as model_file:
+
+                        st.download_button(
+                            label="Download Ensemble Model",
+                            data=model_file,
+                            file_name="ensemble_model.joblib",
+                            mime="application/octet-stream"
+                        )
+
+                else:
+
+                    st.warning(
+                        "Model trained, but ensemble_model.joblib "
+                        "was not found for download."
+                    )
+
+            else:
+
+                st.error(
+                    result.get(
+                        "message",
+                        "Ensemble training failed."
+                    )
+                )
+
+                st.json(result)
+
+        except Exception as e:
+
+            st.error(f"Training error: {e}")
+
+st.info(
+    "Manage retraining, model versions, and rollback operations."
+)
+
+# =========================
+# RETRAIN MODEL
+# =========================
+
+if st.button("Retrain Betting Model"):
+
+    with st.spinner("Training new model..."):
+
+        try:
+
+            retrain_result = retrain_pipeline()
+
+            if retrain_result["status"] == "success":
+
+                accuracy = retrain_result[
+                    "training_accuracy"
+                ]
+
+                register_result = register_model(
+                    retrain_result["model_output"],
+                    accuracy,
+                    notes="Dashboard retraining"
+                )
+
+                st.success(
+                    f"New model trained successfully. Accuracy: {accuracy:.2f}%"
+                )
+
+                st.json(retrain_result)
+
+                st.success(
+                    f"Model version saved: {register_result['version']}"
+                )
+
+            else:
+
+                st.error("Retraining failed.")
+
+        except Exception as e:
+
+            st.error(f"Retraining error: {e}")
+
+
+# =========================
+# MODEL REGISTRY
+# =========================
+
+st.subheader("Saved Model Versions")
+
+model_versions = get_model_versions()
+
+if not model_versions:
+
+    st.info("No saved models yet.")
+
+else:
+
+    registry_df = pd.DataFrame(model_versions)
+
+    st.dataframe(
+        registry_df,
+        use_container_width=True
+    )
+
+    best_model = get_best_model()
+
+    if best_model:
+
+        st.success(
+            f"Best Model: {best_model['version']} "
+            f"| Accuracy: {best_model['accuracy']}%"
+        )
+
+
+# =========================
+# MODEL ROLLBACK
+# =========================
+
+if model_versions:
+
+    rollback_options = [
+        model["version"]
+        for model in model_versions
+    ]
+
+    selected_version = st.selectbox(
+        "Rollback To Model Version",
+        rollback_options
+    )
+
+    if st.button("Activate Selected Model"):
+
+        rollback_result = rollback_model(
+            selected_version
+        )
+
+        if rollback_result["status"] == "success":
+
+            st.success(
+                f"Active model switched to: "
+                f"{rollback_result['active_model']}"
+            )
+
+        else:
+
+            st.error(
+                rollback_result["message"]
+            )
+            st.header("Totals Model Performance")
+
+            totals_df = load_totals_history()
+            
+            if not totals_df.empty:
+            
+                st.dataframe(
+                    totals_df.tail(50),
+                    use_container_width=True
+                )
+            
+            else:
+            
+                st.info(
+                    "No totals picks tracked yet."
+                )
+
