@@ -5,6 +5,12 @@ import pandas as pd
 from injury_impact_engine import get_injury_impact
 from pace_engine import calculate_matchup_pace
 from points_engine import calculate_matchup_points, load_game_history
+from betting_guards import (
+    USE_STACKED_ADJUSTMENTS,
+    EARLY_SEASON_MIN_GAMES,
+    EARLY_SEASON_WINDOW_DAYS,
+    classify_totals_edge,
+)
 
 NBA_AVG_TEAM_POINTS = 114
 
@@ -116,6 +122,25 @@ def load_history():
     except Exception as exc:
         print(f"Could not load NBA historical data: {exc}")
         return pd.DataFrame()
+
+
+def games_in_recent_window(history_df, team_name, window_days):
+    """Games a team played in the window_days before the latest game in history.
+    Returns None if it cannot be computed (caller must then not block)."""
+    try:
+        d = history_df[["game_date", "home_team", "away_team"]].copy()
+        d["game_date"] = pd.to_datetime(d["game_date"], errors="coerce")
+        d = d.dropna(subset=["game_date"])
+        latest = d["game_date"].max()
+        t = str(team_name).strip().lower()
+        is_team = (
+            (d["home_team"].astype(str).str.strip().str.lower() == t)
+            | (d["away_team"].astype(str).str.strip().str.lower() == t)
+        )
+        in_window = d["game_date"] >= latest - pd.Timedelta(days=window_days)
+        return int((is_team & in_window).sum())
+    except Exception:
+        return None
 
 
 def default_team_stats():
@@ -289,6 +314,14 @@ def predict_game_total(home_team, away_team, bookmaker_total):
     rest_advantage = (home_rest_days + away_rest_days) - 2
     rest_adjustment = rest_advantage * 0.50
 
+    # PATCH: these four re-count inputs the points engine already uses
+    # (rest was applied twice). See USE_STACKED_ADJUSTMENTS in betting_guards.py.
+    if not USE_STACKED_ADJUSTMENTS:
+        offensive_adjustment = 0.0
+        defensive_adjustment = 0.0
+        home_away_adjustment = 0.0
+        rest_adjustment = 0.0
+
     injury_data = get_injury_impact(home_team, away_team)
 
     home_injury_penalty = injury_data["home_injury_penalty"]
@@ -307,25 +340,35 @@ def predict_game_total(home_team, away_team, bookmaker_total):
 
     edge = projected_total - float(bookmaker_total)
 
-    if edge >= 5:
-        recommendation = "Strong Over"
-        confidence_note = "Strong Over edge"
-    elif edge >= 2.5:
-        recommendation = "Lean Over"
-        confidence_note = "Small Over edge"
-    elif edge <= -5:
-        recommendation = "Strong Under"
-        confidence_note = "Strong Under edge"
-    elif edge <= -2.5:
-        recommendation = "Lean Under"
-        confidence_note = "Small Under edge"
-    else:
+    recommendation, confidence_note = classify_totals_edge(edge)
+
+    # PATCH: early in a season the "last 10 games" are mostly last season's games.
+    home_recent_games = games_in_recent_window(
+        history_df, home_team, EARLY_SEASON_WINDOW_DAYS
+    )
+    away_recent_games = games_in_recent_window(
+        history_df, away_team, EARLY_SEASON_WINDOW_DAYS
+    )
+    early_season = (
+        EARLY_SEASON_MIN_GAMES > 0
+        and home_recent_games is not None
+        and away_recent_games is not None
+        and min(home_recent_games, away_recent_games) < EARLY_SEASON_MIN_GAMES
+    )
+    if early_season:
         recommendation = "No Bet"
-        confidence_note = "Edge too small"
+        confidence_note = (
+            f"Early season: only {home_recent_games}/{away_recent_games} recent games "
+            f"in the data (need {EARLY_SEASON_MIN_GAMES}); form inputs are mostly last season"
+        )
 
     return {
         "history_rows": history_rows,
         "history_columns": history_columns,
+        "early_season": early_season,
+        "home_recent_games": home_recent_games,
+        "away_recent_games": away_recent_games,
+        "stacked_adjustments_active": USE_STACKED_ADJUSTMENTS,
         "home_team": home_team,
         "away_team": away_team,
         "projected_total": round(projected_total, 2),
