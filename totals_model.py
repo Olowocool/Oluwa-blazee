@@ -12,6 +12,20 @@ from points_engine import calculate_matchup_points, load_game_history
 NBA_AVG_TEAM_POINTS = 114
 
 
+def classify_total_edge(edge):
+    """Map the displayed, rounded total edge to one canonical recommendation."""
+    edge = round(float(edge), 2)
+    if edge >= 5:
+        return "Strong Over", "Strong Over edge"
+    if edge >= 2.5:
+        return "Lean Over", "Small Over edge"
+    if edge <= -5:
+        return "Strong Under", "Strong Under edge"
+    if edge <= -2.5:
+        return "Lean Under", "Small Under edge"
+    return "No Bet", "Edge too small"
+
+
 def safe_mean(values, default=114):
     try:
         values = pd.Series(values).dropna()
@@ -388,21 +402,7 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
 
     edge = round(projected_total - bookmaker_total, 2)
 
-    if edge >= 5:
-        recommendation = "Strong Over"
-        confidence_note = "Strong Over edge"
-    elif edge >= 2.5:
-        recommendation = "Lean Over"
-        confidence_note = "Small Over edge"
-    elif edge <= -5:
-        recommendation = "Strong Under"
-        confidence_note = "Strong Under edge"
-    elif edge <= -2.5:
-        recommendation = "Lean Under"
-        confidence_note = "Small Under edge"
-    else:
-        recommendation = "No Bet"
-        confidence_note = "Edge too small"
+    recommendation, confidence_note = classify_total_edge(edge)
 
     return {
         "history_rows": history_rows,
