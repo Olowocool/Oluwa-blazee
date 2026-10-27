@@ -1,5 +1,8 @@
 
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 
 from injury_impact_engine import get_injury_impact
@@ -48,6 +51,12 @@ def load_history():
         try:
             df = pd.read_csv(file)
 
+            if "game_date" not in df.columns:
+                for candidate in ["date", "GAME_DATE", "gameDate"]:
+                    if candidate in df.columns:
+                        df = df.rename(columns={candidate: "game_date"})
+                        break
+
             if not all(col in df.columns for col in required_score_cols):
                 continue
 
@@ -66,6 +75,13 @@ def load_history():
                     "away_score",
                 ]
             )
+
+            if df.empty:
+                continue
+
+            if "game_date" in df.columns:
+                df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce")
+                df = df.dropna(subset=["game_date"]).sort_values("game_date")
 
             if df.empty:
                 continue
@@ -227,9 +243,16 @@ def get_team_recent_stats(history_df, team_name):
 
 
 def _history_before_date(history_df, game_date):
-    """Return only games completed strictly before the target game date."""
-    if history_df is None or history_df.empty or game_date is None:
+    """Return only games completed strictly before the target game date.
+
+    If no date is supplied, use today's Lagos calendar date as a safe cutoff.
+    This prevents accidental inclusion of future rows by older callers.
+    """
+    if history_df is None or history_df.empty:
         return history_df
+
+    if game_date is None:
+        game_date = datetime.now(ZoneInfo("Africa/Lagos")).date().isoformat()
 
     date_col = "game_date" if "game_date" in history_df.columns else (
         "date" if "date" in history_df.columns else None
