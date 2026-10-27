@@ -157,6 +157,7 @@ def run_backtest(max_games=MAX_GAMES_TO_TEST, min_prior_games=MIN_PRIOR_GAMES):
                     away_team=away_team,
                     history_df=prior,
                     bookmaker_total=None,
+                    game_date=target_date,
                 )
 
                 full_total = float(full_prediction["projected_total"])
