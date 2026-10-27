@@ -1342,7 +1342,7 @@ if data and "games" in data and len(data["games"]) > 0:
 
         with points_col3:
             st.metric(
-                "Points Engine Total",
+                "Points Engine Baseline",
                 totals_result.get("points_engine_total", "N/A")
             )
 
@@ -1374,8 +1374,8 @@ if data and "games" in data and len(data["games"]) > 0:
 
         with pace_col1:
             st.metric(
-                "Raw Total Before Pace",
-                totals_result["raw_projected_total"]
+                "Non-Pace Adjustments",
+                totals_result["non_pace_adjustment"]
             )
         
         with pace_col2:
