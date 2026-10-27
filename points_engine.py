@@ -251,16 +251,38 @@ def calculate_team_points_features(team_name, history_df=None, last_n=10):
     }
 
 
-def calculate_team_rest_days(team_name, history_df):
-    games = get_team_games(history_df, team_name)
+def calculate_team_rest_days(team_name, history_df, game_date=None):
+    """Estimate rest days before the target game, not between past games.
 
-    if games.empty or len(games) < 2:
+    The caller must pass a target date for historical evaluation. If omitted,
+    today's Lagos calendar date is used for current predictions.
+    """
+    games = get_team_games(history_df, team_name)
+    if games.empty:
         return 1
 
     try:
-        latest_date = games.iloc[-1]["game_date"]
-        previous_date = games.iloc[-2]["game_date"]
-        rest_days = int((latest_date - previous_date).days) - 1
+        games = games.copy()
+        if "game_date" not in games.columns:
+            return 1
+        games["game_date"] = pd.to_datetime(games["game_date"], errors="coerce")
+        games = games.dropna(subset=["game_date"]).sort_values("game_date")
+        if games.empty:
+            return 1
+
+        if game_date is None:
+            target_date = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
+        else:
+            target_date = pd.to_datetime(game_date, errors="coerce")
+            if pd.isna(target_date):
+                raise ValueError(f"Invalid target game date: {game_date!r}")
+            if getattr(target_date, "tzinfo", None) is not None:
+                target_date = target_date.tz_convert("Africa/Lagos").tz_localize(None)
+            target_date = target_date.normalize()
+
+        latest_date = games.iloc[-1]["game_date"].normalize()
+        days_since_last_game = int((target_date - latest_date).days)
+        rest_days = days_since_last_game - 1
         return max(0, min(3, rest_days))
     except Exception:
         return 1
@@ -328,7 +350,8 @@ def calculate_matchup_points(
     home_team,
     away_team,
     history_df=None,
-    bookmaker_total=None
+    bookmaker_total=None,
+    game_date=None,
 ):
     if history_df is None:
         history_df = load_game_history()
@@ -373,8 +396,8 @@ def calculate_matchup_points(
         h2h_adjustment = (h2h_average_total - raw_total) * 0.15
         h2h_games_used = len(h2h_games)
 
-    home_rest = calculate_team_rest_days(home_team, history_df)
-    away_rest = calculate_team_rest_days(away_team, history_df)
+    home_rest = calculate_team_rest_days(home_team, history_df, game_date)
+    away_rest = calculate_team_rest_days(away_team, history_df, game_date)
 
     rest_adjustment = ((home_rest + away_rest) - 2) * 0.50
 
