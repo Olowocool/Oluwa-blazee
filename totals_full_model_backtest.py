@@ -1,8 +1,11 @@
-"""Chronological walk-forward evaluation for the production NBA totals model.
+"""Chronological score backtests for the NBA totals model.
 
-This backtest evaluates score prediction only. It does not estimate betting ROI,
-because historical sportsbook totals/odds are not available for each test game.
-Every prediction receives only games strictly earlier than its target date.
+The latest window is kept as the final holdout. Component ablation runs on the
+1,000 games immediately before that window and must not be used as a final
+unbiased estimate after model tuning. Historical predictions use only games
+strictly earlier than each target date.
+
+This evaluates point prediction only; it does not estimate betting ROI.
 """
 
 import os
@@ -16,11 +19,27 @@ from totals_model import load_history, predict_game_total
 OUTPUT_DIR = "outputs"
 RESULTS_PATH = os.path.join(OUTPUT_DIR, "totals_full_model_backtest_results.csv")
 SUMMARY_PATH = os.path.join(OUTPUT_DIR, "totals_full_model_backtest_summary.csv")
+ABLATION_RESULTS_PATH = os.path.join(OUTPUT_DIR, "totals_development_ablation_results.csv")
+ABLATION_SUMMARY_PATH = os.path.join(OUTPUT_DIR, "totals_development_ablation_summary.csv")
 
 MIN_PRIOR_GAMES = 100
 MAX_GAMES_TO_TEST = 1000
+DEV_ABLATION_GAMES = 1000
 TRAILING_MEAN_GAMES = 1000
 SAFE_BOOKMAKER_PLACEHOLDER = 228.0
+
+PREDICTION_COLUMNS = {
+    "Points Engine baseline": "points_engine_projected_total",
+    "Full totals model": "full_model_projected_total",
+    "Full model minus pace": "full_without_pace_total",
+    "Full model minus offense": "full_without_offense_total",
+    "Full model minus defense": "full_without_defense_total",
+    "Full model minus venue": "full_without_venue_total",
+    "Baseline plus pace only": "baseline_plus_pace_total",
+    "Baseline plus offense only": "baseline_plus_offense_total",
+    "Baseline plus defense only": "baseline_plus_defense_total",
+    "Baseline plus venue only": "baseline_plus_venue_total",
+}
 
 
 def prepare_backtest_history(history):
@@ -54,6 +73,7 @@ def prepare_backtest_history(history):
         & df["away_team"].ne("")
     ].copy()
 
+    # Recompute totals from final scores; do not trust stale cached totals.
     df["total_score"] = df["home_score"] + df["away_score"]
     df = df.sort_values("game_date").drop_duplicates(
         subset=["game_date", "home_team", "away_team"],
@@ -76,7 +96,7 @@ def history_strictly_before(history, target_date):
 
 
 def regression_metrics(actual, predicted):
-    """Return basic point-prediction metrics while ignoring invalid pairs."""
+    """Return point-prediction metrics while ignoring invalid pairs."""
     actual = pd.to_numeric(pd.Series(actual), errors="coerce")
     predicted = pd.to_numeric(pd.Series(predicted), errors="coerce")
     valid = actual.notna() & predicted.notna()
@@ -105,23 +125,62 @@ def regression_metrics(actual, predicted):
     }
 
 
-def run_backtest(max_games=MAX_GAMES_TO_TEST, min_prior_games=MIN_PRIOR_GAMES):
-    history = prepare_backtest_history(load_history())
+def build_ablation_predictions(baseline_total, full_prediction):
+    """Construct one-factor removals and one-factor additions to the baseline."""
+    baseline = float(baseline_total)
+    full = float(full_prediction["projected_total"])
+    components = {
+        "pace": float(full_prediction["pace_adjustment"]),
+        "offense": float(full_prediction["offensive_adjustment"]),
+        "defense": float(full_prediction["defensive_adjustment"]),
+        "venue": float(full_prediction["home_away_adjustment"]),
+    }
 
-    if len(history) <= min_prior_games:
-        raise ValueError(
-            f"Need more than {min_prior_games} valid games; found {len(history)}."
-        )
+    predictions = {
+        "points_engine_projected_total": baseline,
+        "full_model_projected_total": full,
+        "full_without_pace_total": full - components["pace"],
+        "full_without_offense_total": full - components["offense"],
+        "full_without_defense_total": full - components["defense"],
+        "full_without_venue_total": full - components["venue"],
+        "baseline_plus_pace_total": baseline + components["pace"],
+        "baseline_plus_offense_total": baseline + components["offense"],
+        "baseline_plus_defense_total": baseline + components["defense"],
+        "baseline_plus_venue_total": baseline + components["venue"],
+    }
+    return predictions, components
 
-    test_history = history.tail(int(max_games)).copy()
-    if test_history.empty:
-        raise ValueError("The selected chronological test window is empty.")
 
+def summarize_predictions(results, prediction_columns, test_window_start, test_window_end,
+                          requested_games, skipped_games, history):
+    summary_rows = []
+    for model_name, prediction_column in prediction_columns.items():
+        metrics = regression_metrics(results["actual_total"], results[prediction_column])
+        summary_rows.append({
+            "model": model_name,
+            **metrics,
+            "mean_delta_vs_points_engine": float(
+                (results[prediction_column] - results["points_engine_projected_total"]).mean()
+            ),
+            "history_rows": len(history),
+            "history_start": history["game_date"].min().date().isoformat(),
+            "history_end": history["game_date"].max().date().isoformat(),
+            "test_window_start": pd.to_datetime(test_window_start).date().isoformat(),
+            "test_window_end": pd.to_datetime(test_window_end).date().isoformat(),
+            "test_window_requested_games": int(requested_games),
+            "skipped_games": int(skipped_games),
+            "sportsbook_line_used": "none; constant placeholder used only by prediction API",
+        })
+    return pd.DataFrame(summary_rows)
+
+
+def _evaluate_full_model_window(history, test_history, output_path, min_prior_games,
+                                include_ablation=False):
+    """Evaluate a date-bounded window; all games on a date share prior-only history."""
     records = []
     skipped = 0
     tested_dates = sorted(test_history["game_date"].unique())
 
-    # All games on a date share one strictly earlier history snapshot.
     for target_date in tested_dates:
         target_games = test_history.loc[test_history["game_date"] == target_date]
         prior = history_strictly_before(history, target_date)
@@ -141,9 +200,6 @@ def run_backtest(max_games=MAX_GAMES_TO_TEST, min_prior_games=MIN_PRIOR_GAMES):
             actual_total = actual_home + actual_away
 
             try:
-                # The production API needs a line to populate edge/recommendation.
-                # This constant placeholder is not an actual market line and is
-                # not used to calculate the score projection.
                 full_prediction = predict_game_total(
                     home_team=home_team,
                     away_team=away_team,
@@ -151,7 +207,6 @@ def run_backtest(max_games=MAX_GAMES_TO_TEST, min_prior_games=MIN_PRIOR_GAMES):
                     game_date=target_date,
                     history_df=prior,
                 )
-
                 points_prediction = calculate_matchup_points(
                     home_team=home_team,
                     away_team=away_team,
@@ -162,8 +217,7 @@ def run_backtest(max_games=MAX_GAMES_TO_TEST, min_prior_games=MIN_PRIOR_GAMES):
 
                 full_total = float(full_prediction["projected_total"])
                 points_engine_total = float(points_prediction["projected_total"])
-
-                records.append({
+                record = {
                     "game_date": pd.Timestamp(target_date).strftime("%Y-%m-%d"),
                     "home_team": home_team,
                     "away_team": away_team,
@@ -180,56 +234,113 @@ def run_backtest(max_games=MAX_GAMES_TO_TEST, min_prior_games=MIN_PRIOR_GAMES):
                     "trailing_mean_error": trailing_mean_total - actual_total,
                     "prior_history_rows": len(prior),
                     "prior_max_date": prior["game_date"].max().strftime("%Y-%m-%d"),
-                })
+                }
+
+                if include_ablation:
+                    predictions, components = build_ablation_predictions(
+                        points_engine_total, full_prediction
+                    )
+                    record.update(predictions)
+                    record.update({
+                        "pace_adjustment": components["pace"],
+                        "offensive_adjustment": components["offense"],
+                        "defensive_adjustment": components["defense"],
+                        "home_away_adjustment": components["venue"],
+                        "injury_adjustment": float(full_prediction.get("injury_adjustment", 0.0)),
+                    })
+
+                records.append(record)
             except Exception as exc:
                 skipped += 1
                 print(f"Skipped {target_date}: {away_team} at {home_team}: {exc}")
 
     results = pd.DataFrame(records)
     if results.empty:
-        raise ValueError("No predictions completed. Check the score-history data and team names.")
+        raise ValueError(f"No predictions completed for {output_path}. Check history and team names.")
+    results.to_csv(output_path, index=False)
+    return results, skipped
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    results.to_csv(RESULTS_PATH, index=False)
 
-    comparisons = [
-        ("Full totals model", "full_model_projected_total"),
-        ("Points Engine baseline", "points_engine_projected_total"),
-        ("Trailing 1000-game mean baseline", "trailing_mean_baseline"),
-    ]
+def run_backtest(max_games=MAX_GAMES_TO_TEST, min_prior_games=MIN_PRIOR_GAMES):
+    """Evaluate the final, latest holdout window. Do not tune on these results."""
+    history = prepare_backtest_history(load_history())
+    if len(history) <= min_prior_games:
+        raise ValueError(f"Need more than {min_prior_games} valid games; found {len(history)}.")
 
-    summary_rows = []
-    for model_name, prediction_column in comparisons:
-        metrics = regression_metrics(results["actual_total"], results[prediction_column])
-        summary_rows.append({
-            "model": model_name,
-            **metrics,
-            "history_rows": len(history),
-            "history_start": history["game_date"].min().date().isoformat(),
-            "history_end": history["game_date"].max().date().isoformat(),
-            "test_window_start": pd.to_datetime(results["game_date"]).min().date().isoformat(),
-            "test_window_end": pd.to_datetime(results["game_date"]).max().date().isoformat(),
-            "test_window_requested_games": len(test_history),
-            "skipped_games": skipped,
-            "test_results_file": RESULTS_PATH,
-            "sportsbook_line_used": "none; constant placeholder used only by prediction API",
-        })
+    test_history = history.tail(int(max_games)).copy()
+    if test_history.empty:
+        raise ValueError("The selected chronological test window is empty.")
 
-    summary = pd.DataFrame(summary_rows)
+    results, skipped = _evaluate_full_model_window(
+        history, test_history, RESULTS_PATH, min_prior_games, include_ablation=False
+    )
+    comparisons = {
+        "Full totals model": "full_model_projected_total",
+        "Points Engine baseline": "points_engine_projected_total",
+        "Trailing 1000-game mean baseline": "trailing_mean_baseline",
+    }
+    summary = summarize_predictions(
+        results,
+        comparisons,
+        pd.to_datetime(results["game_date"]).min(),
+        pd.to_datetime(results["game_date"]).max(),
+        len(test_history),
+        skipped,
+        history,
+    )
     summary.to_csv(SUMMARY_PATH, index=False)
 
-    print("\n===== CHRONOLOGICAL FULL TOTALS MODEL BACKTEST =====")
+    print("\n===== FINAL HOLDOUT: CHRONOLOGICAL FULL TOTALS MODEL BACKTEST =====")
     print(summary[["model", "games", "mae", "rmse", "bias", "within_5_pct", "within_10_pct"]].to_string(index=False))
-    print(f"\nHistory rows: {len(history)} | Completed test predictions: {len(results)} | Skipped: {skipped}")
-    print(f"Detailed results: {RESULTS_PATH}")
-    print(f"Summary: {SUMMARY_PATH}")
-    print(
-        "\nThis is a score-prediction evaluation, not a betting ROI backtest. "
-        "It uses no future game data and does not validate AI probabilities."
-    )
+    print(f"History rows: {len(history)} | Completed predictions: {len(results)} | Skipped: {skipped}")
+    print("This final holdout must not be used to choose or tune model adjustments.")
+    return summary, results
 
+
+def run_development_ablation(max_games=DEV_ABLATION_GAMES,
+                             min_prior_games=MIN_PRIOR_GAMES):
+    """Compare model components on the 1,000 games immediately before the holdout."""
+    history = prepare_backtest_history(load_history())
+    holdout_rows = history.tail(MAX_GAMES_TO_TEST)
+    if holdout_rows.empty:
+        raise ValueError("Cannot define the reserved final holdout window.")
+    holdout_start = holdout_rows["game_date"].min()
+
+    # Reserve all dates in the final holdout; the development window ends strictly before it.
+    development_pool = history.loc[history["game_date"] < holdout_start].copy()
+    test_history = development_pool.tail(int(max_games)).copy()
+    if test_history.empty:
+        raise ValueError("No development games exist before the reserved final holdout.")
+    if test_history["game_date"].max() >= holdout_start:
+        raise AssertionError("Development ablation overlaps the final holdout dates.")
+
+    results, skipped = _evaluate_full_model_window(
+        history, test_history, ABLATION_RESULTS_PATH, min_prior_games, include_ablation=True
+    )
+    summary = summarize_predictions(
+        results,
+        PREDICTION_COLUMNS,
+        pd.to_datetime(results["game_date"]).min(),
+        pd.to_datetime(results["game_date"]).max(),
+        len(test_history),
+        skipped,
+        history,
+    )
+    summary["reserved_holdout_start"] = holdout_start.date().isoformat()
+    summary.to_csv(ABLATION_SUMMARY_PATH, index=False)
+
+    print("\n===== DEVELOPMENT WINDOW: COMPONENT ABLATION (NOT FINAL VALIDATION) =====")
+    print(summary[["model", "games", "mae", "rmse", "bias", "mean_delta_vs_points_engine",
+                   "within_5_pct", "within_10_pct"]].to_string(index=False))
+    print(
+        f"Development window: {summary.iloc[0]['test_window_start']} through "
+        f"{summary.iloc[0]['test_window_end']} | Reserved holdout starts {holdout_start.date()}"
+    )
+    print("Use this development window to diagnose components only; rerun on untouched future data after any changes.")
     return summary, results
 
 
 if __name__ == "__main__":
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     run_backtest()
+    run_development_ablation()
