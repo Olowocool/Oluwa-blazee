@@ -226,8 +226,31 @@ def get_team_recent_stats(history_df, team_name):
     }
 
 
-def predict_game_total(home_team, away_team, bookmaker_total):
-    history_df = load_history()
+def _history_before_date(history_df, game_date):
+    """Return only games completed strictly before the target game date."""
+    if history_df is None or history_df.empty or game_date is None:
+        return history_df
+
+    date_col = "game_date" if "game_date" in history_df.columns else (
+        "date" if "date" in history_df.columns else None
+    )
+    if date_col is None:
+        raise ValueError(
+            "Cannot enforce the historical cutoff: history has no game_date/date column."
+        )
+
+    cutoff = pd.to_datetime(game_date, errors="coerce")
+    if pd.isna(cutoff):
+        raise ValueError(f"Invalid target game date: {game_date!r}")
+
+    history = history_df.copy()
+    history[date_col] = pd.to_datetime(history[date_col], errors="coerce")
+    return history.loc[history[date_col].notna() & (history[date_col] < cutoff)].copy()
+
+
+def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, history_df=None):
+    history_df = load_history() if history_df is None else history_df.copy()
+    history_df = _history_before_date(history_df, game_date)
 
     history_rows = len(history_df)
     history_columns = str(list(history_df.columns))
@@ -388,9 +411,12 @@ def predict_totals(
     away_team,
     sportsbook_total_line,
     history_df=None,
+    game_date=None,
 ):
     return predict_game_total(
         home_team=home_team,
         away_team=away_team,
         bookmaker_total=sportsbook_total_line,
+        game_date=game_date,
+        history_df=history_df,
     )
