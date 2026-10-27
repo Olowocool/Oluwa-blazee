@@ -82,13 +82,16 @@ class TotalsProjectionReconciliationTests(unittest.TestCase):
                 game_date="2026-10-27",
             )
 
-        # Baseline 222.50 + pace 2.00 + non-pace 0.45 = 224.95.
-        # The extra rest adjustment must not be applied again.
+        # Experimental adjustments (pace 2.00 + non-pace 0.45) are diagnostics
+        # only. The active projected total remains the Points Engine baseline.
         self.assertEqual(result["points_engine_total"], 222.5)
         self.assertEqual(result["rest_adjustment"], 0.5)
         self.assertEqual(result["non_pace_adjustment"], 0.45)
-        self.assertEqual(result["total_adjustment_after_baseline"], 2.45)
-        self.assertEqual(result["projected_total"], 224.95)
+        self.assertEqual(result["experimental_total_adjustment"], 2.45)
+        self.assertFalse(result["adjustments_applied"])
+        self.assertEqual(result["projection_mode"], "points_engine_baseline_only")
+        self.assertEqual(result["total_adjustment_after_baseline"], 0.0)
+        self.assertEqual(result["projected_total"], 222.5)
         self.assertEqual(
             round(result["projected_home_points"] + result["projected_away_points"], 2),
             result["projected_total"],
@@ -96,8 +99,8 @@ class TotalsProjectionReconciliationTests(unittest.TestCase):
 
         # Edge and recommendation are calculated from the displayed rounded values.
         self.assertEqual(result["bookmaker_total"], 219.95)
-        self.assertEqual(result["edge"], 5.0)
-        self.assertEqual(result["recommendation"], "Strong Over")
+        self.assertEqual(result["edge"], 2.55)
+        self.assertEqual(result["recommendation"], "Lean Over")
 
     def test_recommendation_thresholds_match_rounded_edge(self):
         cases = [

@@ -159,7 +159,7 @@ def default_team_stats():
     }
 
 
-def get_team_recent_stats(history_df, team_name):
+def get_team_recent_stats(history_df, team_name, game_date=None):
     if history_df is None or history_df.empty:
         return default_team_stats()
 
@@ -210,14 +210,21 @@ def get_team_recent_stats(history_df, team_name):
     recent_games = team_games.tail(10)
 
     rest_days = 1
-    if "game_date" in team_games.columns and len(team_games) >= 2:
+    if "game_date" in team_games.columns:
         try:
-            latest_game = team_games.iloc[-1]["game_date"]
-            previous_game = team_games.iloc[-2]["game_date"]
-            rest_days = max(
-                0,
-                min(3, int((latest_game - previous_game).days) - 1),
-            )
+            if game_date is None:
+                target_date = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
+            else:
+                target_date = pd.to_datetime(game_date, errors="coerce")
+                if pd.isna(target_date):
+                    raise ValueError(f"Invalid target game date: {game_date!r}")
+                if getattr(target_date, "tzinfo", None) is not None:
+                    target_date = target_date.tz_convert("Africa/Lagos").tz_localize(None)
+                target_date = target_date.normalize()
+
+            latest_game = team_games.iloc[-1]["game_date"].normalize()
+            days_since_last_game = int((target_date - latest_game).days)
+            rest_days = max(0, min(3, days_since_last_game - 1))
         except Exception:
             rest_days = 1
 
@@ -303,6 +310,7 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         away_team=away_team,
         history_df=history_df,
         bookmaker_total=bookmaker_total,
+        game_date=game_date,
     )
 
     points_engine_home_points = float(points_data["projected_home_points"])
@@ -311,8 +319,8 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
     # The final model must not add the rest adjustment to the total twice.
     raw_projected_total = float(points_data["projected_total"])
 
-    home_stats = get_team_recent_stats(history_df, home_team)
-    away_stats = get_team_recent_stats(history_df, away_team)
+    home_stats = get_team_recent_stats(history_df, home_team, game_date)
+    away_stats = get_team_recent_stats(history_df, away_team, game_date)
 
     pace_data = calculate_matchup_pace(
         history_df, home_team, away_team
@@ -351,11 +359,14 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         home_split_advantage + away_split_advantage
     ) * 0.12
 
-    home_rest_days = home_stats["rest_days"]
-    away_rest_days = away_stats["rest_days"]
-
-    rest_advantage = (home_rest_days + away_rest_days) - 2
-    rest_adjustment = rest_advantage * 0.50
+    home_rest_days = int(points_data.get("home_rest_days", home_stats["rest_days"]))
+    away_rest_days = int(points_data.get("away_rest_days", away_stats["rest_days"]))
+    rest_adjustment = float(
+        points_data.get(
+            "rest_adjustment",
+            ((home_rest_days + away_rest_days) - 2) * 0.50,
+        )
+    )
 
     injury_data = get_injury_impact(home_team, away_team)
 
@@ -363,39 +374,27 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
     away_injury_penalty = injury_data["away_injury_penalty"]
     injury_adjustment = injury_data["injury_adjustment"]
 
-    # Apply each additional effect once. rest_adjustment is already included
-    # in raw_projected_total by Points Engine, so it is not added again here.
+    # Experimental adjustments are retained for diagnostics only. The
+    # active forecast uses the Points Engine baseline until these components
+    # demonstrate incremental value in independent validation.
     non_pace_adjustment = (
         offensive_adjustment
         + defensive_adjustment
         + home_away_adjustment
         + injury_adjustment
     )
-    projected_total = round(
-        raw_projected_total + pace_adjustment + non_pace_adjustment,
-        2,
-    )
+    experimental_total_adjustment = pace_adjustment + non_pace_adjustment
+    projected_total = round(raw_projected_total, 2)
     bookmaker_total = round(float(bookmaker_total), 2)
 
-    # Split total-only effects into team projections. Where a factor has a
-    # natural team attribution, assign it to the affected team:
-    # - home offense contributes to home points;
-    # - away defense (points allowed) contributes to home points;
-    # - venue splits are assigned to their corresponding team.
-    home_model_adjustment = (
-        (home_offensive_rating - NBA_AVG_TEAM_POINTS) * 0.15
-        + (away_defensive_rating - NBA_AVG_TEAM_POINTS) * 0.15
-        + home_split_advantage * 0.12
-        + pace_adjustment / 2
-        + rest_adjustment / 2
-        + injury_adjustment / 2
-    )
+    # The baseline team's point projections include the H2H split but
+    # exclude the rest adjustment, which is incorporated in the baseline
+    # total. Allocate half of that baseline rest adjustment to each side,
+    # then derive away points from the canonical total to preserve exact sum.
+    home_model_adjustment = rest_adjustment / 2
     projected_home_points = round(
         points_engine_home_points + home_model_adjustment, 2
     )
-    # Derive away points from the canonical final total so the displayed team
-    # projections sum exactly to the displayed projected total, including
-    # any cent-level rounding residual.
     projected_away_points = round(
         projected_total - projected_home_points, 2
     )
@@ -423,6 +422,9 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         "away_model_adjustment": round(projected_away_points - points_engine_away_points, 2),
         "points_engine_total": round(raw_projected_total, 2),
         "non_pace_adjustment": round(non_pace_adjustment, 2),
+        "experimental_total_adjustment": round(experimental_total_adjustment, 2),
+        "adjustments_applied": False,
+        "projection_mode": "points_engine_baseline_only",
         "total_adjustment_after_baseline": round(projected_total - raw_projected_total, 2),
         "points_engine_h2h_average_total": points_data["h2h_average_total"],
         "points_engine_h2h_adjustment": points_data["h2h_adjustment"],

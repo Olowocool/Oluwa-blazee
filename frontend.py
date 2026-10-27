@@ -1370,17 +1370,19 @@ if data and "games" in data and len(data["games"]) > 0:
             f"Recommendation: {totals_result['recommendation']} — "
             f"{totals_result['confidence_note']}"
         )
+        st.caption("The active projected total uses the Points Engine baseline only. Pace, offense, defense, and venue adjustments below are experimental diagnostics and are not applied.")
+
         pace_col1, pace_col2, pace_col3 = st.columns(3)
 
         with pace_col1:
             st.metric(
-                "Non-Pace Adjustments",
+                "Non-Pace Experimental (Not Applied)",
                 totals_result["non_pace_adjustment"]
             )
         
         with pace_col2:
             st.metric(
-                "Pace Adjustment",
+                "Pace Experimental (Not Applied)",
                 totals_result["pace_adjustment"]
             )
         
