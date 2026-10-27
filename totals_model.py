@@ -351,13 +351,14 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
 
     # Apply each additional effect once. rest_adjustment is already included
     # in raw_projected_total by Points Engine, so it is not added again here.
-    projected_total = round(
-        raw_projected_total
-        + pace_adjustment
-        + offensive_adjustment
+    non_pace_adjustment = (
+        offensive_adjustment
         + defensive_adjustment
         + home_away_adjustment
-        + injury_adjustment,
+        + injury_adjustment
+    )
+    projected_total = round(
+        raw_projected_total + pace_adjustment + non_pace_adjustment,
         2,
     )
     bookmaker_total = round(float(bookmaker_total), 2)
@@ -420,7 +421,9 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         "points_engine_away_points": round(points_engine_away_points, 2),
         "home_model_adjustment": round(projected_home_points - points_engine_home_points, 2),
         "away_model_adjustment": round(projected_away_points - points_engine_away_points, 2),
-        "points_engine_total": points_data["projected_total"],
+        "points_engine_total": round(raw_projected_total, 2),
+        "non_pace_adjustment": round(non_pace_adjustment, 2),
+        "total_adjustment_after_baseline": round(projected_total - raw_projected_total, 2),
         "points_engine_h2h_average_total": points_data["h2h_average_total"],
         "points_engine_h2h_adjustment": points_data["h2h_adjustment"],
         "points_engine_h2h_games_used": points_data["h2h_games_used"],
