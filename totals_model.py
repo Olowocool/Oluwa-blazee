@@ -249,6 +249,12 @@ def _history_before_date(history_df, game_date):
 
 
 def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, history_df=None):
+    # Even callers that omit a target date must not accidentally consume
+    # today's partial/future results. Historical callers must pass the actual
+    # target date explicitly; the frontend does this for selected games.
+    if game_date is None:
+        game_date = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
+
     history_df = load_history() if history_df is None else history_df.copy()
     history_df = _history_before_date(history_df, game_date)
 
