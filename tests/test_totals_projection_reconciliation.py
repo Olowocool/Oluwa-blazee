@@ -110,16 +110,7 @@ class TotalsProjectionReconciliationTests(unittest.TestCase):
         for projected_total, line, expected in cases:
             with self.subTest(projected_total=projected_total, line=line):
                 edge = round(round(projected_total, 2) - round(line, 2), 2)
-                if edge >= 5:
-                    actual = "Strong Over"
-                elif edge >= 2.5:
-                    actual = "Lean Over"
-                elif edge <= -5:
-                    actual = "Strong Under"
-                elif edge <= -2.5:
-                    actual = "Lean Under"
-                else:
-                    actual = "No Bet"
+                actual, _ = totals_model.classify_total_edge(edge)
                 self.assertEqual(actual, expected)
 
 
