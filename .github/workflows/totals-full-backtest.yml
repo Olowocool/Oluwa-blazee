@@ -1,10 +1,11 @@
-name: Full totals chronological backtest
+name: Full totals chronological backtest and ablation
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "audit/chronological-totals-validation"]
     paths:
       - "totals_full_model_backtest.py"
+      - "totals_adjustment_ablation.py"
       - "totals_model.py"
       - "points_engine.py"
       - "pace_engine.py"
@@ -29,17 +30,24 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy pandas
 
-      - name: Compile backtest module
-        run: python -m py_compile totals_full_model_backtest.py
+      - name: Compile backtest and ablation modules
+        run: |
+          python -m py_compile totals_full_model_backtest.py
+          python -m py_compile totals_adjustment_ablation.py
 
       - name: Run chronological full-model backtest
         run: python totals_full_model_backtest.py
 
-      - name: Upload backtest results
+      - name: Run development-window adjustment ablation
+        run: python totals_adjustment_ablation.py
+
+      - name: Upload backtest and ablation results
         uses: actions/upload-artifact@v4
         with:
-          name: totals-full-model-backtest
+          name: totals-adjustment-ablation
           path: |
             outputs/totals_full_model_backtest_results.csv
             outputs/totals_full_model_backtest_summary.csv
+            outputs/totals_adjustment_ablation_results.csv
+            outputs/totals_adjustment_ablation_summary.csv
           if-no-files-found: error
