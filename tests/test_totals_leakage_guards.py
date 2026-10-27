@@ -10,6 +10,7 @@ import totals_ai_predictor
 import totals_auto_learning
 import totals_model
 import train_totals_model
+import generate_totals_test_data
 
 
 class TotalsLeakageGuardTests(unittest.TestCase):
@@ -109,6 +110,63 @@ class TotalsLeakageGuardTests(unittest.TestCase):
             saved = pd.read_csv(learning_path)
             self.assertEqual(len(saved), 1)
             self.assertEqual(saved.iloc[0]["home_team"], "New York Knicks")
+
+    def test_training_uses_chronological_holdout(self):
+        rows = []
+        for day in range(10):
+            for within_day in range(4):
+                index = day * 4 + within_day
+                line = 218 + (index % 7)
+                under = index % 2
+                rows.append({
+                    "game_date": pd.Timestamp("2026-01-01") + pd.Timedelta(days=day),
+                    "projected_total": line + (1 if under else -1),
+                    "sportsbook_total": line,
+                    "edge": 1 if under else -1,
+                    "is_under": under,
+                    "is_over": 1 - under,
+                    "actual_total": line + (index % 5),  # outcome column must not be a predictor
+                    "profit_loss": 91 if index % 2 else -100,
+                    "target": index % 2,
+                })
+
+        with tempfile.TemporaryDirectory() as directory:
+            data_path = os.path.join(directory, "totals_learning_dataset.csv")
+            model_path = os.path.join(directory, "model.joblib")
+            pd.DataFrame(rows).to_csv(data_path, index=False)
+
+            with patch.object(train_totals_model, "DATA_FILE", data_path), \\
+                 patch.object(train_totals_model, "MODEL_FILE", model_path):
+                result = train_totals_model.train_totals_model()
+
+            self.assertEqual(result["status"], "success")
+            self.assertLess(result["training_through"], result["holdout_from"])
+            self.assertEqual(
+                result["features_used"],
+                ["projected_total", "sportsbook_total", "edge", "is_under", "is_over"],
+            )
+            self.assertNotIn("actual_total", result["features_used"])
+            self.assertNotIn("profit_loss", result["features_used"])
+
+    def test_synthetic_generator_does_not_touch_real_totals_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            test_path = os.path.join(directory, "totals_test_data.csv")
+            history_path = os.path.join(directory, "totals_history.csv")
+            with open(history_path, "w", encoding="utf-8") as file:
+                file.write("sentinel\nreal ledger must stay unchanged\n")
+            before = open(history_path, "rb").read()
+
+            with patch.object(generate_totals_test_data, "TEST_DATA_FILE", test_path), \\
+                 patch.object(generate_totals_test_data, "TOTALS_HISTORY_FILE", history_path, create=True):
+                result = generate_totals_test_data.add_totals_test_data()
+
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(result["rows_added"], 20)
+            self.assertTrue(os.path.exists(test_path))
+            self.assertEqual(open(history_path, "rb").read(), before)
+            generated = pd.read_csv(test_path)
+            self.assertTrue(generated["is_synthetic"].all())
+            self.assertTrue((generated["source"] == "synthetic_test").all())
 
 
 if __name__ == "__main__":
