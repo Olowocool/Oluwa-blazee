@@ -1291,7 +1291,8 @@ if data and "games" in data and len(data["games"]) > 0:
         totals_result = predict_game_total(
             home_team=game["home_team"],
             away_team=game["away_team"],
-            bookmaker_total=bookmaker_total
+            bookmaker_total=bookmaker_total,
+            game_date=active_date
         )
 
         ai_totals = totals_ai_prediction(
