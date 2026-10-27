@@ -1,5 +1,8 @@
 
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 
 from injury_impact_engine import get_injury_impact
@@ -48,6 +51,12 @@ def load_history():
         try:
             df = pd.read_csv(file)
 
+            if "game_date" not in df.columns:
+                for candidate in ["date", "GAME_DATE", "gameDate"]:
+                    if candidate in df.columns:
+                        df = df.rename(columns={candidate: "game_date"})
+                        break
+
             if not all(col in df.columns for col in required_score_cols):
                 continue
 
@@ -66,6 +75,13 @@ def load_history():
                     "away_score",
                 ]
             )
+
+            if df.empty:
+                continue
+
+            if "game_date" in df.columns:
+                df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce")
+                df = df.dropna(subset=["game_date"]).sort_values("game_date")
 
             if df.empty:
                 continue
@@ -226,8 +242,44 @@ def get_team_recent_stats(history_df, team_name):
     }
 
 
-def predict_game_total(home_team, away_team, bookmaker_total):
-    history_df = load_history()
+def _history_before_date(history_df, game_date):
+    """Return only games completed strictly before the target game date.
+
+    If no date is supplied, use today's Lagos calendar date as a safe cutoff.
+    This prevents accidental inclusion of future rows by older callers.
+    """
+    if history_df is None or history_df.empty:
+        return history_df
+
+    if game_date is None:
+        game_date = datetime.now(ZoneInfo("Africa/Lagos")).date().isoformat()
+
+    date_col = "game_date" if "game_date" in history_df.columns else (
+        "date" if "date" in history_df.columns else None
+    )
+    if date_col is None:
+        raise ValueError(
+            "Cannot enforce the historical cutoff: history has no game_date/date column."
+        )
+
+    cutoff = pd.to_datetime(game_date, errors="coerce")
+    if pd.isna(cutoff):
+        raise ValueError(f"Invalid target game date: {game_date!r}")
+
+    history = history_df.copy()
+    history[date_col] = pd.to_datetime(history[date_col], errors="coerce")
+    return history.loc[history[date_col].notna() & (history[date_col] < cutoff)].copy()
+
+
+def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, history_df=None):
+    # Even callers that omit a target date must not accidentally consume
+    # today's partial/future results. Historical callers must pass the actual
+    # target date explicitly; the frontend does this for selected games.
+    if game_date is None:
+        game_date = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
+
+    history_df = load_history() if history_df is None else history_df.copy()
+    history_df = _history_before_date(history_df, game_date)
 
     history_rows = len(history_df)
     history_columns = str(list(history_df.columns))
@@ -388,9 +440,12 @@ def predict_totals(
     away_team,
     sportsbook_total_line,
     history_df=None,
+    game_date=None,
 ):
     return predict_game_total(
         home_team=home_team,
         away_team=away_team,
         bookmaker_total=sportsbook_total_line,
+        game_date=game_date,
+        history_df=history_df,
     )

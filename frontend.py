@@ -1291,7 +1291,8 @@ if data and "games" in data and len(data["games"]) > 0:
         totals_result = predict_game_total(
             home_team=game["home_team"],
             away_team=game["away_team"],
-            bookmaker_total=bookmaker_total
+            bookmaker_total=bookmaker_total,
+            game_date=active_date
         )
 
         ai_totals = totals_ai_prediction(
@@ -1322,6 +1323,9 @@ if data and "games" in data and len(data["games"]) > 0:
                     f"{ai_totals['confidence']}%"
                 )
         
+        elif ai_totals["status"] == "disabled":
+            st.info(ai_totals["message"])
+
         points_col1, points_col2, points_col3 = st.columns(3)
 
         with points_col1:
