@@ -14,7 +14,7 @@ on:
 jobs:
   chronological-backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
       - name: Compile backtest module
         run: python -m py_compile totals_full_model_backtest.py
 
-      - name: Run chronological full-model backtest
+      - name: Run final chronological holdout and separate development ablation
         run: python totals_full_model_backtest.py
 
       - name: Upload backtest results
@@ -42,4 +42,6 @@ jobs:
           path: |
             outputs/totals_full_model_backtest_results.csv
             outputs/totals_full_model_backtest_summary.csv
+            outputs/totals_development_ablation_results.csv
+            outputs/totals_development_ablation_summary.csv
           if-no-files-found: error
