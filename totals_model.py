@@ -12,6 +12,20 @@ from points_engine import calculate_matchup_points, load_game_history
 NBA_AVG_TEAM_POINTS = 114
 
 
+def classify_total_edge(edge):
+    """Map the displayed, rounded total edge to one canonical recommendation."""
+    edge = round(float(edge), 2)
+    if edge >= 5:
+        return "Strong Over", "Strong Over edge"
+    if edge >= 2.5:
+        return "Lean Over", "Small Over edge"
+    if edge <= -5:
+        return "Strong Under", "Strong Under edge"
+    if edge <= -2.5:
+        return "Lean Under", "Small Under edge"
+    return "No Bet", "Edge too small"
+
+
 def safe_mean(values, default=114):
     try:
         values = pd.Series(values).dropna()
@@ -291,9 +305,11 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         bookmaker_total=bookmaker_total,
     )
 
-    projected_home_points = points_data["projected_home_points"]
-    projected_away_points = points_data["projected_away_points"]
-    raw_projected_total = points_data["projected_total"]
+    points_engine_home_points = float(points_data["projected_home_points"])
+    points_engine_away_points = float(points_data["projected_away_points"])
+    # Points Engine baseline already includes H2H and its rest adjustment.
+    # The final model must not add the rest adjustment to the total twice.
+    raw_projected_total = float(points_data["projected_total"])
 
     home_stats = get_team_recent_stats(history_df, home_team)
     away_stats = get_team_recent_stats(history_df, away_team)
@@ -347,33 +363,46 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
     away_injury_penalty = injury_data["away_injury_penalty"]
     injury_adjustment = injury_data["injury_adjustment"]
 
-    projected_total = (
-        raw_projected_total
-        + pace_adjustment
-        + offensive_adjustment
+    # Apply each additional effect once. rest_adjustment is already included
+    # in raw_projected_total by Points Engine, so it is not added again here.
+    non_pace_adjustment = (
+        offensive_adjustment
         + defensive_adjustment
         + home_away_adjustment
-        + rest_adjustment
         + injury_adjustment
     )
+    projected_total = round(
+        raw_projected_total + pace_adjustment + non_pace_adjustment,
+        2,
+    )
+    bookmaker_total = round(float(bookmaker_total), 2)
 
-    edge = projected_total - float(bookmaker_total)
+    # Split total-only effects into team projections. Where a factor has a
+    # natural team attribution, assign it to the affected team:
+    # - home offense contributes to home points;
+    # - away defense (points allowed) contributes to home points;
+    # - venue splits are assigned to their corresponding team.
+    home_model_adjustment = (
+        (home_offensive_rating - NBA_AVG_TEAM_POINTS) * 0.15
+        + (away_defensive_rating - NBA_AVG_TEAM_POINTS) * 0.15
+        + home_split_advantage * 0.12
+        + pace_adjustment / 2
+        + rest_adjustment / 2
+        + injury_adjustment / 2
+    )
+    projected_home_points = round(
+        points_engine_home_points + home_model_adjustment, 2
+    )
+    # Derive away points from the canonical final total so the displayed team
+    # projections sum exactly to the displayed projected total, including
+    # any cent-level rounding residual.
+    projected_away_points = round(
+        projected_total - projected_home_points, 2
+    )
 
-    if edge >= 5:
-        recommendation = "Strong Over"
-        confidence_note = "Strong Over edge"
-    elif edge >= 2.5:
-        recommendation = "Lean Over"
-        confidence_note = "Small Over edge"
-    elif edge <= -5:
-        recommendation = "Strong Under"
-        confidence_note = "Strong Under edge"
-    elif edge <= -2.5:
-        recommendation = "Lean Under"
-        confidence_note = "Small Under edge"
-    else:
-        recommendation = "No Bet"
-        confidence_note = "Edge too small"
+    edge = round(projected_total - bookmaker_total, 2)
+
+    recommendation, confidence_note = classify_total_edge(edge)
 
     return {
         "history_rows": history_rows,
@@ -388,9 +417,13 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         "raw_projected_total": round(raw_projected_total, 2),
         "projected_home_points": round(projected_home_points, 2),
         "projected_away_points": round(projected_away_points, 2),
-        "points_engine_home_points": points_data["projected_home_points"],
-        "points_engine_away_points": points_data["projected_away_points"],
-        "points_engine_total": points_data["projected_total"],
+        "points_engine_home_points": round(points_engine_home_points, 2),
+        "points_engine_away_points": round(points_engine_away_points, 2),
+        "home_model_adjustment": round(projected_home_points - points_engine_home_points, 2),
+        "away_model_adjustment": round(projected_away_points - points_engine_away_points, 2),
+        "points_engine_total": round(raw_projected_total, 2),
+        "non_pace_adjustment": round(non_pace_adjustment, 2),
+        "total_adjustment_after_baseline": round(projected_total - raw_projected_total, 2),
         "points_engine_h2h_average_total": points_data["h2h_average_total"],
         "points_engine_h2h_adjustment": points_data["h2h_adjustment"],
         "points_engine_h2h_games_used": points_data["h2h_games_used"],
