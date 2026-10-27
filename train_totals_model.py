@@ -10,14 +10,14 @@ from sklearn.metrics import accuracy_score
 DATA_FILE = "totals_learning_dataset.csv"
 MODEL_FILE = "models/totals_model_v2.joblib"
 
+# Only information known before the game/bet is graded.
+# actual_total and profit_loss are post-game outcomes and must never be predictors.
 FEATURES = [
     "projected_total",
     "sportsbook_total",
     "edge",
-    "actual_total",
     "is_under",
     "is_over",
-    "profit_loss"
 ]
 
 
@@ -37,8 +37,27 @@ def train_totals_model():
             "message": f"Need at least 20 graded totals rows. Current: {len(df)}"
         }
 
-    X = df[FEATURES].fillna(0)
-    y = df["target"]
+    missing = [column for column in FEATURES + ["target"] if column not in df.columns]
+    if missing:
+        return {
+            "status": "error",
+            "message": f"Training data is missing required columns: {missing}"
+        }
+
+    # Fail closed if the history contains only one class or too few examples
+    # per class for a stratified train/test split.
+    y = pd.to_numeric(df["target"], errors="coerce")
+    valid = y.isin([0, 1])
+    df = df.loc[valid].copy()
+    y = y.loc[valid].astype(int)
+
+    if y.nunique() != 2 or y.value_counts().min() < 2:
+        return {
+            "status": "error",
+            "message": "Training requires both win/loss classes with at least two rows per class."
+        }
+
+    X = df[FEATURES].apply(pd.to_numeric, errors="coerce").fillna(0)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
