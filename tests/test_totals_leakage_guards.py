@@ -135,9 +135,9 @@ class TotalsLeakageGuardTests(unittest.TestCase):
             model_path = os.path.join(directory, "model.joblib")
             pd.DataFrame(rows).to_csv(data_path, index=False)
 
-            with patch.object(train_totals_model, "DATA_FILE", data_path), \\
-                 patch.object(train_totals_model, "MODEL_FILE", model_path):
-                result = train_totals_model.train_totals_model()
+            with patch.object(train_totals_model, "DATA_FILE", data_path):
+                with patch.object(train_totals_model, "MODEL_FILE", model_path):
+                    result = train_totals_model.train_totals_model()
 
             self.assertEqual(result["status"], "success")
             self.assertLess(result["training_through"], result["holdout_from"])
@@ -154,16 +154,18 @@ class TotalsLeakageGuardTests(unittest.TestCase):
             history_path = os.path.join(directory, "totals_history.csv")
             with open(history_path, "w", encoding="utf-8") as file:
                 file.write("sentinel\nreal ledger must stay unchanged\n")
-            before = open(history_path, "rb").read()
+            with open(history_path, "rb") as file:
+                before = file.read()
 
-            with patch.object(generate_totals_test_data, "TEST_DATA_FILE", test_path), \\
-                 patch.object(generate_totals_test_data, "TOTALS_HISTORY_FILE", history_path, create=True):
-                result = generate_totals_test_data.add_totals_test_data()
+            with patch.object(generate_totals_test_data, "TEST_DATA_FILE", test_path):
+                with patch.object(generate_totals_test_data, "TOTALS_HISTORY_FILE", history_path, create=True):
+                    result = generate_totals_test_data.add_totals_test_data()
 
             self.assertEqual(result["status"], "success")
             self.assertEqual(result["rows_added"], 20)
             self.assertTrue(os.path.exists(test_path))
-            self.assertEqual(open(history_path, "rb").read(), before)
+            with open(history_path, "rb") as file:
+                self.assertEqual(file.read(), before)
             generated = pd.read_csv(test_path)
             self.assertTrue(generated["is_synthetic"].all())
             self.assertTrue((generated["source"] == "synthetic_test").all())
