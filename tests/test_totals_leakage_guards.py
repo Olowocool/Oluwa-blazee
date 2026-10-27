@@ -25,6 +25,19 @@ class TotalsLeakageGuardTests(unittest.TestCase):
         actual = totals_model._history_before_date(history, "10/27/2026")
         self.assertEqual(pd.to_datetime(actual["game_date"]).dt.strftime("%Y-%m-%d").tolist(), ["2026-10-20", "2026-10-26"])
 
+
+    def test_missing_target_date_defaults_to_lagos_today_cutoff(self):
+        history = pd.DataFrame({
+            "game_date": ["1900-01-01", "2999-01-01"],
+            "home_team": ["A", "B"],
+            "away_team": ["E", "F"],
+            "home_score": [100, 101],
+            "away_score": [99, 98],
+        })
+        actual = totals_model._history_before_date(history, None)
+        dates = pd.to_datetime(actual["game_date"]).dt.strftime("%Y-%m-%d").tolist()
+        self.assertEqual(dates, ["1900-01-01"])
+
     def test_historical_cutoff_fails_closed_for_missing_date_column(self):
         history = pd.DataFrame({"home_team": ["A"], "away_team": ["B"]})
         with self.assertRaisesRegex(ValueError, "no game_date/date column"):
