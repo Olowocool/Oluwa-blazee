@@ -3,6 +3,7 @@ import unittest
 import pandas as pd
 
 from totals_full_model_backtest import (
+    build_ablation_predictions,
     history_strictly_before,
     prepare_backtest_history,
     regression_metrics,
@@ -46,7 +47,6 @@ class ChronologicalTotalsBacktestTests(unittest.TestCase):
         )
         self.assertTrue((prior["game_date"] < pd.Timestamp("2026-10-27")).all())
 
-
     def test_rest_days_use_target_date_not_gap_between_prior_games(self):
         history = prepare_backtest_history(pd.DataFrame({
             "game_date": ["2026-10-20", "2026-10-25"],
@@ -74,6 +74,33 @@ class ChronologicalTotalsBacktestTests(unittest.TestCase):
             calculate_team_rest_days("Lakers", history, game_date="2026-10-26"),
             0,
         )
+
+    def test_ablation_predictions_remove_or_add_only_selected_component(self):
+        baseline = 220.0
+        full_prediction = {
+            "projected_total": 225.0,
+            "pace_adjustment": 2.0,
+            "offensive_adjustment": 1.5,
+            "defensive_adjustment": -0.5,
+            "home_away_adjustment": 2.0,
+        }
+
+        predictions, components = build_ablation_predictions(
+            baseline,
+            full_prediction,
+        )
+
+        self.assertEqual(predictions["points_engine_projected_total"], 220.0)
+        self.assertEqual(predictions["full_model_projected_total"], 225.0)
+        self.assertEqual(predictions["full_without_pace_total"], 223.0)
+        self.assertEqual(predictions["full_without_offense_total"], 223.5)
+        self.assertEqual(predictions["full_without_defense_total"], 225.5)
+        self.assertEqual(predictions["full_without_venue_total"], 223.0)
+        self.assertEqual(predictions["baseline_plus_pace_total"], 222.0)
+        self.assertEqual(predictions["baseline_plus_offense_total"], 221.5)
+        self.assertEqual(predictions["baseline_plus_defense_total"], 219.5)
+        self.assertEqual(predictions["baseline_plus_venue_total"], 222.0)
+        self.assertEqual(components["venue"], 2.0)
 
     def test_metrics_calculate_errors_and_hit_ranges(self):
         metrics = regression_metrics(
