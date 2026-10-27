@@ -22,7 +22,7 @@ class TotalsLeakageGuardTests(unittest.TestCase):
             "away_score": [99, 98, 97, 96],
         })
         actual = totals_model._history_before_date(history, "10/27/2026")
-        self.assertEqual(actual["game_date"].tolist(), ["2026-10-20", "2026-10-26"])
+        self.assertEqual(pd.to_datetime(actual["game_date"]).dt.strftime("%Y-%m-%d").tolist(), ["2026-10-20", "2026-10-26"])
 
     def test_historical_cutoff_fails_closed_for_missing_date_column(self):
         history = pd.DataFrame({"home_team": ["A"], "away_team": ["B"]})
