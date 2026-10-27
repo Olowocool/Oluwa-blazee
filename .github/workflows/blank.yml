@@ -27,7 +27,7 @@ jobs:
 
       - name: Compile changed Python modules
         run: |
-          python -m py_compile totals_model.py totals_ai_predictor.py totals_auto_learning.py train_totals_model.py best_bet_selector_v2.py generate_totals_test_data.py frontend.py totals_full_model_backtest.py tests/test_totals_leakage_guards.py tests/test_totals_projection_reconciliation.py tests/test_totals_chronological_backtest.py
+          python -m py_compile points_engine.py totals_model.py totals_backtest.py totals_ai_predictor.py totals_auto_learning.py train_totals_model.py best_bet_selector_v2.py generate_totals_test_data.py frontend.py totals_full_model_backtest.py tests/test_totals_leakage_guards.py tests/test_totals_projection_reconciliation.py tests/test_totals_chronological_backtest.py
 
       - name: Run totals leakage guard tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
