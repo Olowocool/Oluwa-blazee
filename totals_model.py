@@ -159,7 +159,7 @@ def default_team_stats():
     }
 
 
-def get_team_recent_stats(history_df, team_name):
+def get_team_recent_stats(history_df, team_name, game_date=None):
     if history_df is None or history_df.empty:
         return default_team_stats()
 
@@ -210,14 +210,21 @@ def get_team_recent_stats(history_df, team_name):
     recent_games = team_games.tail(10)
 
     rest_days = 1
-    if "game_date" in team_games.columns and len(team_games) >= 2:
+    if "game_date" in team_games.columns:
         try:
-            latest_game = team_games.iloc[-1]["game_date"]
-            previous_game = team_games.iloc[-2]["game_date"]
-            rest_days = max(
-                0,
-                min(3, int((latest_game - previous_game).days) - 1),
-            )
+            if game_date is None:
+                target_date = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
+            else:
+                target_date = pd.to_datetime(game_date, errors="coerce")
+                if pd.isna(target_date):
+                    raise ValueError(f"Invalid target game date: {game_date!r}")
+                if getattr(target_date, "tzinfo", None) is not None:
+                    target_date = target_date.tz_convert("Africa/Lagos").tz_localize(None)
+                target_date = target_date.normalize()
+
+            latest_game = team_games.iloc[-1]["game_date"].normalize()
+            days_since_last_game = int((target_date - latest_game).days)
+            rest_days = max(0, min(3, days_since_last_game - 1))
         except Exception:
             rest_days = 1
 
@@ -303,6 +310,7 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         away_team=away_team,
         history_df=history_df,
         bookmaker_total=bookmaker_total,
+        game_date=game_date,
     )
 
     points_engine_home_points = float(points_data["projected_home_points"])
@@ -311,8 +319,8 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
     # The final model must not add the rest adjustment to the total twice.
     raw_projected_total = float(points_data["projected_total"])
 
-    home_stats = get_team_recent_stats(history_df, home_team)
-    away_stats = get_team_recent_stats(history_df, away_team)
+    home_stats = get_team_recent_stats(history_df, home_team, game_date)
+    away_stats = get_team_recent_stats(history_df, away_team, game_date)
 
     pace_data = calculate_matchup_pace(
         history_df, home_team, away_team
