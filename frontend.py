@@ -1323,6 +1323,9 @@ if data and "games" in data and len(data["games"]) > 0:
                     f"{ai_totals['confidence']}%"
                 )
         
+        elif ai_totals["status"] == "disabled":
+            st.info(ai_totals["message"])
+
         points_col1, points_col2, points_col3 = st.columns(3)
 
         with points_col1:
