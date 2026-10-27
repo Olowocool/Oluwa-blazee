@@ -7,6 +7,8 @@ from totals_full_model_backtest import (
     prepare_backtest_history,
     regression_metrics,
 )
+from points_engine import calculate_team_rest_days
+from totals_model import get_team_recent_stats
 
 
 class ChronologicalTotalsBacktestTests(unittest.TestCase):
@@ -43,6 +45,35 @@ class ChronologicalTotalsBacktestTests(unittest.TestCase):
             ["2026-10-20", "2026-10-26"],
         )
         self.assertTrue((prior["game_date"] < pd.Timestamp("2026-10-27")).all())
+
+
+    def test_rest_days_use_target_date_not_gap_between_prior_games(self):
+        history = prepare_backtest_history(pd.DataFrame({
+            "game_date": ["2026-10-20", "2026-10-25"],
+            "home_team": ["Lakers", "Bulls"],
+            "away_team": ["Bulls", "Lakers"],
+            "home_score": [110, 105],
+            "away_score": [100, 99],
+        }))
+
+        # Lakers last played Oct 25. For an Oct 27 game, Oct 26 is one rest day.
+        # The old implementation incorrectly used the gap between Oct 20 and Oct 25.
+        self.assertEqual(
+            calculate_team_rest_days("Lakers", history, game_date="2026-10-27"),
+            1,
+        )
+        stats = get_team_recent_stats(
+            history,
+            "Lakers",
+            game_date="2026-10-27",
+        )
+        self.assertEqual(stats["rest_days"], 1)
+
+        # A game the day immediately following Oct 25 gives zero rest days.
+        self.assertEqual(
+            calculate_team_rest_days("Lakers", history, game_date="2026-10-26"),
+            0,
+        )
 
     def test_metrics_calculate_errors_and_hit_ranges(self):
         metrics = regression_metrics(
