@@ -1295,6 +1295,17 @@ if data and "games" in data and len(data["games"]) > 0:
             game_date=active_date
         )
 
+        if not totals_result.get("experimental_adjustments_applied", False):
+            st.info(
+                "Totals reliability safeguard: the official projection, edge, and "
+                "recommendation use the Points Engine baseline. Experimental pace, "
+                "offense, defense, and venue adjustments are diagnostic only."
+            )
+            st.caption(
+                "Experimental adjusted total (not used for the pick): "
+                f"{totals_result.get('experimental_projected_total', 'N/A')}"
+            )
+
         ai_totals = totals_ai_prediction(
             projected_total=totals_result["projected_total"],
             sportsbook_total=totals_result["bookmaker_total"],
@@ -1374,13 +1385,13 @@ if data and "games" in data and len(data["games"]) > 0:
 
         with pace_col1:
             st.metric(
-                "Non-Pace Adjustments",
+                "Experimental Non-Pace Adjustment",
                 totals_result["non_pace_adjustment"]
             )
         
         with pace_col2:
             st.metric(
-                "Pace Adjustment",
+                "Experimental Pace Adjustment",
                 totals_result["pace_adjustment"]
             )
         
