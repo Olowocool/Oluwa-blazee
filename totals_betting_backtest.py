@@ -128,7 +128,8 @@ def prepare_score_history(history: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("Historical score file has no valid completed games.")
 
     # Always compute totals from final scores, not from a possibly stale column.
-    df["actual_total"] = df["home_score"] + df["away_score"]
+    df["total_score"] = df["home_score"] + df["away_score"]
+    df["actual_total"] = df["total_score"]
     df["_game_key"] = [
         game_key(date, home, away)
         for date, home, away in zip(df["game_date"], df["home_team"], df["away_team"])
@@ -213,7 +214,7 @@ def prepare_market_snapshots(
         selected = df["bookmaker"].str.casefold() == bookmaker.strip().casefold()
         df = df.loc[selected].copy()
         if df.empty:
-            available = sorted(snapshots.get("bookmaker", pd.Series(dtype=str)).dropna().astype(str).unique())
+            available = sorted(df["bookmaker"].dropna().astype(str).unique())
             raise ValueError(
                 f"Bookmaker {bookmaker!r} was not found. Available values: {available}"
             )
