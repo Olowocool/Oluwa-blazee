@@ -384,8 +384,9 @@ def settle_total_bet(
 
     win = actual_total > line if side == "Over" else actual_total < line
     if win:
-        return "Win", float(stake_units) * (float(decimal_odds) - 1.0), float(stake_units)
-    return "Loss", -float(stake_units), float(stake_units)
+        profit = round(float(stake_units) * (float(decimal_odds) - 1.0), 6)
+        return "Win", profit, float(stake_units)
+    return "Loss", round(-float(stake_units), 6), float(stake_units)
 
 
 def side_adjusted_clv(side: str | None, entry_total: float, closing_total: float) -> float:
