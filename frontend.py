@@ -1377,9 +1377,14 @@ if data and "games" in data and len(data["games"]) > 0:
                 totals_result["edge"]
             )
         
+        st.warning(
+            "Betting validation pending: historical bookmaker-line/odds backtesting "
+            "and ROI validation are not yet complete. Treat this totals signal as "
+            "research-only, not as an actionable betting recommendation."
+        )
         st.info(
-            f"Recommendation: {totals_result['recommendation']} — "
-            f"{totals_result['confidence_note']}"
+            f"Provisional model signal (not betting-validated): "
+            f"{totals_result['recommendation']} — {totals_result['confidence_note']}"
         )
         pace_col1, pace_col2, pace_col3 = st.columns(3)
 
