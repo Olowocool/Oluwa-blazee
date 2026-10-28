@@ -265,7 +265,7 @@ def _read_market_archive(path: Path) -> list[dict[str, Any]]:
 def _is_missing(value: Any) -> bool:
     if value is None:
         return True
-    if isinstance(value, str) and not value.strip():
+    if isinstance(value, str) and value.strip().casefold() in {"", "nan", "none", "null"}:
         return True
     try:
         return bool(pd.isna(value))
