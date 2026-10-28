@@ -1,4 +1,4 @@
-"""Chronological score backtests for the NBA totals model.
+"""Chronological score backtests for the baseline and experimental totals model.
 
 The latest window is kept as the final holdout. Component ablation runs on the
 1,000 games immediately before that window and must not be used as a final
