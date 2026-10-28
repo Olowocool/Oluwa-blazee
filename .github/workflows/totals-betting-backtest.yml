@@ -21,11 +21,18 @@ on:
     branches: ["main"]
     paths:
       - "totals_betting_backtest.py"
+      - "collect_historical_totals_odds.py"
+      - "tests/test_historical_totals_odds_collector.py"
       - "data/historical_totals_market_snapshots.csv"
       - ".github/workflows/totals-betting-backtest.yml"
   pull_request:
     branches: ["main"]
     paths:
+      - "totals_betting_backtest.py"
+      - "collect_historical_totals_odds.py"
+      - "tests/test_totals_betting_backtest.py"
+      - "tests/test_historical_totals_odds_collector.py"
+      - ".github/workflows/totals-betting-backtest.yml"
       - "data/historical_totals_market_snapshots.csv"
 
 permissions:
@@ -50,10 +57,13 @@ jobs:
           python -m pip install numpy pandas
 
       - name: Compile betting backtest
-        run: python -m py_compile totals_betting_backtest.py tests/test_totals_betting_backtest.py
+        run: python -m py_compile totals_betting_backtest.py collect_historical_totals_odds.py tests/test_totals_betting_backtest.py tests/test_historical_totals_odds_collector.py
 
       - name: Run deterministic betting backtest tests
         run: python -m unittest discover -s tests -p "test_totals_betting_backtest.py" -v
+
+      - name: Run historical market collector tests
+        run: python -m unittest discover -s tests -p "test_historical_totals_odds_collector.py" -v
 
       - name: Run real historical-market backtest when market data is present
         env:
