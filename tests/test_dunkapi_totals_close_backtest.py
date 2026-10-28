@@ -123,6 +123,22 @@ class DunkAPITotalsCloseBacktestTests(unittest.TestCase):
         self.assertEqual(rows, [])
         self.assertEqual(diag["games_missing_close_line_or_prices"], 1)
 
+    def test_parser_allows_missing_open_total_without_fabricating_it(self):
+        payload = daily_payload()
+        payload["games"][0]["books"][0]["total_open"] = None
+        rows, _ = bt.parse_daily_payload(payload, date(2025, 11, 21), "DraftKings")
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(pd.isna(rows[0]["total_open"]))
+        self.assertEqual(rows[0]["total_close"], 221.5)
+
+    def test_archive_merge_can_enrich_missing_open_total(self):
+        rows, _ = bt.parse_daily_payload(daily_payload(), date(2025, 11, 21), "DraftKings")
+        with_missing_open = dict(rows[0])
+        with_missing_open["total_open"] = float("nan")
+        self.assertTrue(pd.isna(bt.merge_market_rows([], [with_missing_open])[0]["total_open"]))
+        merged = bt.merge_market_rows([with_missing_open], rows)
+        self.assertEqual(merged[0]["total_open"], 224.5)
+
     def test_merge_is_idempotent_and_conflicts_fail(self):
         rows, _ = bt.parse_daily_payload(daily_payload(), date(2025, 11, 21), "DraftKings")
         self.assertEqual(len(bt.merge_market_rows(rows, rows)), 1)
