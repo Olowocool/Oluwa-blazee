@@ -262,6 +262,17 @@ def _read_market_archive(path: Path) -> list[dict[str, Any]]:
         return list(reader)
 
 
+def _is_missing(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
 def merge_market_rows(
     existing: list[dict[str, Any]],
     new_rows: list[dict[str, Any]],
@@ -281,17 +292,18 @@ def merge_market_rows(
             "over_odds_american", "under_odds_american", "actual_home_points", "actual_away_points",
         ]:
             a, b = old.get(field), row.get(field)
-            if a not in (None, "") and b not in (None, ""):
-                try:
-                    equal = float(a) == float(b)
-                except (ValueError, TypeError):
-                    equal = str(a).strip().casefold() == str(b).strip().casefold()
-                if not equal:
-                    raise ValueError(
-                        f"Conflicting historical market data for game {key[0]}, bookmaker {key[1]}, field {field}."
-                    )
+            if _is_missing(a) or _is_missing(b):
+                continue
+            try:
+                equal = float(a) == float(b)
+            except (ValueError, TypeError):
+                equal = str(a).strip().casefold() == str(b).strip().casefold()
+            if not equal:
+                raise ValueError(
+                    f"Conflicting historical market data for game {key[0]}, bookmaker {key[1]}, field {field}."
+                )
         for field, value in row.items():
-            if old.get(field) in (None, "") and value not in (None, ""):
+            if _is_missing(old.get(field)) and not _is_missing(value):
                 old[field] = value
 
     return sorted(merged.values(), key=lambda r: (str(r.get("game_date", "")), str(r.get("game_id", ""))))
@@ -443,7 +455,9 @@ def _reserved_holdout_start(games: pd.DataFrame, holdout_games: int) -> pd.Times
 
 
 def _score_split(results: pd.DataFrame, split: str, strategy: str) -> dict[str, Any]:
-    subset = results.loc[results["evaluation_split"] == split].copy()
+    subset = results.copy() if split == "all_games" else results.loc[
+        results["evaluation_split"] == split
+    ].copy()
     if strategy == "all_qualifying_edges":
         bets = subset.loc[subset["bet_side"].isin(["Over", "Under"])]
     elif strategy == "strong_only":
