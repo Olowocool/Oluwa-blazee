@@ -201,8 +201,7 @@ def parse_daily_payload(
             or under_american is None
             or over_american == 0
             or under_american == 0
-            or total_open is None
-            or total_open <= 0
+            or (total_open is not None and total_open <= 0)
         ):
             missing_market_rows += 1
             continue
@@ -222,7 +221,7 @@ def parse_daily_payload(
             "home_team": home_team,
             "away_team": away_team,
             "bookmaker": str(book.get("provider") or bookmaker).strip(),
-            "total_open": float(total_open),
+            "total_open": float(total_open) if total_open is not None else np.nan,
             "total_close": float(total_close),
             "over_odds_american": float(over_american),
             "under_odds_american": float(under_american),
@@ -522,10 +521,14 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
     ]:
         market[col] = pd.to_numeric(market[col], errors="coerce")
 
-    market = market.dropna(subset=required_market).copy()
+    market = market.dropna(subset=[
+        "game_id", "game_date", "home_team", "away_team", "bookmaker",
+        "total_close", "over_odds_decimal", "under_odds_decimal",
+        "actual_home_points", "actual_away_points", "actual_total",
+    ]).copy()
     market = market[
         (market["total_close"] > 0)
-        & (market["total_open"] > 0)
+        & (market["total_open"].isna() | (market["total_open"] > 0))
         & (market["over_odds_decimal"] > 1)
         & (market["under_odds_decimal"] > 1)
         & (market["actual_home_points"] > 0)
@@ -630,7 +633,7 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
             "bet_outcome": outcome,
             "stake_units": stake_at_risk,
             "profit_units": profit,
-            "market_line_move_points": round(close_line - float(game["total_open"]), 2),
+            "market_line_move_points": (round(close_line - float(game["total_open"]), 2) if pd.notna(game["total_open"]) else np.nan),
             "experimental_adjustments_applied": False,
             "entry_timestamp_utc": "",
             "bet_level_clv_points": np.nan,
