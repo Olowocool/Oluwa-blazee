@@ -1,0 +1,96 @@
+name: Historical totals betting backtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      bookmaker:
+        description: Exact bookmaker name; leave blank only when data has one book
+        required: false
+        type: string
+      holdout_games:
+        description: Most recent chronological holdout game count
+        required: false
+        default: "1000"
+        type: string
+      entry_minutes:
+        description: Required minutes between entry snapshot and tipoff
+        required: false
+        default: "60"
+        type: string
+  push:
+    branches: ["main"]
+    paths:
+      - "totals_betting_backtest.py"
+      - "data/historical_totals_market_snapshots.csv"
+      - ".github/workflows/totals-betting-backtest.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "data/historical_totals_market_snapshots.csv"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backtest dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy pandas
+
+      - name: Compile betting backtest
+        run: python -m py_compile totals_betting_backtest.py tests/test_totals_betting_backtest.py
+
+      - name: Run deterministic betting backtest tests
+        run: python -m unittest discover -s tests -p "test_totals_betting_backtest.py" -v
+
+      - name: Run real historical-market backtest when market data is present
+        env:
+          BOOKMAKER: \${{ github.event.inputs.bookmaker || '' }}
+          HOLDOUT_GAMES: \${{ github.event.inputs.holdout_games || '1000' }}
+          ENTRY_MINUTES: \${{ github.event.inputs.entry_minutes || '60' }}
+        run: |
+          if [ ! -s data/historical_totals_market_snapshots.csv ]; then
+            echo "::warning::No historical totals market archive is present. Unit tests passed, but betting ROI/CLV cannot be calculated until real timestamped Over/Under prices are supplied."
+            exit 0
+          fi
+
+          python - <<'PY'
+          import os
+          import subprocess
+          import sys
+
+          args = [
+              sys.executable,
+              "totals_betting_backtest.py",
+              "--odds-file", "data/historical_totals_market_snapshots.csv",
+              "--entry-minutes", os.environ.get("ENTRY_MINUTES", "60"),
+              "--holdout-games", os.environ.get("HOLDOUT_GAMES", "1000"),
+          ]
+          bookmaker = os.environ.get("BOOKMAKER", "").strip()
+          if bookmaker:
+              args.extend(["--bookmaker", bookmaker])
+          subprocess.run(args, check=True)
+          PY
+
+      - name: Upload real backtest outputs
+        if: hashFiles('outputs/totals_betting_backtest_results.csv') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: totals-betting-backtest
+          path: |
+            outputs/totals_betting_backtest_results.csv
+            outputs/totals_betting_backtest_summary.csv
+            outputs/totals_betting_backtest_data_quality.json
+          if-no-files-found: error
