@@ -15,7 +15,7 @@ from collect_historical_totals_odds import (
 )
 
 
-def payload(snapshot="2025-01-01T23:25:00Z", commence="2025-01-02T00:30:00Z"):
+def payload(snapshot="2025-01-01T20:55:00Z", commence="2025-01-02T00:30:00Z"):
     return {
         "timestamp": snapshot,
         "data": [
@@ -28,11 +28,11 @@ def payload(snapshot="2025-01-01T23:25:00Z", commence="2025-01-02T00:30:00Z"):
                     {
                         "key": "draftkings",
                         "title": "DraftKings",
-                        "last_update": "2025-01-01T23:24:00Z",
+                        "last_update": "2025-01-01T20:54:00Z",
                         "markets": [
                             {
                                 "key": "totals",
-                                "last_update": "2025-01-01T23:24:00Z",
+                                "last_update": "2025-01-01T20:54:00Z",
                                 "outcomes": [
                                     {"name": "Over", "price": 1.91, "point": 220.5},
                                     {"name": "Under", "price": 1.95, "point": 220.5},
@@ -44,7 +44,7 @@ def payload(snapshot="2025-01-01T23:25:00Z", commence="2025-01-02T00:30:00Z"):
             },
             {
                 "id": "event-live",
-                "commence_time": "2025-01-01T23:20:00Z",
+                "commence_time": "2025-01-01T20:30:00Z",
                 "home_team": "Boston Celtics",
                 "away_team": "New York Knicks",
                 "bookmakers": [
@@ -105,7 +105,7 @@ class HistoricalTotalsOddsCollectorTests(unittest.TestCase):
         row = rows[0]
         # 00:30 UTC Jan 2 is 19:30 ET Jan 1.
         self.assertEqual(row["game_date"], "2025-01-01")
-        self.assertEqual(row["snapshot_timestamp_utc"], "2025-01-01T23:25:00Z")
+        self.assertEqual(row["snapshot_timestamp_utc"], "2025-01-01T20:55:00Z")
         self.assertEqual(row["commence_time_utc"], "2025-01-02T00:30:00Z")
         self.assertEqual(row["bookmaker"], "DraftKings")
         self.assertEqual(row["bookmaker_key"], "draftkings")
@@ -214,7 +214,7 @@ class HistoricalTotalsOddsCollectorTests(unittest.TestCase):
                 rows = list(__import__("csv").DictReader(handle))
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["bookmaker_key"], "draftkings")
-            self.assertEqual(rows[0]["snapshot_timestamp_utc"], "2025-01-01T23:25:00Z")
+            self.assertEqual(rows[0]["snapshot_timestamp_utc"], "2025-01-01T20:55:00Z")
             self.assertNotIn("secret-do-not-log", Path(output).read_text(encoding="utf-8"))
 
 
