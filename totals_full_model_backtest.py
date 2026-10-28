@@ -30,7 +30,7 @@ SAFE_BOOKMAKER_PLACEHOLDER = 228.0
 
 PREDICTION_COLUMNS = {
     "Points Engine baseline": "points_engine_projected_total",
-    "Full totals model": "full_model_projected_total",
+    "Experimental full totals model": "full_model_projected_total",
     "Full model minus pace": "full_without_pace_total",
     "Full model minus offense": "full_without_offense_total",
     "Full model minus defense": "full_without_defense_total",
@@ -206,6 +206,7 @@ def _evaluate_full_model_window(history, test_history, output_path, min_prior_ga
                     bookmaker_total=SAFE_BOOKMAKER_PLACEHOLDER,
                     game_date=target_date,
                     history_df=prior,
+                    apply_experimental_adjustments=True,
                 )
                 points_prediction = calculate_matchup_points(
                     home_team=home_team,
