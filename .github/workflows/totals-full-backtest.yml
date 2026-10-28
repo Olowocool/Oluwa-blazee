@@ -1,0 +1,47 @@
+name: Full totals chronological backtest
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "totals_full_model_backtest.py"
+      - "totals_model.py"
+      - "points_engine.py"
+      - "pace_engine.py"
+      - "data/historical_nba_scores.csv"
+      - ".github/workflows/totals-full-backtest.yml"
+
+jobs:
+  chronological-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backtest dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy pandas
+
+      - name: Compile backtest module
+        run: python -m py_compile totals_full_model_backtest.py
+
+      - name: Run final chronological holdout and separate development ablation
+        run: python totals_full_model_backtest.py
+
+      - name: Upload backtest results
+        uses: actions/upload-artifact@v4
+        with:
+          name: totals-full-model-backtest
+          path: |
+            outputs/totals_full_model_backtest_results.csv
+            outputs/totals_full_model_backtest_summary.csv
+            outputs/totals_development_ablation_results.csv
+            outputs/totals_development_ablation_summary.csv
+          if-no-files-found: error

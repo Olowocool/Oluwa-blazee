@@ -59,7 +59,7 @@ def load_backtest_history():
     return df.reset_index(drop=True)
 
 
-def predict_with_past_only(prior_games, home_team, away_team):
+def predict_with_past_only(prior_games, home_team, away_team, game_date):
     """
     Use the existing points engine, passing only games before the target date.
     The full totals_model is deliberately not called because its other
@@ -70,6 +70,7 @@ def predict_with_past_only(prior_games, home_team, away_team):
         away_team=away_team,
         history_df=prior_games,
         bookmaker_total=None,
+        game_date=game_date,
     )
 
 
@@ -106,7 +107,7 @@ def run_backtest():
 
             try:
                 prediction = predict_with_past_only(
-                    prior_games, home_team, away_team
+                    prior_games, home_team, away_team, date
                 )
                 projected_total = float(prediction["projected_total"])
                 projected_home = float(prediction["projected_home_points"])
