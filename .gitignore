@@ -113,3 +113,7 @@ data/historical_totals_market_snapshots.csv
 outputs/totals_betting_backtest_results.csv
 outputs/totals_betting_backtest_summary.csv
 outputs/totals_betting_backtest_data_quality.json
+data/dunkapi_historical_totals.csv
+outputs/totals_closing_line_backtest_results.csv
+outputs/totals_closing_line_backtest_summary.csv
+outputs/totals_closing_line_backtest_data_quality.json
