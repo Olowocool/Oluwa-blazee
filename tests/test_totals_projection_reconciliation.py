@@ -72,7 +72,7 @@ class TotalsProjectionReconciliationTests(unittest.TestCase):
 
         with patch("totals_model.load_history", return_value=history), \
              patch("totals_model.calculate_matchup_points", return_value=points_data), \
-             patch("totals_model.get_team_recent_stats", side_effect=[home_stats, away_stats]), \
+             patch("totals_model.get_team_recent_stats", side_effect=lambda history_df, team, game_date: home_stats if team == "Home" else away_stats), \
              patch("totals_model.calculate_matchup_pace", return_value=pace_data), \
              patch("totals_model.get_injury_impact", return_value=injury_data):
             result = totals_model.predict_game_total(
@@ -81,23 +81,45 @@ class TotalsProjectionReconciliationTests(unittest.TestCase):
                 bookmaker_total=219.95,
                 game_date="2026-10-27",
             )
+            experimental_result = totals_model.predict_game_total(
+                "Home",
+                "Away",
+                bookmaker_total=219.95,
+                game_date="2026-10-27",
+                apply_experimental_adjustments=True,
+            )
 
-        # Baseline 222.50 + pace 2.00 + non-pace 0.45 = 224.95.
-        # The extra rest adjustment must not be applied again.
+        # Official default uses the baseline: experimental adjustments are diagnostic only.
         self.assertEqual(result["points_engine_total"], 222.5)
         self.assertEqual(result["rest_adjustment"], 0.5)
         self.assertEqual(result["non_pace_adjustment"], 0.45)
-        self.assertEqual(result["total_adjustment_after_baseline"], 2.45)
-        self.assertEqual(result["projected_total"], 224.95)
+        self.assertEqual(result["experimental_projected_total"], 224.95)
+        self.assertFalse(result["experimental_adjustments_applied"])
+        self.assertEqual(result["total_adjustment_after_baseline"], 0.0)
+        self.assertEqual(result["projected_total"], 222.5)
         self.assertEqual(
             round(result["projected_home_points"] + result["projected_away_points"], 2),
             result["projected_total"],
         )
 
-        # Edge and recommendation are calculated from the displayed rounded values.
+        # Official edge/recommendation use the baseline total.
         self.assertEqual(result["bookmaker_total"], 219.95)
-        self.assertEqual(result["edge"], 5.0)
-        self.assertEqual(result["recommendation"], "Strong Over")
+        self.assertEqual(result["edge"], 2.55)
+        self.assertEqual(result["recommendation"], "Lean Over")
+
+        # The prior experimental version remains selectable for honest backtesting.
+        self.assertTrue(experimental_result["experimental_adjustments_applied"])
+        self.assertEqual(experimental_result["projected_total"], 224.95)
+        self.assertEqual(experimental_result["edge"], 5.0)
+        self.assertEqual(experimental_result["recommendation"], "Strong Over")
+        self.assertEqual(
+            round(
+                experimental_result["projected_home_points"]
+                + experimental_result["projected_away_points"],
+                2,
+            ),
+            experimental_result["projected_total"],
+        )
 
     def test_recommendation_thresholds_match_rounded_edge(self):
         cases = [
