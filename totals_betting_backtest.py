@@ -211,10 +211,10 @@ def prepare_market_snapshots(
         raise ValueError("A market row cannot have the same team listed as home and away.")
 
     if bookmaker:
+        available = sorted(df["bookmaker"].dropna().astype(str).unique())
         selected = df["bookmaker"].str.casefold() == bookmaker.strip().casefold()
         df = df.loc[selected].copy()
         if df.empty:
-            available = sorted(df["bookmaker"].dropna().astype(str).unique())
             raise ValueError(
                 f"Bookmaker {bookmaker!r} was not found. Available values: {available}"
             )
