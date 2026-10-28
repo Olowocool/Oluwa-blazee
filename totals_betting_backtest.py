@@ -113,8 +113,8 @@ def prepare_score_history(history: pd.DataFrame) -> pd.DataFrame:
 
     df = df.copy()
     df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce").dt.normalize()
-    df["home_team"] = df["home_team"].astype(str).str.strip()
-    df["away_team"] = df["away_team"].astype(str).str.strip()
+    df["home_team"] = df["home_team"].fillna("").astype(str).str.strip()
+    df["away_team"] = df["away_team"].fillna("").astype(str).str.strip()
     df["home_score"] = pd.to_numeric(df["home_score"], errors="coerce")
     df["away_score"] = pd.to_numeric(df["away_score"], errors="coerce")
     df = df.dropna(subset=required)
@@ -172,9 +172,9 @@ def prepare_market_snapshots(
 
     df = df.copy()
     df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce").dt.normalize()
-    df["home_team"] = df["home_team"].astype(str).str.strip()
-    df["away_team"] = df["away_team"].astype(str).str.strip()
-    df["bookmaker"] = df["bookmaker"].astype(str).str.strip()
+    df["home_team"] = df["home_team"].fillna("").astype(str).str.strip()
+    df["away_team"] = df["away_team"].fillna("").astype(str).str.strip()
+    df["bookmaker"] = df["bookmaker"].fillna("").astype(str).str.strip()
     df["snapshot_timestamp_utc"] = pd.to_datetime(
         df["snapshot_timestamp_utc"], errors="coerce", utc=True
     )
@@ -184,6 +184,7 @@ def prepare_market_snapshots(
     for col in ["total_line", "over_odds", "under_odds"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    input_rows = int(len(df))
     invalid = (
         df["game_date"].isna()
         | df["snapshot_timestamp_utc"].isna()
@@ -198,9 +199,10 @@ def prepare_market_snapshots(
         | (df["under_odds"] <= 1.0)
         | (df["total_line"] <= 0)
     )
-    if invalid.any():
+    invalid_count = int(invalid.sum())
+    if invalid_count:
         raise ValueError(
-            f"Historical market data has {int(invalid.sum())} invalid rows. "
+            f"Historical market data has {invalid_count} invalid rows. "
             "Check timestamps, lines, bookmaker, and decimal prices greater than 1.0."
         )
 
@@ -244,8 +246,9 @@ def prepare_market_snapshots(
 
     diagnostics = {
         "bookmaker": unique_books[0],
-        "input_rows": int(len(snapshots)),
-        "valid_rows_before_tipoff_filter": int(len(snapshots) - invalid.sum()),
+        "input_rows": input_rows,
+        "invalid_rows": invalid_count,
+        "valid_rows_before_tipoff_filter": int(len(df) + post_tipoff),
         "post_tipoff_rows_excluded": post_tipoff,
         "pregame_snapshot_rows": int(len(df)),
         "unique_pregame_games": int(df["_game_key"].nunique()),
@@ -544,7 +547,7 @@ def summarize_backtest(results: pd.DataFrame) -> pd.DataFrame:
             pushes = int((outcomes == "Push").sum())
             placed = wins + losses + pushes
             decision_resolved = wins + losses
-            stake = _safe_mean(pd.Series([])) if False else float(
+            stake = float(
                 pd.to_numeric(bets.get("stake_units", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()
             )
             profit = float(
