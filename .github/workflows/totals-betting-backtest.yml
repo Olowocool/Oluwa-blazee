@@ -57,9 +57,9 @@ jobs:
 
       - name: Run real historical-market backtest when market data is present
         env:
-          BOOKMAKER: \${{ github.event.inputs.bookmaker || '' }}
-          HOLDOUT_GAMES: \${{ github.event.inputs.holdout_games || '1000' }}
-          ENTRY_MINUTES: \${{ github.event.inputs.entry_minutes || '60' }}
+          BOOKMAKER: ${{ github.event.inputs.bookmaker || '' }}
+          HOLDOUT_GAMES: ${{ github.event.inputs.holdout_games || '1000' }}
+          ENTRY_MINUTES: ${{ github.event.inputs.entry_minutes || '60' }}
         run: |
           if [ ! -s data/historical_totals_market_snapshots.csv ]; then
             echo "::warning::No historical totals market archive is present. Unit tests passed, but betting ROI/CLV cannot be calculated until real timestamped Over/Under prices are supplied."
