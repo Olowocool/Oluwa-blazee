@@ -131,6 +131,8 @@ def parse_snapshot_response(
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Convert an actual historical API response to the backtest CSV schema."""
     snapshot_timestamp = _parse_aware_datetime(payload.get("timestamp"), "timestamp")
+    if snapshot_timestamp > requested_snapshot_utc.astimezone(timezone.utc):
+        raise ValueError("Provider returned a historical snapshot later than the requested timestamp.")
     events = payload.get("data")
     if not isinstance(events, list):
         raise ValueError("Historical odds response field 'data' must be a list.")
