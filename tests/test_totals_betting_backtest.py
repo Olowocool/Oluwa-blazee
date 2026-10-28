@@ -113,6 +113,11 @@ class HistoricalTotalsBettingBacktestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "multiple bookmakers"):
             prepare_market_snapshots(pd.concat([rows, second], ignore_index=True))
 
+    def test_unknown_bookmaker_error_lists_available_books(self):
+        rows = snapshot_rows().iloc[[0]].copy()
+        with self.assertRaisesRegex(ValueError, "Book A"):
+            prepare_market_snapshots(rows, bookmaker="Unknown Book")
+
     def test_invalid_decimal_prices_are_rejected(self):
         rows = snapshot_rows().iloc[[0]].copy()
         rows.loc[:, "over_odds"] = 1.0
