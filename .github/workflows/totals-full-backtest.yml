@@ -1,6 +1,7 @@
 name: Full totals chronological backtest
 
 on:
+  workflow_dispatch:
   # The all-history chronological evaluation is intentionally manual because
   # it can be substantially slower than deterministic unit tests. Pull requests
   # run the fast regression suite in .github/workflows/blank.yml.
