@@ -22,12 +22,16 @@ POST_GAME_COLUMNS = {
     "actual_total", "profit_loss", "result", "home_score", "away_score",
     "target",
 }
-PROVENANCE_COLUMNS = {"prediction_time_utc", "commence_time_utc"}
+PROVENANCE_COLUMNS = {
+    "prediction_time_utc", "market_snapshot_time_utc", "commence_time_utc"
+}
 REQUIRED_HISTORY_COLUMNS = {
     "game_date", "home_team", "away_team", "pick_type",
     "projected_total", "sportsbook_total", "edge",
     "actual_total", "profit_loss", "result",
-    "prediction_time_utc", "commence_time_utc",
+    "prediction_time_utc", "market_snapshot_time_utc", "market_last_update_utc",
+    "commence_time_utc", "market_snapshot_total_line", "over_odds", "under_odds",
+    "totals_bookmaker", "market_snapshot_source",
 }
 
 
@@ -140,31 +144,73 @@ def build_totals_learning_dataset():
     df = df.loc[~excluded_synthetic].copy()
     synthetic_rows_excluded = int(excluded_synthetic.sum())
 
-    # Require parseable, timezone-aware timestamps, then verify strict pre-tipoff order.
+    # Require explicit forecast, market-snapshot, and scheduled tip-off times.
+    # The market snapshot must not be later than the forecast it supports.
     prediction_ts = df["prediction_time_utc"].apply(_parse_aware_utc)
+    snapshot_ts = df["market_snapshot_time_utc"].apply(_parse_aware_utc)
     commence_ts = df["commence_time_utc"].apply(_parse_aware_utc)
-    valid_timestamps = prediction_ts.notna() & commence_ts.notna()
+    valid_timestamps = prediction_ts.notna() & snapshot_ts.notna() & commence_ts.notna()
     timestamp_invalid_rows_excluded = int((~valid_timestamps).sum())
-    post_tipoff = valid_timestamps & (prediction_ts >= commence_ts)
-    post_tipoff_rows_excluded = int(post_tipoff.sum())
-    pregame = valid_timestamps & (prediction_ts < commence_ts)
-    df = df.loc[pregame].copy()
-    df["prediction_time_utc"] = prediction_ts.loc[pregame].map(
-        lambda ts: ts.isoformat().replace("+00:00", "Z")
+    df = df.loc[valid_timestamps].copy()
+    prediction_ts = prediction_ts.loc[df.index]
+    snapshot_ts = snapshot_ts.loc[df.index]
+    commence_ts = commence_ts.loc[df.index]
+
+    market_update_raw = df["market_last_update_utc"].fillna("").astype(str).str.strip()
+    market_update_ts = df["market_last_update_utc"].apply(_parse_aware_utc).loc[df.index]
+    market_update_invalid = (
+        market_update_raw.ne("") & market_update_ts.isna()
+    ) | (
+        market_update_ts.notna() & (market_update_ts > snapshot_ts)
     )
-    df["commence_time_utc"] = commence_ts.loc[pregame].map(
-        lambda ts: ts.isoformat().replace("+00:00", "Z")
+    invalid_market_update_rows_excluded = int(market_update_invalid.sum())
+    valid_update = ~market_update_invalid
+    df = df.loc[valid_update].copy()
+    prediction_ts = prediction_ts.loc[df.index]
+    snapshot_ts = snapshot_ts.loc[df.index]
+    commence_ts = commence_ts.loc[df.index]
+    market_update_ts = market_update_ts.loc[df.index]
+
+    post_tipoff = (prediction_ts >= commence_ts) | (snapshot_ts >= commence_ts)
+    post_tipoff_rows_excluded = int(post_tipoff.sum())
+    before_tipoff = ~post_tipoff
+    df = df.loc[before_tipoff].copy()
+    prediction_ts = prediction_ts.loc[df.index]
+    snapshot_ts = snapshot_ts.loc[df.index]
+    commence_ts = commence_ts.loc[df.index]
+    market_update_ts = market_update_ts.loc[df.index]
+
+    snapshot_after_prediction = snapshot_ts > prediction_ts
+    market_snapshot_after_prediction_rows_excluded = int(snapshot_after_prediction.sum())
+    before_prediction = ~snapshot_after_prediction
+    df = df.loc[before_prediction].copy()
+    prediction_ts = prediction_ts.loc[df.index]
+    snapshot_ts = snapshot_ts.loc[df.index]
+    commence_ts = commence_ts.loc[df.index]
+    market_update_ts = market_update_ts.loc[df.index]
+
+    for column, values in [
+        ("prediction_time_utc", prediction_ts),
+        ("market_snapshot_time_utc", snapshot_ts),
+        ("commence_time_utc", commence_ts),
+    ]:
+        df[column] = values.map(lambda ts: ts.isoformat().replace("+00:00", "Z"))
+    df["market_last_update_utc"] = market_update_ts.map(
+        lambda ts: ts.isoformat().replace("+00:00", "Z") if pd.notna(ts) else ""
     )
 
     if df.empty:
         return _error(
-            "No eligible pre-tipoff totals rows remain. Timestamp-missing, "
-            "timezone-naive, or post-tipoff records are excluded from training.",
+            "No eligible rows remain after verifying a timezone-aware forecast "
+            "timestamp, market snapshot timestamp, and scheduled tip-off. Market "
+            "snapshot must be at or before forecast time, and both must precede tip-off.",
             rows=0,
             original_rows=original_rows,
             synthetic_rows_excluded=synthetic_rows_excluded,
             timestamp_invalid_rows_excluded=timestamp_invalid_rows_excluded,
+            invalid_market_update_rows_excluded=invalid_market_update_rows_excluded,
             post_tipoff_rows_excluded=post_tipoff_rows_excluded,
+            market_snapshot_after_prediction_rows_excluded=market_snapshot_after_prediction_rows_excluded,
             training_allowed=False,
         )
 
@@ -185,7 +231,8 @@ def build_totals_learning_dataset():
         )
 
     numeric_columns = [
-        "projected_total", "sportsbook_total", "edge", "actual_total", "profit_loss"
+        "projected_total", "sportsbook_total", "edge", "actual_total", "profit_loss",
+        "market_snapshot_total_line", "over_odds", "under_odds",
     ]
     for column in numeric_columns:
         df[column] = pd.to_numeric(df[column], errors="coerce")
@@ -194,6 +241,16 @@ def build_totals_learning_dataset():
     )
     numeric_valid = df[numeric_columns].notna().all(axis=1)
     df = df.loc[numeric_valid].copy()
+
+    # Use the same observed line that generated the forecast edge, and require
+    # genuine Over/Under decimal prices and a named source bookmaker.
+    line_match = (df["market_snapshot_total_line"] - df["sportsbook_total"]).abs() <= 0.01
+    prices_valid = (df["over_odds"] > 1.0) & (df["under_odds"] > 1.0)
+    bookmaker_valid = df["totals_bookmaker"].astype(str).str.strip().ne("")
+    source_valid = df["market_snapshot_source"].astype(str).str.strip().ne("")
+    market_valid = line_match & prices_valid & bookmaker_valid & source_valid
+    market_snapshot_rows_excluded = int((~market_valid).sum())
+    df = df.loc[market_valid].copy()
 
     # Reject inconsistent edges and result labels; pushes are not binary training outcomes.
     expected_edge = (df["projected_total"] - df["sportsbook_total"]).round(2)
@@ -228,8 +285,11 @@ def build_totals_learning_dataset():
     # These outcomes are retained for audit/label checks; only PREDICTOR_COLUMNS
     # are admitted into train_totals_model.FEATURES.
     columns = [
-        "game_date", "prediction_time_utc", "commence_time_utc",
+        "game_date", "prediction_time_utc", "market_snapshot_time_utc",
+        "market_last_update_utc", "commence_time_utc",
         "home_team", "away_team", "pick_type", *PREDICTOR_COLUMNS,
+        "market_snapshot_total_line", "over_odds", "under_odds",
+        "totals_bookmaker", "market_snapshot_source", "source_event_id",
         "actual_total", "profit_loss", "result", "target",
     ]
     learning_df = df[columns].copy()
@@ -242,7 +302,10 @@ def build_totals_learning_dataset():
         "original_rows": original_rows,
         "synthetic_rows_excluded": synthetic_rows_excluded,
         "timestamp_invalid_rows_excluded": timestamp_invalid_rows_excluded,
+        "invalid_market_update_rows_excluded": invalid_market_update_rows_excluded,
         "post_tipoff_rows_excluded": post_tipoff_rows_excluded,
+        "market_snapshot_after_prediction_rows_excluded": market_snapshot_after_prediction_rows_excluded,
+        "market_snapshot_rows_excluded": market_snapshot_rows_excluded,
         "inconsistent_rows_excluded": inconsistent_rows_excluded,
         "ungraded_or_non_over_under_rows_excluded": (
             original_rows - synthetic_rows_excluded
@@ -253,7 +316,7 @@ def build_totals_learning_dataset():
         "predictor_columns": PREDICTOR_COLUMNS,
         "post_game_fields_excluded_from_predictors": sorted(POST_GAME_COLUMNS),
         "training_allowed": True,
-        "provenance_rule": "prediction_time_utc must be timezone-aware and strictly earlier than commence_time_utc",
+        "provenance_rule": "market_snapshot_time_utc must be timezone-aware and <= prediction_time_utc; both must be strictly earlier than commence_time_utc; observed line must match sportsbook_total",
     }
 
 
