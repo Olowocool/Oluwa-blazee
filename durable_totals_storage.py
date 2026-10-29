@@ -19,10 +19,15 @@ from typing import Any, Iterable
 
 TABLE_NAME = "nba_totals_records"
 MARKET_SNAPSHOT_IMMUTABLE_FIELDS = (
+    "home_team",
+    "away_team",
+    "commence_time_utc",
     "total_line",
     "over_odds",
     "under_odds",
     "market_last_update_utc",
+    "snapshot_source",
+    "source_event_id",
 )
 
 
