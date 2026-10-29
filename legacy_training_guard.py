@@ -17,6 +17,25 @@ LEGACY_PIPELINE_BLOCK_REASON = (
 )
 
 
+def finalize_automation_status(summary):
+    """Mark automation partial when any requested step was blocked or failed."""
+    finalized = dict(summary)
+    steps = finalized.get("steps", {})
+    incomplete = [
+        name for name, result in steps.items()
+        if isinstance(result, dict)
+        and result.get("status") in {"blocked", "error"}
+    ]
+    if incomplete:
+        finalized["status"] = "partial"
+        finalized["incomplete_steps"] = incomplete
+        finalized["message"] = (
+            "Automation finished with blocked or failed steps. "
+            "Review the step results; do not treat this run as a complete model update."
+        )
+    return finalized
+
+
 def blocked_legacy_pipeline_result(pipeline_name):
     """Return a uniform safe result without exposing data or writing artifacts."""
     return {
