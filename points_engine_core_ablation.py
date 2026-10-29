@@ -54,7 +54,8 @@ class CoreVariant:
 
 
 # Baseline parameters match points_engine.calculate_matchup_points().
-# All alternatives are fixed before scoring the reserved chronological holdout.
+# Alternatives are predeclared, but the historical late-period subset was already
+# examined in prior ablation work and is NOT a fresh independent holdout.
 VARIANTS: tuple[CoreVariant, ...] = (
     CoreVariant("baseline", (0.30, 0.25, 0.25, 0.20)),
     CoreVariant("no_h2h", (0.30, 0.25, 0.25, 0.20), h2h_strength=0.0),
@@ -429,6 +430,13 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
     diagnostics["reserved_holdout_games_requested"] = holdout_games
     diagnostics["reserved_holdout_start_date"] = holdout_start.date().isoformat()
     diagnostics["holdout_boundary_chosen_before_score_matching"] = True
+    diagnostics["late_period_subset_is_fresh"] = False
+    diagnostics["late_period_subset_warning"] = (
+        "This late-period sample comes from the market archive already examined in "
+        "earlier ablation work. Treat its metrics as descriptive, not confirmatory; "
+        "do not select or promote a formula on this sample. Verify candidates with "
+        "future prospective predictions on genuinely new games."
+    )
 
     records: list[dict[str, Any]] = []
     unmatched_scores = 0
@@ -533,7 +541,9 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
         "live_betting_enabled": False,
         "production_formula_modified": False,
         "interpretation": (
-            "Development results are exploratory. The reserved chronological holdout is not for tuning. "
+            "All historical metrics are descriptive because this market archive was already inspected "
+            "in prior ablation work; the late-period subset is not a fresh untouched holdout. "
+            "Do not promote a formula from these results alone. Require future prospective confirmation. "
             "Closing-price ROI is retrospective and does not prove entry-time availability."
         ),
     })
