@@ -48,6 +48,17 @@ def log_prediction(prediction, game_date=None, commence_time_utc=None):
             prediction.get("prediction_time_utc")
         ),
         "commence_time_utc": _normalize_aware_utc_timestamp(commence_time_utc),
+        "market_snapshot_time_utc": _normalize_aware_utc_timestamp(
+            prediction.get("market_snapshot_time_utc")
+        ),
+        "market_last_update_utc": _normalize_aware_utc_timestamp(
+            prediction.get("market_last_update_utc")
+        ),
+        "over_odds": prediction.get("over_odds"),
+        "under_odds": prediction.get("under_odds"),
+        "totals_bookmaker": prediction.get("totals_bookmaker", ""),
+        "snapshot_source": prediction.get("snapshot_source", ""),
+        "source_event_id": prediction.get("source_event_id", ""),
         "game_date": game_date or "",
         "home_team": prediction["home_team"],
         "away_team": prediction["away_team"],
