@@ -58,21 +58,23 @@ def normalize_team_name(name) -> str:
 
 
 def normalize_history_team_columns(history_df):
-    """Return a copy whose home/away team labels use canonical names.
+    """Canonicalize history team labels without copying known-safe snapshots.
 
-    A dataframe attribute marks the canonicalized form to avoid repeatedly
-    scanning large historical datasets in chronological backtests.
+    First-time normalization returns a copy. Frames already marked as
+    normalized are returned as-is to avoid repeated full-table copies during
+    chronological backtests; callers that intend to mutate columns must copy
+    explicitly before doing so.
     """
     if history_df is None:
         return history_df
 
+    if history_df.empty or not {"home_team", "away_team"}.issubset(history_df.columns):
+        return history_df.copy()
+
+    if history_df.attrs.get("_team_names_normalized") is True:
+        return history_df
+
     df = history_df.copy()
-    if df.empty or not {"home_team", "away_team"}.issubset(df.columns):
-        return df
-
-    if df.attrs.get("_team_names_normalized") is True:
-        return df
-
     df["home_team"] = df["home_team"].map(normalize_team_name)
     df["away_team"] = df["away_team"].map(normalize_team_name)
     df.attrs["_team_names_normalized"] = True

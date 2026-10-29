@@ -26,6 +26,29 @@ class TotalsLeakageGuardTests(unittest.TestCase):
         self.assertEqual(pd.to_datetime(actual["game_date"]).dt.strftime("%Y-%m-%d").tolist(), ["2026-10-20", "2026-10-26"])
 
 
+    def test_cutoff_excludes_entire_target_calendar_day_when_time_is_supplied(self):
+        history = pd.DataFrame({
+            "game_date": [
+                "2026-10-26 23:30:00",
+                "2026-10-27 08:00:00",
+                "2026-10-27 19:45:00",
+                "2026-10-28 01:00:00",
+            ],
+            "home_team": ["A", "B", "C", "D"],
+            "away_team": ["E", "F", "G", "H"],
+            "home_score": [100, 101, 102, 103],
+            "away_score": [99, 98, 97, 96],
+            "total_score": [199, 199, 199, 199],
+        })
+        actual = totals_model._history_before_date(
+            history, "2026-10-27 20:00:00"
+        )
+        self.assertEqual(
+            pd.to_datetime(actual["game_date"]).dt.strftime("%Y-%m-%d").tolist(),
+            ["2026-10-26"],
+        )
+        self.assertEqual(actual["total_score"].tolist(), [199])
+
     def test_missing_target_date_defaults_to_lagos_today_cutoff(self):
         history = pd.DataFrame({
             "game_date": ["1900-01-01", "2999-01-01"],

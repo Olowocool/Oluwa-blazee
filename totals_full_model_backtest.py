@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from points_engine import calculate_matchup_points
+from team_name_utils import normalize_history_team_columns
 from totals_model import load_history, predict_game_total
 
 
@@ -79,7 +80,8 @@ def prepare_backtest_history(history):
         subset=["game_date", "home_team", "away_team"],
         keep="last",
     )
-    return df.reset_index(drop=True)
+    df = normalize_history_team_columns(df.reset_index(drop=True))
+    return df
 
 
 def history_strictly_before(history, target_date):
@@ -92,6 +94,8 @@ def history_strictly_before(history, target_date):
     prior = history.loc[history["game_date"] < target].copy()
     if not prior.empty and not (prior["game_date"] < target).all():
         raise AssertionError("Chronological cutoff admitted a target-day/future game.")
+    prior.attrs["_strict_history_cutoff_date"] = target.date().isoformat()
+    prior.attrs["_team_names_normalized"] = True
     return prior
 
 

@@ -126,6 +126,21 @@ class TeamNameNormalizationTests(unittest.TestCase):
         )
         self.assertEqual(pace["games_used"], 4)
 
+    def test_pace_reuses_validated_prior_history_snapshot(self):
+        history = pd.DataFrame({
+            "game_date": pd.to_datetime(["2025-11-07"]),
+            "home_team": ["Los Angeles Clippers"],
+            "away_team": ["Boston Celtics"],
+            "home_score": [107],
+            "away_score": [100],
+            "total_score": [207],
+        })
+        history.attrs["_team_names_normalized"] = True
+        history.attrs["_strict_history_cutoff_date"] = "2025-11-08"
+
+        prepared = _prepare_history(history)
+        self.assertIs(prepared, history)
+
     def test_totals_recent_stats_combines_aliases(self):
         stats = get_team_recent_stats(
             mixed_alias_history(), "LA Clippers", game_date="2025-11-08"

@@ -82,6 +82,45 @@ class PointsEngineLeakageGuardTests(unittest.TestCase):
             from_prior_only["projected_away_points"],
         )
 
+    def test_cutoff_marker_cannot_admit_rows_appended_after_cutoff(self):
+        target_date = "2026-10-10"
+        prior_only = self.history.loc[
+            pd.to_datetime(self.history["game_date"]) < pd.Timestamp(target_date)
+        ].copy()
+        prior_only["game_date"] = pd.to_datetime(prior_only["game_date"])
+        prior_only["total_score"] = prior_only["home_score"] + prior_only["away_score"]
+        prior_only.attrs["_strict_history_cutoff_date"] = target_date
+
+        # A caller that appends a same-day result must not be able to reuse the
+        # marker to bypass the check.
+        target_row = self.history.loc[
+            pd.to_datetime(self.history["game_date"]) == pd.Timestamp(target_date)
+        ].copy()
+        target_row["game_date"] = pd.to_datetime(target_row["game_date"])
+        target_row["total_score"] = target_row["home_score"] + target_row["away_score"]
+        appended = pd.concat([prior_only, target_row], ignore_index=True)
+        appended.attrs["_strict_history_cutoff_date"] = target_date
+
+        result = calculate_matchup_points(
+            "Boston Celtics",
+            "New York Knicks",
+            history_df=appended,
+            game_date=target_date,
+        )
+        self.assertEqual(result["history_rows"], 3)
+        self.assertEqual(result["h2h_games_used"], 1)
+
+    def test_stale_cached_totals_are_rebuilt_from_scores(self):
+        history = self.history.copy()
+        history["total_score"] = 1
+        result = calculate_matchup_points(
+            "Boston Celtics",
+            "New York Knicks",
+            history_df=history,
+            game_date="2026-10-10",
+        )
+        self.assertEqual(result["h2h_average_total"], 210.0)
+
     def test_missing_date_column_fails_closed(self):
         history = self.history.drop(columns=["game_date"])
         with self.assertRaisesRegex(ValueError, "historical cutoff.*game_date/date column"):
