@@ -2,6 +2,9 @@
 # Points Engine V2
 
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 
 from team_name_utils import normalize_history_team_columns, normalize_team_name
@@ -26,6 +29,53 @@ def safe_number(value, default=0.0):
         return float(value)
     except Exception:
         return default
+
+
+def history_strictly_before_target_date(history_df, game_date=None):
+    """Return score history strictly before a target calendar date.
+
+    Missing dates fail closed rather than allowing an unbounded history table
+    into a forecast. If the target date is omitted, today's Lagos date is used.
+    Cached total_score values are rebuilt from the final home/away scores.
+    """
+    if history_df is None:
+        return pd.DataFrame()
+    if history_df.empty:
+        return history_df.copy()
+
+    date_col = "game_date" if "game_date" in history_df.columns else (
+        "date" if "date" in history_df.columns else None
+    )
+    if date_col is None:
+        raise ValueError(
+            "Cannot enforce the Points Engine historical cutoff: "
+            "history has no game_date/date column."
+        )
+
+    if game_date is None:
+        target = pd.Timestamp(datetime.now(ZoneInfo("Africa/Lagos")).date())
+    else:
+        target = pd.to_datetime(game_date, errors="coerce")
+        if pd.isna(target):
+            raise ValueError(f"Invalid target game date: {game_date!r}")
+        if getattr(target, "tzinfo", None) is not None:
+            target = target.tz_convert("Africa/Lagos").tz_localize(None)
+        target = target.normalize()
+
+    history = history_df.copy()
+    if date_col != "game_date":
+        history = history.rename(columns={date_col: "game_date"})
+    history["game_date"] = pd.to_datetime(history["game_date"], errors="coerce")
+    history = history.loc[
+        history["game_date"].notna() & (history["game_date"] < target)
+    ].copy()
+
+    if {"home_score", "away_score"}.issubset(history.columns):
+        history["home_score"] = pd.to_numeric(history["home_score"], errors="coerce")
+        history["away_score"] = pd.to_numeric(history["away_score"], errors="coerce")
+        history["total_score"] = history["home_score"] + history["away_score"]
+
+    return normalize_history_team_columns(history)
 
 
 def standardize_score_history(df):
@@ -350,6 +400,10 @@ def calculate_matchup_points(
 
     if history_df is None:
         history_df = pd.DataFrame()
+
+    # Make the point-projection API safe even when called outside totals_model,
+    # which applies the same strict cutoff at its public prediction boundary.
+    history_df = history_strictly_before_target_date(history_df, game_date)
 
     home_projection = calculate_projected_team_points(
         home_team,
