@@ -1,9 +1,28 @@
 import os
+from datetime import datetime, timezone
+
 import pandas as pd
 
 
 TOTALS_HISTORY_FILE = "totals_history.csv"
 STAKE = 100
+
+
+def _normalize_aware_utc_timestamp(value):
+    """Normalize an explicit timezone-aware timestamp; reject naive timestamps."""
+    if value is None or not str(value).strip():
+        return ""
+    try:
+        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return ""
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return ""
+    return parsed.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _utc_now_iso():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def save_totals_pick(
@@ -12,7 +31,10 @@ def save_totals_pick(
     away_team,
     projected_total,
     sportsbook_total,
-    recommendation
+    recommendation,
+    prediction_time_utc=None,
+    commence_time_utc=None,
+    experimental_adjustments_applied=False,
 ):
     edge = float(projected_total) - float(sportsbook_total)
 
@@ -27,6 +49,12 @@ def save_totals_pick(
         "game_date": game_date,
         "home_team": home_team,
         "away_team": away_team,
+        # Historical rows without these timestamps remain auditable but cannot
+        # be used for model training because pre-tipoff provenance is unverified.
+        "prediction_time_utc": _normalize_aware_utc_timestamp(prediction_time_utc),
+        "commence_time_utc": _normalize_aware_utc_timestamp(commence_time_utc),
+        "saved_at_utc": _utc_now_iso(),
+        "experimental_adjustments_applied": bool(experimental_adjustments_applied),
         "market": "Totals",
         "pick_type": pick_type,
         "projected_total": projected_total,
