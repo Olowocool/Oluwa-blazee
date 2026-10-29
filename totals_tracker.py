@@ -34,6 +34,13 @@ def save_totals_pick(
     recommendation,
     prediction_time_utc=None,
     commence_time_utc=None,
+    market_snapshot_time_utc=None,
+    market_last_update_utc=None,
+    over_odds=None,
+    under_odds=None,
+    totals_bookmaker=None,
+    snapshot_source=None,
+    source_event_id=None,
     experimental_adjustments_applied=False,
 ):
     edge = float(projected_total) - float(sportsbook_total)
@@ -53,6 +60,13 @@ def save_totals_pick(
         # be used for model training because pre-tipoff provenance is unverified.
         "prediction_time_utc": _normalize_aware_utc_timestamp(prediction_time_utc),
         "commence_time_utc": _normalize_aware_utc_timestamp(commence_time_utc),
+        "market_snapshot_time_utc": _normalize_aware_utc_timestamp(market_snapshot_time_utc),
+        "market_last_update_utc": _normalize_aware_utc_timestamp(market_last_update_utc),
+        "over_odds": over_odds,
+        "under_odds": under_odds,
+        "totals_bookmaker": totals_bookmaker or "",
+        "market_snapshot_source": snapshot_source or "",
+        "source_event_id": source_event_id or "",
         "saved_at_utc": _utc_now_iso(),
         "experimental_adjustments_applied": bool(experimental_adjustments_applied),
         "market": "Totals",
