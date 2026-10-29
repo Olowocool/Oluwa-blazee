@@ -15,7 +15,7 @@ PICK_FIELDS = [
     "experimental_adjustments_applied", "profit_loss",
 ]
 SNAPSHOT_FIELDS = [
-    "game_date", "home_team", "away_team", "totals_bookmaker", "source_event_id",
+    "game_date", "home_team", "away_team", "bookmaker", "source_event_id",
     "snapshot_timestamp_utc", "market_last_update_utc", "commence_time_utc",
     "total_line", "over_odds", "under_odds", "snapshot_source",
 ]
@@ -53,7 +53,7 @@ def snapshot_row(**overrides):
         "game_date": "2026-10-29",
         "home_team": "Boston Celtics",
         "away_team": "New York Knicks",
-        "totals_bookmaker": "DraftKings",
+        "bookmaker": "DraftKings",
         "source_event_id": "event-123",
         "snapshot_timestamp_utc": "2026-10-29T17:55:00Z",
         "market_last_update_utc": "2026-10-29T17:54:30Z",
