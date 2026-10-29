@@ -15,6 +15,27 @@ from points_engine import calculate_matchup_points, load_game_history
 NBA_AVG_TEAM_POINTS = 114
 
 
+def parse_valid_market_total(value, *, minimum=None, maximum=None):
+    """Return a finite positive total line, or None for invalid input.
+
+    Optional bounds are intended for user-interface input validation. A blank
+    line must never be replaced with a guessed default.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        line = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(line) or line <= 0:
+        return None
+    if minimum is not None and line < float(minimum):
+        return None
+    if maximum is not None and line > float(maximum):
+        return None
+    return round(line, 2)
+
+
 def classify_total_edge(edge):
     """Map a valid, rounded total edge to one canonical recommendation.
 
@@ -339,15 +360,7 @@ def _history_before_date(history_df, game_date):
 def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, history_df=None, apply_experimental_adjustments=False):
     # Fail closed for a missing or invalid sportsbook total. This validates
     # the line only; it does not prove the price is live, current, or usable.
-    try:
-        parsed_market_total = float(bookmaker_total) if not isinstance(bookmaker_total, bool) else float("nan")
-        bookmaker_total = (
-            round(parsed_market_total, 2)
-            if math.isfinite(parsed_market_total) and parsed_market_total > 0
-            else None
-        )
-    except (TypeError, ValueError, OverflowError):
-        bookmaker_total = None
+    bookmaker_total = parse_valid_market_total(bookmaker_total)
 
     # Even callers that omit a target date must not accidentally consume
     # today's partial/future results. Historical callers must pass the actual
