@@ -14,10 +14,12 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 DEFAULT_OUTPUT_FILE = "data/live_totals_market_snapshots.csv"
 SNAPSHOT_FIELDS = [
     "game_date",
+    "display_game_date",
     "home_team",
     "away_team",
     "bookmaker",
@@ -98,10 +100,14 @@ def _row_from_odds(game_date: str, home_team: str, away_team: str, odds: dict[st
     if _finite_positive(over_point, minimum=0.0) != line or _finite_positive(under_point, minimum=0.0) != line:
         raise ValueError("Over and Under prices do not share the recorded total line.")
 
+    # Match the historical odds archive's Eastern calendar date while also
+    # preserving the app's selected/display date (Nigeria WAT) for auditing.
+    eastern_game_date = commence.astimezone(ZoneInfo("America/New_York")).date().isoformat()
     return {
-        "game_date": str(game_date).strip(),
-        "home_team": home_team.strip(),
-        "away_team": away_team.strip(),
+        "game_date": eastern_game_date,
+        "display_game_date": str(game_date).strip(),
+        "home_team": str(odds.get("market_home_team") or home_team).strip(),
+        "away_team": str(odds.get("market_away_team") or away_team).strip(),
         "bookmaker": str(odds["totals_bookmaker"]).strip(),
         "snapshot_timestamp_utc": _utc_iso(snapshot),
         "market_last_update_utc": _utc_iso(market_update) if market_update is not None else "",
