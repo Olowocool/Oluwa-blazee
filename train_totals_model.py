@@ -9,6 +9,7 @@ from sklearn.metrics import accuracy_score
 
 DATA_FILE = "totals_learning_dataset.csv"
 MODEL_FILE = "models/totals_model_v2.joblib"
+MAX_MARKET_SNAPSHOT_AGE_SECONDS = 300
 
 # Outcome and provenance fields are never predictors.
 FEATURES = [
@@ -125,6 +126,13 @@ def train_totals_model():
     snapshot_after_prediction = snapshot_ts > prediction_ts
     market_snapshot_after_prediction_rows_excluded = int(snapshot_after_prediction.sum())
     df = df.loc[~snapshot_after_prediction].copy()
+    prediction_ts = prediction_ts.loc[df.index]
+    snapshot_ts = snapshot_ts.loc[df.index]
+
+    snapshot_age_seconds = (prediction_ts - snapshot_ts).dt.total_seconds()
+    stale_snapshot = snapshot_age_seconds > MAX_MARKET_SNAPSHOT_AGE_SECONDS
+    stale_market_snapshot_rows_excluded = int(stale_snapshot.sum())
+    df = df.loc[~stale_snapshot].copy()
 
     if df.empty:
         return _result(
@@ -136,6 +144,7 @@ def train_totals_model():
             invalid_market_update_rows_excluded=invalid_market_update_rows_excluded,
             post_tipoff_rows_excluded=post_tipoff_rows_excluded,
             market_snapshot_after_prediction_rows_excluded=market_snapshot_after_prediction_rows_excluded,
+            stale_market_snapshot_rows_excluded=stale_market_snapshot_rows_excluded,
             training_allowed=False,
         )
 
@@ -175,6 +184,7 @@ def train_totals_model():
             invalid_market_update_rows_excluded=invalid_market_update_rows_excluded,
             post_tipoff_rows_excluded=post_tipoff_rows_excluded,
             market_snapshot_after_prediction_rows_excluded=market_snapshot_after_prediction_rows_excluded,
+            stale_market_snapshot_rows_excluded=stale_market_snapshot_rows_excluded,
             market_or_label_rows_excluded=market_or_label_rows_excluded,
             training_allowed=False,
         )
@@ -248,6 +258,7 @@ def train_totals_model():
         "invalid_market_update_rows_excluded": invalid_market_update_rows_excluded,
         "post_tipoff_rows_excluded": post_tipoff_rows_excluded,
         "market_snapshot_after_prediction_rows_excluded": market_snapshot_after_prediction_rows_excluded,
+        "stale_market_snapshot_rows_excluded": stale_market_snapshot_rows_excluded,
         "market_or_label_rows_excluded": market_or_label_rows_excluded,
         "model_file": MODEL_FILE,
         "features_used": FEATURES,
