@@ -24,7 +24,7 @@ try:
     collect_injury_data()
 except Exception as e:
     print("Injury update failed:", e)
-from totals_model import predict_game_total
+from totals_model import predict_game_total, parse_valid_market_total
 from retrain_model import retrain_pipeline
 from confidence_engine import classify_confidence
 from automation_runner import run_daily_automation
@@ -1303,25 +1303,53 @@ if data and "games" in data and len(data["games"]) > 0:
         totals_bookmaker = odds.get("totals_bookmaker", "N/A")
         total_line_move = odds.get("total_line_move", 0)
        
-        try:
-            default_total_line = float(live_total_line)
-        except Exception:
-            default_total_line = 220.5
-
-        bookmaker_total = st.number_input(
-            f"Bookmaker Total Line for {game['away_team']} @ {game['home_team']}",
-            min_value=150.0,
-            max_value=300.0,
-            value=default_total_line,
-            step=0.5,
-            key=f"total_line_{game['away_team']}_{game['home_team']}"
+        valid_live_total_line = parse_valid_market_total(
+            live_total_line,
+            minimum=150.0,
+            maximum=300.0,
         )
 
-        if live_total_line is not None:
+        if valid_live_total_line is not None:
+            bookmaker_total = st.number_input(
+                f"Bookmaker Total Line for {game['away_team']} @ {game['home_team']}",
+                min_value=150.0,
+                max_value=300.0,
+                value=valid_live_total_line,
+                step=0.5,
+                key=f"live_total_line_{game['away_team']}_{game['home_team']}"
+            )
+        else:
+            manual_total_line = st.text_input(
+                f"Manual current sportsbook total line for {game['away_team']} @ {game['home_team']} (150–300)",
+                value="",
+                key=f"manual_total_line_{game['away_team']}_{game['home_team']}"
+            )
+            bookmaker_total = parse_valid_market_total(
+                manual_total_line,
+                minimum=150.0,
+                maximum=300.0,
+            )
+            if not manual_total_line.strip():
+                st.warning(
+                    "No valid live totals line found. Enter a current sportsbook total line; "
+                    "until then the model will return No Bet."
+                )
+            elif bookmaker_total is None:
+                st.warning(
+                    "Invalid manual total line. Enter a numeric value from 150 to 300; "
+                    "the model will return No Bet."
+                )
+            else:
+                st.caption(
+                    "Manual total line entered. Live paired prices and a matching "
+                    "timestamped market snapshot were not verified."
+                )
+
+        if valid_live_total_line is not None:
             market_col1, market_col2, market_col3 = st.columns(3)
 
             with market_col1:
-                st.metric("Live Total Line", live_total_line)
+                st.metric("Live Total Line", valid_live_total_line)
                 st.caption(f"Bookmaker: {totals_bookmaker}")
 
             with market_col2:
@@ -1338,9 +1366,7 @@ if data and "games" in data and len(data["games"]) > 0:
                 st.info("Market Signal: Under money / total moving down")
             else:
                 st.info("Market Signal: Stable totals market")
-        else:
-            st.warning("No live totals line found. Using manual bookmaker total input.")
-
+        
         totals_result = predict_game_total(
             home_team=game["home_team"],
             away_team=game["away_team"],
@@ -1622,7 +1648,9 @@ if data and "games" in data and len(data["games"]) > 0:
                 )
             )
         if st.button(
-            f"Save Totals Pick {game['away_team']} @ {game['home_team']}"
+            f"Save Totals Pick {game['away_team']} @ {game['home_team']}",
+            disabled=bookmaker_total is None,
+            help="Enter a valid sportsbook total line before saving a pick.",
         ):
             try:
                 save_totals_pick(
