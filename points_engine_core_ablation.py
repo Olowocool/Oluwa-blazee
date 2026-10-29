@@ -594,7 +594,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end-date", default="2025-12-23", help="Inclusive YYYY-MM-DD.")
     parser.add_argument("--bookmaker", default="DraftKings")
     parser.add_argument("--min-prior-games", type=int, default=100)
-    parser.add_argument(\n        "--holdout-games", "--late-period-games", dest="holdout_games",\n        type=int, default=42,\n        help="Size of the late-period descriptive slice (not a fresh holdout).",\n    )
+    parser.add_argument(
+        "--holdout-games", "--late-period-games", dest="holdout_games",
+        type=int, default=42,
+        help="Size of the late-period descriptive slice (not a fresh holdout).",
+    )
     parser.add_argument("--stake-units", type=float, default=1.0)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     return parser
