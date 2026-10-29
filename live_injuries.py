@@ -1,8 +1,9 @@
+import os
+
 import requests
 
-BALLDONTLIE_API_KEY = "56a1d133-c182-45f6-a7d5-50373e959100"
-
 BALLDONTLIE_INJURY_URL = "https://api.balldontlie.io/v1/player_injuries"
+BALLDONTLIE_API_KEY_ENV = "BALLDONTLIE_API_KEY"
 
 
 STAR_PLAYER_IMPACT = {
@@ -36,9 +37,11 @@ def normalize_status(status):
 
 
 def fetch_live_injuries():
-    headers = {
-        "Authorization": BALLDONTLIE_API_KEY
-    }
+    api_key = os.getenv(BALLDONTLIE_API_KEY_ENV, "").strip()
+    if not api_key:
+        return {}
+
+    headers = {"Authorization": api_key}
 
     try:
         response = requests.get(
@@ -51,7 +54,6 @@ def fetch_live_injuries():
             return {}
 
         payload = response.json()
-        print(payload)
         injuries = {}
 
         for item in payload.get("data", []):
