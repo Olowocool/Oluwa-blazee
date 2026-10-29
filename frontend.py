@@ -1765,7 +1765,7 @@ if data and "games" in data and len(data["games"]) > 0:
 
         with selector_col3:
             st.metric(
-                "Confidence",
+                "Unvalidated Signal Score",
                 f"{best_bet_v2['confidence']}%"
             )
 
@@ -1883,14 +1883,14 @@ if data and "games" in data and len(data["games"]) > 0:
                 )
             )
 
-            st.subheader("Confidence Engine")
+            st.subheader("Heuristic Confidence Engine (not calibrated)")
             conf_col1, conf_col2, conf_col3 = st.columns(3)
 
             with conf_col1:
-                st.metric("Confidence Score", confidence_result["confidence_score"])
+                st.metric("Heuristic Confidence Score", confidence_result["confidence_score"])
 
             with conf_col2:
-                st.metric("Confidence Tier", confidence_result["confidence_tier"])
+                st.metric("Heuristic Confidence Tier", confidence_result["confidence_tier"])
 
             with conf_col3:
                 st.metric("Heuristic Action (unvalidated)", confidence_result["recommended_action"])
