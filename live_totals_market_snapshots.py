@@ -188,10 +188,21 @@ def append_live_totals_market_snapshots(
         identity = _snapshot_identity(row)
         old = merged.get(identity)
         if old is not None:
-            for field in ("total_line", "over_odds", "under_odds"):
-                try:
-                    equal = math.isclose(float(old[field]), float(row[field]), rel_tol=0, abs_tol=1e-9)
-                except (TypeError, ValueError):
+            # At a given market identity, protect the full observed record,
+            # not only the line and two prices. A different event ID, source,
+            # provider update, team orientation, or tip-off is also a conflict.
+            for field in MARKET_SNAPSHOT_IMMUTABLE_FIELDS:
+                if field in {"total_line", "over_odds", "under_odds"}:
+                    try:
+                        equal = math.isclose(
+                            float(old[field]),
+                            float(row[field]),
+                            rel_tol=0,
+                            abs_tol=1e-9,
+                        )
+                    except (TypeError, ValueError, OverflowError):
+                        equal = str(old.get(field, "")).strip() == str(row.get(field, "")).strip()
+                else:
                     equal = str(old.get(field, "")).strip() == str(row.get(field, "")).strip()
                 if not equal:
                     raise ValueError(
