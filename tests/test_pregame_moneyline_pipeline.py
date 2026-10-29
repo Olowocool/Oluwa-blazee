@@ -89,8 +89,20 @@ class PregameMoneylinePipelineTests(unittest.TestCase):
 
         prepared = prepare_score_history(history)
 
+        # The two rows disagree on venue/home label for the same unordered
+        # matchup/date, so neither row is safe to keep.
+        self.assertTrue(prepared.empty)
+
+    def test_identical_duplicate_records_are_collapsed(self):
+        history = pd.DataFrame([
+            {"date": "2026-01-01", "home_team": "Team A", "away_team": "Team B", "home_score": 100, "away_score": 90},
+            {"date": "2026-01-01", "home_team": "Team A", "away_team": "Team B", "home_score": 100, "away_score": 90},
+        ])
+
+        prepared = prepare_score_history(history)
+
         self.assertEqual(len(prepared), 1)
-        self.assertEqual(prepared.iloc[0]["home_team"], "Los Angeles Lakers")
+        self.assertEqual(prepared.iloc[0]["home_team"], "Team A")
 
     def test_training_uses_chronological_holdout_and_never_uses_postgame_fields(self):
         rows = []
