@@ -499,6 +499,27 @@ def _reserved_holdout_start(games: pd.DataFrame, holdout_games: int) -> pd.Times
     return pd.Timestamp(ordered.iloc[index]["game_date"]).normalize()
 
 
+def _evaluation_split_diagnostics(
+    scored: pd.DataFrame,
+    holdout_games_requested: int,
+) -> dict[str, Any]:
+    """Report actual split sizes and flag a holdout that consumes the whole sample."""
+    if "evaluation_split" not in scored.columns:
+        raise ValueError("scored results must include evaluation_split.")
+    counts = scored["evaluation_split"].value_counts()
+    available = int(len(scored))
+    development = int(counts.get("development", 0))
+    reserved_holdout = int(counts.get("reserved_holdout", 0))
+    holdout_too_large = bool(available > 0 and holdout_games_requested >= available)
+    return {
+        "scored_games_available": available,
+        "development_games": development,
+        "reserved_holdout_games_actual": reserved_holdout,
+        "holdout_covers_entire_scored_sample": bool(available > 0 and development == 0),
+        "holdout_sample_warning": holdout_too_large,
+    }
+
+
 def _score_split(results: pd.DataFrame, split: str, strategy: str) -> dict[str, Any]:
     subset = results.copy() if split == "all_games" else results.loc[
         results["evaluation_split"] == split
@@ -839,6 +860,14 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
     )
 
     scored = results.loc[results["prediction_status"] == "scored"].copy()
+    split_diagnostics = _evaluation_split_diagnostics(scored, args.holdout_games)
+    if split_diagnostics["holdout_sample_warning"]:
+        print(
+            "WARNING: --holdout-games is greater than or equal to the scored sample "
+            f"({args.holdout_games} requested vs {len(scored)} scored). "
+            "All scored games will be assigned to the reserved holdout; "
+            "there will be no separate development split."
+        )
     summaries = [
         _score_split(scored, split, strategy)
         for split in ["development", "reserved_holdout", "all_games"]
@@ -869,6 +898,7 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
         "score_override_file": str(score_overrides_path) if score_overrides_path else None,
         "selected_bookmakers": sorted(market["bookmaker"].dropna().astype(str).unique().tolist()),
         "reserved_holdout_games_requested": int(args.holdout_games),
+        **split_diagnostics,
         "reserved_holdout_start_date": holdout_start.date().isoformat(),
         "minimum_prior_score_rows": int(args.min_prior_games),
         "entry_time_clv_available": False,
