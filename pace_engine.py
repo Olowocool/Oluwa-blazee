@@ -35,6 +35,24 @@ def _prepare_history(history_df):
     if history_df is None or history_df.empty:
         return pd.DataFrame()
 
+    date_col = "game_date" if "game_date" in history_df.columns else None
+    cutoff_key = history_df.attrs.get("_strict_history_cutoff_date")
+    if (
+        cutoff_key
+        and date_col
+        and history_df.attrs.get("_team_names_normalized") is True
+        and pd.api.types.is_datetime64_any_dtype(history_df[date_col].dtype)
+        and not history_df[date_col].isna().any()
+        and history_df[date_col].max() < pd.Timestamp(cutoff_key)
+        and {"home_score", "away_score", "total_score"}.issubset(history_df.columns)
+        and all(pd.api.types.is_numeric_dtype(history_df[col].dtype)
+                for col in ["home_score", "away_score", "total_score"])
+    ):
+        # This frame was normalized, score-validated, and cutoff-tagged upstream.
+        # Pace calculations only read it, so reuse it rather than copying and
+        # coercing every historical row for every matchup in the backtest.
+        return history_df
+
     df = history_df.copy()
 
     required = [
