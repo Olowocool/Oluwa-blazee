@@ -293,6 +293,18 @@ def _history_before_date(history_df, game_date):
         cutoff = cutoff.tz_convert("Africa/Lagos").tz_localize(None)
     cutoff = cutoff.normalize()
 
+    cutoff_key = cutoff.date().isoformat()
+    date_values = history_df[date_col]
+    if (
+        date_col == "game_date"
+        and history_df.attrs.get("_strict_history_cutoff_date") == cutoff_key
+        and pd.api.types.is_datetime64_any_dtype(date_values.dtype)
+        and not date_values.isna().any()
+        and date_values.max() < cutoff
+        and {"home_score", "away_score", "total_score"}.issubset(history_df.columns)
+    ):
+        return history_df.copy()
+
     history = normalize_history_team_columns(history_df).copy()
     if date_col != "game_date":
         history = history.rename(columns={date_col: "game_date"})
