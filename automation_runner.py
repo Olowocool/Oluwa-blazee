@@ -7,6 +7,7 @@ from auto_learning import summarize_learning
 from train_ensemble_model import train_ensemble_model
 from model_evaluation import evaluate_ensemble_model
 from model_versioning import save_model_version
+from legacy_training_guard import finalize_automation_status
 
 
 MIN_SETTLED_BETS_FOR_TRAINING = 100
@@ -99,4 +100,4 @@ def run_daily_automation():
 
     summary["finished_at"] = datetime.now().isoformat()
 
-    return summary
+    return finalize_automation_status(summary)
