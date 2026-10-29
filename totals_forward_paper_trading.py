@@ -16,6 +16,8 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any
 
+from durable_totals_storage import sync_csv_mirror
+
 DEFAULT_TOTALS_HISTORY_FILE = Path("totals_history.csv")
 DEFAULT_MARKET_SNAPSHOT_FILE = Path("data/live_totals_market_snapshots.csv")
 DEFAULT_PICKS_OUTPUT_FILE = Path("outputs/totals_forward_paper_trading_picks.csv")
@@ -413,6 +415,26 @@ def evaluate_forward_paper_trading(
     snapshot strictly before tip-off; it is not represented as a verified
     sportsbook closing line when no final close observation was captured.
     """
+    # If PostgreSQL is configured, hydrate both CSV mirrors before auditing so
+    # this report can run after a hosted restart without depending on local files.
+    # A strict durability/connection failure must not silently fall back to CSV.
+    try:
+        sync_csv_mirror("totals_pick", totals_history_path)
+        sync_csv_mirror("market_snapshot", market_snapshot_path)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "message": (
+                "Durable totals storage could not be synchronized; "
+                "paper-trading evaluation was blocked."
+            ),
+            "reason": str(exc),
+            "picks_seen": 0,
+            "eligible_picks": 0,
+            "live_betting_enabled": False,
+            "probabilities_used": False,
+        }
+
     picks, picks_error = _read_csv(totals_history_path)
     if picks_error:
         return {"status": "error", "message": picks_error, "picks_seen": 0, "eligible_picks": 0}
