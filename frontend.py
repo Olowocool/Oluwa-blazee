@@ -8,6 +8,7 @@ from totals_tracker import (
     save_totals_pick,
     load_totals_history
 )
+from totals_forward_paper_trading import evaluate_forward_paper_trading
 from datetime import date, datetime, timezone
 from prediction_history_logger import log_prediction
 from best_bet_selector_v2 import select_best_bet_v2
@@ -2547,6 +2548,126 @@ else:
         mime="text/csv"
     )
 
+
+st.title("Forward Totals Paper-Trading Audit")
+st.caption(
+    "Research-only audit of settled paper picks. A pick qualifies only when its "
+    "saved entry line, both prices, bookmaker, event identity, and pre-tipoff "
+    "timestamps match the immutable market snapshot ledger."
+)
+
+if st.button(
+    "Run Forward Paper-Trading Audit",
+    key="run_forward_totals_paper_audit",
+):
+    try:
+        with st.spinner("Checking saved picks against timestamped market snapshots..."):
+            audit_report = evaluate_forward_paper_trading(
+                picks_output_path="outputs/totals_forward_paper_trading_picks.csv",
+                summary_output_path="outputs/totals_forward_paper_trading_summary.json",
+            )
+        st.session_state["totals_forward_paper_audit_report"] = audit_report
+    except Exception as exc:
+        st.session_state["totals_forward_paper_audit_report"] = {
+            "status": "error",
+            "message": f"Forward paper-trading audit failed: {exc}",
+        }
+
+audit_report = st.session_state.get("totals_forward_paper_audit_report")
+if audit_report:
+    audit_status = audit_report.get("status")
+
+    if audit_status == "success":
+        audit_col1, audit_col2, audit_col3, audit_col4 = st.columns(4)
+
+        with audit_col1:
+            st.metric(
+                "Eligible Settled Picks",
+                f"{audit_report.get('eligible_picks', 0)} / {audit_report.get('picks_seen', 0)}",
+            )
+
+        with audit_col2:
+            net_profit = audit_report.get("net_profit")
+            st.metric(
+                "Net Paper Profit",
+                f"{net_profit:+.2f}" if net_profit is not None else "N/A",
+            )
+
+        with audit_col3:
+            roi_pct = audit_report.get("roi_pct")
+            st.metric(
+                "Entry-Price ROI",
+                f"{roi_pct:+.2f}%" if roi_pct is not None else "N/A",
+            )
+
+        with audit_col4:
+            mean_clv = audit_report.get("mean_line_clv_points")
+            st.metric(
+                "Mean Line CLV (points)",
+                f"{mean_clv:+.2f}" if mean_clv is not None else "N/A",
+            )
+
+        st.caption(
+            f"Wins: {audit_report.get('wins', 0)} · "
+            f"Losses: {audit_report.get('losses', 0)} · "
+            f"Pushes: {audit_report.get('pushes', 0)} · "
+            f"Picks with a later valid pre-tip snapshot: "
+            f"{audit_report.get('picks_with_later_valid_pre_tip_snapshot', 0)}"
+        )
+        st.info(
+            "Research-only: ROI is calculated from recorded entry-time decimal odds; "
+            "line CLV uses the latest valid same-bookmaker pre-tip snapshot available. "
+            "No probabilities are used and live betting remains disabled."
+        )
+
+    elif audit_status == "insufficient_data":
+        st.info(
+            audit_report.get(
+                "message",
+                "Not enough valid settled paper records for an ROI/CLV evaluation yet.",
+            )
+        )
+        if audit_report.get("picks_seen") is not None:
+            st.caption(
+                f"Saved picks inspected: {audit_report.get('picks_seen', 0)}; "
+                f"eligible picks: {audit_report.get('eligible_picks', 0)}."
+            )
+
+    else:
+        st.error(
+            audit_report.get(
+                "message",
+                "The audit could not complete; no performance conclusion should be drawn.",
+            )
+        )
+
+    excluded_reasons = audit_report.get("excluded_by_reason", {})
+    if excluded_reasons:
+        with st.expander("Audit exclusions and reasons"):
+            st.json(excluded_reasons)
+
+    audit_detail_path = "outputs/totals_forward_paper_trading_picks.csv"
+    if audit_status in {"success", "insufficient_data"} and os.path.isfile(audit_detail_path):
+        try:
+            audit_detail_df = pd.read_csv(audit_detail_path)
+            if not audit_detail_df.empty:
+                st.subheader("Forward Audit Detail")
+                st.dataframe(
+                    audit_detail_df.tail(100),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                with open(audit_detail_path, "rb") as audit_file:
+                    audit_csv_bytes = audit_file.read()
+                st.download_button(
+                    "Download Forward Audit CSV",
+                    data=audit_csv_bytes,
+                    file_name="totals_forward_paper_trading_picks.csv",
+                    mime="text/csv",
+                    key="download_forward_totals_paper_audit",
+                )
+        except (OSError, ValueError, pd.errors.ParserError) as exc:
+            st.warning(f"Could not display audit detail CSV: {exc}")
 
 st.title("Backtesting Dashboard")
 
