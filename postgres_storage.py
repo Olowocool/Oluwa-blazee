@@ -33,8 +33,16 @@ def _connect():
     return psycopg.connect(url)
 
 
+def _jsonb(value: Any) -> Any:
+    try:
+        from psycopg.types.json import Jsonb
+    except ImportError as exc:
+        raise RuntimeError("PostgreSQL JSON support requires psycopg 3.") from exc
+    return Jsonb(value if value is not None else {})
+
+
 def initialize_schema() -> None:
-    """Create versioned audit tables if absent; safe to call repeatedly."""
+    """Create audit tables and indexes if absent; safe to call repeatedly."""
     statements = [
         """
         CREATE TABLE IF NOT EXISTS nba_totals_market_snapshots (
@@ -102,7 +110,11 @@ def initialize_schema() -> None:
 
 def insert_market_snapshots(records: Iterable[Mapping[str, Any]]) -> int:
     """Append snapshots; never overwrite observations from earlier timestamps."""
-    rows = list(records)
+    rows = []
+    for record in records:
+        row = dict(record)
+        row["raw_record"] = _jsonb(row.get("raw_record"))
+        rows.append(row)
     if not rows:
         return 0
     sql = """
@@ -125,6 +137,8 @@ def insert_market_snapshots(records: Iterable[Mapping[str, Any]]) -> int:
 
 def insert_totals_pick(record: Mapping[str, Any]) -> int:
     """Append one pick with its contemporaneous market/provenance fields."""
+    row = dict(record)
+    row["source_record"] = _jsonb(row.get("source_record"))
     sql = """
         INSERT INTO nba_totals_picks (
             game_date, home_team, away_team, prediction_time_utc,
@@ -144,9 +158,9 @@ def insert_totals_pick(record: Mapping[str, Any]) -> int:
     """
     with _connect() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, dict(record))
-            row = cur.fetchone()
-            return int(row[0])
+            cur.execute(sql, row)
+            result = cur.fetchone()
+            return int(result[0])
 
 
 def load_totals_picks() -> list[dict[str, Any]]:
