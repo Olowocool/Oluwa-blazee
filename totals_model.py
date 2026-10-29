@@ -319,7 +319,10 @@ def _history_before_date(history_df, game_date):
         history["total_score"] = history["home_score"] + history["away_score"]
 
     history.attrs["_strict_history_cutoff_date"] = cutoff.date().isoformat()
+    if {"home_team", "away_team"}.issubset(history.columns):
+        history.attrs["_team_names_normalized"] = True
     return history
+
 
 def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, history_df=None, apply_experimental_adjustments=False):
     # Even callers that omit a target date must not accidentally consume
