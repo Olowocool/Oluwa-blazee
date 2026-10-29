@@ -1311,18 +1311,20 @@ if data and "games" in data and len(data["games"]) > 0:
 
         if valid_live_total_line is not None:
             bookmaker_total = st.number_input(
-                f"Bookmaker Total Line for {game['away_team']} @ {game['home_team']}",
+                f"Verified Live Total Line for {game['away_team']} @ {game['home_team']}",
                 min_value=150.0,
                 max_value=300.0,
                 value=valid_live_total_line,
                 step=0.5,
-                key=f"live_total_line_{game['away_team']}_{game['home_team']}"
+                disabled=True,
+                help="Read-only line from the captured market snapshot; manual override is unavailable while a live line exists.",
+                key=f"live_total_line_{active_date}_{game['away_team']}_{game['home_team']}"
             )
         else:
             manual_total_line = st.text_input(
                 f"Manual current sportsbook total line for {game['away_team']} @ {game['home_team']} (150–300)",
                 value="",
-                key=f"manual_total_line_{game['away_team']}_{game['home_team']}"
+                key=f"manual_total_line_{active_date}_{game['away_team']}_{game['home_team']}"
             )
             bookmaker_total = parse_valid_market_total(
                 manual_total_line,
