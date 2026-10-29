@@ -95,6 +95,7 @@ def history_strictly_before(history, target_date):
     if not prior.empty and not (prior["game_date"] < target).all():
         raise AssertionError("Chronological cutoff admitted a target-day/future game.")
     prior.attrs["_strict_history_cutoff_date"] = target.date().isoformat()
+    prior.attrs["_team_names_normalized"] = True
     return prior
 
 
