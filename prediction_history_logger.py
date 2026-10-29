@@ -35,6 +35,7 @@ def log_prediction(
     commence_time_utc=None,
     market_snapshot_time_utc=None,
     market_last_update_utc=None,
+    market_snapshot_total_line=None,
     over_odds=None,
     under_odds=None,
     totals_bookmaker=None,
@@ -64,6 +65,11 @@ def log_prediction(
         ),
         "market_last_update_utc": _normalize_aware_utc_timestamp(
             market_last_update_utc or prediction.get("market_last_update_utc")
+        ),
+        "market_snapshot_total_line": (
+            market_snapshot_total_line
+            if market_snapshot_total_line is not None
+            else prediction.get("market_snapshot_total_line")
         ),
         "over_odds": over_odds if over_odds is not None else prediction.get("over_odds"),
         "under_odds": under_odds if under_odds is not None else prediction.get("under_odds"),
