@@ -1,4 +1,5 @@
 
+import math
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -15,8 +16,19 @@ NBA_AVG_TEAM_POINTS = 114
 
 
 def classify_total_edge(edge):
-    """Map the displayed, rounded total edge to one canonical recommendation."""
-    edge = round(float(edge), 2)
+    """Map a valid, rounded total edge to one canonical recommendation.
+
+    Missing, non-numeric, and non-finite edges fail closed to No Bet.
+    """
+    try:
+        edge = float(edge)
+    except (TypeError, ValueError, OverflowError):
+        return "No Bet", "Missing or invalid edge"
+
+    if not math.isfinite(edge):
+        return "No Bet", "Missing or invalid edge"
+
+    edge = round(edge, 2)
     if edge >= 5:
         return "Strong Over", "Strong Over edge"
     if edge >= 2.5:
@@ -325,6 +337,19 @@ def _history_before_date(history_df, game_date):
 
 
 def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, history_df=None, apply_experimental_adjustments=False):
+    # Never allow a missing/invalid market total to become an Over/Under pick.
+    # This validates the line only; it does not establish that the price is
+    # live, current, or suitable for betting.
+    try:
+        parsed_market_total = float(bookmaker_total)
+        bookmaker_total = (
+            round(parsed_market_total, 2)
+            if math.isfinite(parsed_market_total) and parsed_market_total > 0
+            else None
+        )
+    except (TypeError, ValueError, OverflowError):
+        bookmaker_total = None
+
     # Even callers that omit a target date must not accidentally consume
     # today's partial/future results. Historical callers must pass the actual
     # target date explicitly; the frontend does this for selected games.
@@ -423,8 +448,6 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         if apply_experimental_adjustments
         else round(raw_projected_total, 2)
     )
-    bookmaker_total = round(float(bookmaker_total), 2)
-
     # Split the experimental adjustments into team projections. Where a factor
     # has a natural attribution, assign it to the affected team.
     experimental_home_model_adjustment = (
@@ -458,9 +481,13 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
     # home and away projections always add to the same total used for the edge.
     projected_away_points = round(projected_total - projected_home_points, 2)
 
-    edge = round(projected_total - bookmaker_total, 2)
-
-    recommendation, confidence_note = classify_total_edge(edge)
+    if bookmaker_total is None:
+        edge = None
+        recommendation = "No Bet"
+        confidence_note = "No valid sportsbook total line"
+    else:
+        edge = round(projected_total - bookmaker_total, 2)
+        recommendation, confidence_note = classify_total_edge(edge)
 
     return {
         "history_rows": history_rows,
@@ -468,8 +495,8 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         "home_team": home_team,
         "away_team": away_team,
         "projected_total": round(projected_total, 2),
-        "bookmaker_total": round(float(bookmaker_total), 2),
-        "edge": round(edge, 2),
+        "bookmaker_total": round(bookmaker_total, 2) if bookmaker_total is not None else None,
+        "edge": round(edge, 2) if edge is not None else None,
         "recommendation": recommendation,
         "confidence_note": confidence_note,
         "raw_projected_total": round(raw_projected_total, 2),
