@@ -180,6 +180,8 @@ def get_odds():
                 "commence_time_utc": str(game.get("commence_time") or ""),
                 "snapshot_source": "the-odds-api-v4-current-endpoint",
                 "source_event_id": str(game.get("id") or ""),
+                "market_home_team": normalize_team_name(game.get("home_team", "")),
+                "market_away_team": normalize_team_name(game.get("away_team", "")),
             }
 
             bookmakers = game.get("bookmakers", [])
