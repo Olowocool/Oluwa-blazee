@@ -60,7 +60,11 @@ class LiveTotalsMarketSnapshotTests(unittest.TestCase):
     def test_each_distinct_snapshot_is_retained_instead_of_overwritten(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "snapshots.csv"
-            first = market_row(snapshot="2026-10-20T19:58:00Z", line=220.5)
+            first = market_row(
+                snapshot="2026-10-20T19:58:00Z",
+                update="2026-10-20T19:57:30Z",
+                line=220.5,
+            )
             second = market_row(
                 snapshot="2026-10-20T19:59:00Z",
                 update="2026-10-20T19:58:45Z",
