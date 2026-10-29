@@ -39,4 +39,4 @@ Render reference: https://render.com/docs/blueprint-spec and https://render.com/
 
 ## What has been validated
 
-The market capture, timestamp provenance, invalid-line guards, and regression tests passed the repository CI for PR #23. This proves the tested Python behavior; it does not verify provider credentials, real hosted network access, persistent storage, or the actual Render/Streamlit dashboard settings.
+The latest PR #23 code head before this documentation update passed [CI run 40870755362](https://github.com/Olowocool/Oluwa-blazee/actions/runs/40870755362): all changed Python modules compiled and 87 tests passed. Coverage includes market capture, timestamp provenance, invalid-line guards, explicit manual-line parsing, and the no-fabricated-default UI safeguard. This validates tested Python behavior only; it does not verify provider credentials, real hosted network access, persistent storage, or the actual Render/Streamlit dashboard settings.
