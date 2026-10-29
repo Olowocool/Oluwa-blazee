@@ -293,7 +293,7 @@ def _history_before_date(history_df, game_date):
         cutoff = cutoff.tz_convert("Africa/Lagos").tz_localize(None)
     cutoff = cutoff.normalize()
 
-    history = normalize_history_team_columns(history_df)
+    history = normalize_history_team_columns(history_df).copy()
     if date_col != "game_date":
         history = history.rename(columns={date_col: "game_date"})
     history["game_date"] = pd.to_datetime(history["game_date"], errors="coerce")
