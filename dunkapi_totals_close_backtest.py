@@ -1034,12 +1034,12 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
             "closing Over/Under price. Opening-to-closing movement is descriptive only. "
             "This does not establish CLV for an earlier entry price."
         ),
-"outputs": [str(results_path), str(summary_path), str(ablation_summary_path), str(diagnostics_path)],
+        "outputs": [str(results_path), str(summary_path), str(ablation_summary_path), str(diagnostics_path)],
         "ablation_variants": list(ABLATION_VARIANTS),
         "ablation_methodology": (
             "Same target dates and strict prior score history across variants. Baseline includes Points Engine H2H/rest. "
             "The non-injury ablation is the research comparison; injury-only and full-experimental are diagnostic because "
-            "historical injury inputs are not verified as-of-game-time. Do not tune using the reserved holdout."
+            "historical injury inputs are not verified as-of-game-time. Do not tune using the previously inspected reserved holdout; use development for this comparison and require fresh forward data before selection."
         ),
     }
     with diagnostics_path.open("w", encoding="utf-8") as handle:
