@@ -42,6 +42,7 @@ PICK_REQUIRED_COLUMNS = {
     "actual_total",
     "result",
     "stake",
+    "experimental_adjustments_applied",
 }
 SNAPSHOT_REQUIRED_COLUMNS = {
     "home_team",
@@ -140,8 +141,8 @@ def _team_key(value: Any) -> str:
 def _same_event(pick: dict[str, Any], snapshot: dict[str, Any]) -> bool:
     pick_event_id = _clean(pick.get("source_event_id"))
     snapshot_event_id = _clean(snapshot.get("source_event_id"))
-    if pick_event_id and snapshot_event_id:
-        if pick_event_id != snapshot_event_id:
+    if pick_event_id or snapshot_event_id:
+        if not pick_event_id or not snapshot_event_id or pick_event_id != snapshot_event_id:
             return False
     if _team_key(pick.get("home_team")) != _team_key(snapshot.get("home_team")):
         return False
@@ -208,6 +209,21 @@ def _snapshot_matches_entry(
         return False
     if not _same_number(under_odds, snapshot.get("under_odds"), tolerance=0.01):
         return False
+
+    # The provider update time is part of the same observation and must match
+    # between the saved pick and the append-only snapshot row.
+    pick_update_text = _clean(pick.get("market_last_update_utc"))
+    snapshot_update_text = _clean(snapshot.get("market_last_update_utc"))
+    if bool(pick_update_text) != bool(snapshot_update_text):
+        return False
+    if pick_update_text:
+        pick_update = _aware_utc(pick_update_text)
+        snapshot_update = _aware_utc(snapshot_update_text)
+        if pick_update is None or snapshot_update is None:
+            return False
+        if abs((pick_update - snapshot_update).total_seconds()) > TIMESTAMP_MATCH_TOLERANCE_SECONDS:
+            return False
+
     if source and not _same_text(source, snapshot.get("snapshot_source")):
         return False
     return True
@@ -251,7 +267,11 @@ def _evaluate_one(
     pick_type = _clean(pick.get("pick_type")).casefold()
     if pick_type not in {"over", "under"}:
         return _exclude(out, "no_bet_or_invalid_pick")
-    if _truthy(pick.get("experimental_adjustments_applied")):
+
+    experiment_flag = _clean(pick.get("experimental_adjustments_applied")).casefold()
+    if experiment_flag not in {"0", "1", "false", "true", "no", "yes", "n", "y"}:
+        return _exclude(out, "missing_or_invalid_experimental_flag")
+    if _truthy(experiment_flag):
         return _exclude(out, "experimental_adjustment_pick")
 
     prediction_time = _aware_utc(pick.get("prediction_time_utc"))
