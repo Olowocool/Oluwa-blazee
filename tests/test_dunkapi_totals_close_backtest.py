@@ -116,6 +116,22 @@ class DunkAPITotalsCloseBacktestTests(unittest.TestCase):
         self.assertEqual(diag["rows_for_other_dates_excluded"], 1)
         self.assertEqual(diag["available_bookmakers"], ["BetMGM", "DraftKings"])
 
+    def test_parser_accepts_documented_data_wrapped_response(self):
+        payload = {"data": daily_payload()}
+        rows, diag = bt.parse_daily_payload(
+            payload, date(2025, 11, 21), "DraftKings"
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["game_id"], "game-1")
+        self.assertEqual(rows[0]["total_close"], 221.5)
+        self.assertEqual(diag["rows_for_selected_bookmaker"], 1)
+
+    def test_parser_reports_keys_when_games_array_is_missing(self):
+        with self.assertRaisesRegex(ValueError, "at the root or under 'data'"):
+            bt.parse_daily_payload(
+                {"error": "response shape unavailable"}, date(2025, 11, 21), "DraftKings"
+            )
+
     def test_parser_does_not_use_upcoming_or_missing_price_rows(self):
         payload = daily_payload()
         payload["games"][0]["books"][0]["over_odds"] = None

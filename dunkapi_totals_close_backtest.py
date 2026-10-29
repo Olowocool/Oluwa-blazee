@@ -112,8 +112,28 @@ def parse_daily_payload(
     bookmaker: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Parse finished games for one named sportsbook; never synthesize prices."""
-    if not isinstance(payload, dict) or not isinstance(payload.get("games"), list):
-        raise ValueError("DunkAPI response must contain a 'games' array.")
+    if not isinstance(payload, dict):
+        raise ValueError("DunkAPI response must be a JSON object.")
+
+    # DunkAPI's REST reference shows a root-level "games" array, while its
+    # Python backtesting guide unwraps resp.json()["data"] first. Support both
+    # documented response envelopes.
+    if not isinstance(payload.get("games"), list):
+        data = payload.get("data")
+        if isinstance(data, dict) and isinstance(data.get("games"), list):
+            payload = data
+
+    if not isinstance(payload.get("games"), list):
+        keys = ", ".join(sorted(str(key) for key in payload.keys())) or "(none)"
+        provider_message = payload.get("message") or payload.get("error") or payload.get("detail")
+        detail = ""
+        if provider_message is not None:
+            message = str(provider_message).replace("\\n", " ")[:240]
+            detail = f" Provider message: {message}"
+        raise ValueError(
+            "DunkAPI response must contain a 'games' array at the root or under 'data' "
+            f"(top-level keys: {keys}).{detail}"
+        )
 
     wanted = bookmaker.strip().casefold()
     if not wanted:
