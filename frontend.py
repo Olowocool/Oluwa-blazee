@@ -2158,7 +2158,18 @@ if st.button("Run Full Daily Automation"):
     with st.spinner("Running full automation pipeline..."):
         automation_result = run_daily_automation()
 
-    st.success("Full automation completed.")
+    if automation_result.get("status") == "success":
+        st.success("Full automation completed.")
+    elif automation_result.get("status") == "partial":
+        st.warning(automation_result.get(
+            "message",
+            "Automation completed only partially; review blocked/failed steps.",
+        ))
+    else:
+        st.error(automation_result.get(
+            "message",
+            "Automation did not complete successfully.",
+        ))
     st.json(automation_result)
 
 if st.button("Run Auto Result Sync"):
