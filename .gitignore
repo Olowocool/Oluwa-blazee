@@ -108,6 +108,7 @@ venv.bak/
 .DS_Store
 
 # Historical market data from a provider may be licensed or quota-metered.
+data/live_totals_market_snapshots.csv
 # Keep collected prices and local betting-backtest outputs out of public Git by default.
 data/historical_totals_market_snapshots.csv
 outputs/totals_betting_backtest_results.csv
