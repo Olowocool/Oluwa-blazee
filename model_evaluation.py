@@ -16,6 +16,7 @@ from sklearn.metrics import (
 from sklearn.inspection import permutation_importance
 
 from advanced_features import build_advanced_features
+from legacy_training_guard import blocked_legacy_pipeline_result
 
 
 FEATURE_COLUMNS = [
@@ -59,6 +60,7 @@ FEATURE_COLUMNS = [
 
 
 def evaluate_ensemble_model():
+    return blocked_legacy_pipeline_result("legacy ensemble evaluation")
 
     model_path = "models/ensemble_model.joblib"
     data_path = "bet_history.csv"
