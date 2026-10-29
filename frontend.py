@@ -2,17 +2,19 @@ import streamlit as st
 import requests
 import csv
 import os
+import math
 import pandas as pd
 from totals_tracker import (
     save_totals_pick,
     load_totals_history
 )
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from prediction_history_logger import log_prediction
 from best_bet_selector_v2 import select_best_bet_v2
 from generate_totals_test_data import add_totals_test_data
 from train_totals_model import train_totals_model
 from totals_ai_predictor import totals_ai_prediction
+from live_totals_market_snapshots import append_live_totals_market_snapshots
 from totals_auto_learning import build_totals_learning_dataset
 from totals_result_grader import grade_totals_results
 from injury_data_collector import collect_injury_data
@@ -155,6 +157,9 @@ def get_odds():
             return {}
 
         games = response.json()
+        response_fetched_at_utc = (
+            datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        )
         odds_map = {}
 
         for game in games:
@@ -165,9 +170,16 @@ def get_odds():
                 home_team: None,
                 away_team: None,
                 "total_line": None,
+                "over_total_line": None,
+                "under_total_line": None,
                 "over_odds": None,
                 "under_odds": None,
-                "totals_bookmaker": None
+                "totals_bookmaker": None,
+                "snapshot_timestamp_utc": response_fetched_at_utc,
+                "market_last_update_utc": "",
+                "commence_time_utc": str(game.get("commence_time") or ""),
+                "snapshot_source": "the-odds-api-v4-current-endpoint",
+                "source_event_id": str(game.get("id") or ""),
             }
 
             bookmakers = game.get("bookmakers", [])
@@ -197,25 +209,54 @@ def get_odds():
                                         "bookmaker": bookmaker_name
                                     }
 
-                    # Totals / Over-Under market
+                    # Keep a complete Over/Under pair from one bookmaker and one line.
+                    # Never combine Over from one book with Under from another.
                     if market_key == "totals":
-                        for outcome in market.get("outcomes", []):
-                            outcome_name = str(outcome.get("name", "")).lower()
-                            price = float(outcome.get("price", 0))
-                            point = outcome.get("point", None)
+                        outcomes = market.get("outcomes", [])
+                        overs = [
+                            item for item in outcomes
+                            if isinstance(item, dict)
+                            and str(item.get("name", "")).strip().casefold() == "over"
+                        ]
+                        unders = [
+                            item for item in outcomes
+                            if isinstance(item, dict)
+                            and str(item.get("name", "")).strip().casefold() == "under"
+                        ]
+                        if len(overs) != 1 or len(unders) != 1:
+                            continue
 
-                            if point is None:
-                                continue
+                        try:
+                            over_point = float(overs[0].get("point"))
+                            under_point = float(unders[0].get("point"))
+                            over_price = float(overs[0].get("price"))
+                            under_price = float(unders[0].get("price"))
+                        except (TypeError, ValueError, OverflowError):
+                            continue
 
-                            if outcome_name == "over":
-                                current_odds["total_line"] = float(point)
-                                current_odds["over_odds"] = price
-                                current_odds["totals_bookmaker"] = bookmaker_name
+                        if (
+                            not math.isfinite(over_point)
+                            or not math.isfinite(under_point)
+                            or not math.isfinite(over_price)
+                            or not math.isfinite(under_price)
+                            or over_point <= 0
+                            or under_point <= 0
+                            or over_price <= 1
+                            or under_price <= 1
+                            or over_point != under_point
+                        ):
+                            continue
 
-                            elif outcome_name == "under":
-                                current_odds["total_line"] = float(point)
-                                current_odds["under_odds"] = price
-                                current_odds["totals_bookmaker"] = bookmaker_name
+                        market_last_update = market.get("last_update") or bookmaker.get("last_update") or ""
+                        current_odds.update({
+                            "total_line": over_point,
+                            "over_total_line": over_point,
+                            "under_total_line": under_point,
+                            "over_odds": over_price,
+                            "under_odds": under_price,
+                            "totals_bookmaker": bookmaker_name,
+                            "market_last_update_utc": str(market_last_update),
+                        })
 
             odds_map[(home_team, away_team)] = current_odds
 
@@ -873,6 +914,16 @@ if data and "games" in data and len(data["games"]) > 0:
 
         if odds_map:
             save_live_odds_to_history(active_date, odds_map)
+            try:
+                snapshot_result = append_live_totals_market_snapshots(active_date, odds_map)
+                st.caption(
+                    "Timestamped totals market ledger: "
+                    f"{snapshot_result.get('rows_added', 0)} new pregame snapshot(s) "
+                    f"saved; {snapshot_result.get('invalid_rows_skipped', 0)} invalid and "
+                    f"{snapshot_result.get('post_tipoff_rows_skipped', 0)} post-tipoff row(s) skipped."
+                )
+            except Exception as snapshot_error:
+                st.warning(f"Timestamped totals ledger was not updated: {snapshot_error}")
             st.success("Live odds saved into historical odds file.")
     else:
         odds_map = get_historical_odds(active_date)
