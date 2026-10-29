@@ -87,11 +87,10 @@ class PregameMoneylinePipelineTests(unittest.TestCase):
             {"date": "2026-01-02", "home_team": "A", "away_team": "A", "home_score": 110, "away_score": 100},
         ])
 
-        prepared = prepare_score_history(history)
-
         # The two rows disagree on venue/home label for the same unordered
-        # matchup/date, so neither row is safe to keep.
-        self.assertTrue(prepared.empty)
+        # matchup/date, so neither row is safe to keep and preparation fails closed.
+        with self.assertRaisesRegex(ValueError, "No valid completed games"):
+            prepare_score_history(history)
 
     def test_identical_duplicate_records_are_collapsed(self):
         history = pd.DataFrame([
