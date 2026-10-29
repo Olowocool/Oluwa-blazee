@@ -215,8 +215,8 @@ def _prepare_market_archive(
     ]:
         market[column] = pd.to_numeric(market[column], errors="coerce")
     market["game_id"] = market["game_id"].fillna("").astype(str).str.strip()
-    market["home_team"] = market["home_team"].map(normalize_team_name)
-    market["away_team"] = market["away_team"].map(normalize_team_name)
+    market["home_team"] = market["home_team"].fillna("").map(normalize_team_name)
+    market["away_team"] = market["away_team"].fillna("").map(normalize_team_name)
     market["bookmaker"] = market["bookmaker"].fillna("").astype(str).str.strip()
 
     requested_book = bookmaker.strip().casefold()
@@ -311,6 +311,17 @@ def _prepare_history(
     validation = normalize_history_team_columns(validation)
     override_lookup = {str(row["_game_key"]): row.to_dict() for _, row in validation.iterrows()}
     diagnostics["score_override_rows_validated"] = len(override_lookup)
+    # Overrides are trusted only as explicit score corrections; they may not silently
+    # replace a conflicting result already present in the score history.
+    for key, override_row in override_lookup.items():
+        existing = history.loc[history["_game_key"].astype(str) == key]
+        if existing.empty:
+            continue
+        known = existing.iloc[-1]
+        for col in ["home_score", "away_score", "actual_total"]:
+            if pd.notna(known.get(col)) and pd.notna(override_row.get(col)):
+                if float(known[col]) != float(override_row[col]):
+                    raise ValueError(f"Score override conflicts with historical score for {key}.")
     score_lookup.update(override_lookup)
 
     include_mask = (
@@ -400,9 +411,13 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
     market, diagnostics = _prepare_market_archive(
         Path(args.market_file), args.start_date, args.end_date, args.bookmaker
     )
+    override_value = args.score_overrides_file
+    default_override = Path("data/dunkapi_verified_score_overrides.csv")
+    if not override_value and default_override.is_file():
+        override_value = str(default_override)
     history, score_lookup, score_diagnostics = _prepare_history(
         Path(args.scores_file),
-        Path(args.score_overrides_file) if args.score_overrides_file else None,
+        Path(override_value) if override_value else None,
     )
     diagnostics.update(score_diagnostics)
 
