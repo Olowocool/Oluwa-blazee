@@ -46,6 +46,45 @@ class LegacyTrainingGuardTests(unittest.TestCase):
                 self.assertIsInstance(call.func, ast.Name)
                 self.assertEqual(call.func.id, "blocked_legacy_pipeline_result")
 
+    def test_direct_legacy_trainer_is_also_blocked(self):
+        module = ast.parse(
+            (ROOT / "retrain_model.py").read_text(encoding="utf-8")
+        )
+        function = next(
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == "train_model"
+        )
+        first_statement = function.body[0]
+        self.assertIsInstance(first_statement, ast.Raise)
+        self.assertIsInstance(first_statement.exc, ast.Call)
+        self.assertIsInstance(first_statement.exc.func, ast.Name)
+        self.assertEqual(first_statement.exc.func.id, "RuntimeError")
+
+    def test_post_result_fields_are_not_candidate_predictors(self):
+        source = (ROOT / "retrain_model.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        train_function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "prepare_training_data"
+        )
+        candidate_assignments = [
+            node for node in ast.walk(train_function)
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "feature_candidates"
+                for target in node.targets
+            )
+        ]
+        self.assertEqual(len(candidate_assignments), 1)
+        candidate_names = [
+            node.value for node in ast.walk(candidate_assignments[0])
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ]
+        self.assertNotIn("clv", candidate_names)
+        self.assertNotIn("profit_loss", candidate_names)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
