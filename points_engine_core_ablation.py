@@ -357,7 +357,7 @@ def _prepare_history(
 
 def _make_summary(scored: pd.DataFrame) -> pd.DataFrame:
     summaries: list[dict[str, Any]] = []
-    split_names = ["development", "reserved_holdout", "all_games"]
+    split_names = ["development", "late_period_descriptive", "all_games"]
     strategies = ["all_qualifying_edges", "strong_only", "lean_only"]
     for split in split_names:
         split_df = scored if split == "all_games" else scored.loc[scored["evaluation_split"] == split]
@@ -426,10 +426,10 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
     if holdout_games < 1:
         raise ValueError("holdout_games must be at least 1.")
     split_index = max(0, len(market) - holdout_games)
-    holdout_start = pd.Timestamp(market.iloc[split_index]["game_date"]).normalize()
-    diagnostics["reserved_holdout_games_requested"] = holdout_games
-    diagnostics["reserved_holdout_start_date"] = holdout_start.date().isoformat()
-    diagnostics["holdout_boundary_chosen_before_score_matching"] = True
+    late_period_start = pd.Timestamp(market.iloc[split_index]["game_date"]).normalize()
+    diagnostics["late_period_games_requested"] = holdout_games
+    diagnostics["late_period_start_date"] = late_period_start.date().isoformat()
+    diagnostics["late_period_boundary_chosen_before_score_matching"] = True
     diagnostics["late_period_subset_is_fresh"] = False
     diagnostics["late_period_subset_warning"] = (
         "This late-period sample comes from the market archive already examined in "
@@ -473,7 +473,7 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
             )
             actual_total = float(score["actual_total"])
             close_line = float(game["total_close"])
-            split = "reserved_holdout" if target_date >= holdout_start else "development"
+            split = "late_period_descriptive" if target_date >= late_period_start else "development"
 
             for variant in VARIANTS:
                 prediction = predict_from_components(components, variant)
