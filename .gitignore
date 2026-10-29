@@ -117,3 +117,5 @@ data/dunkapi_historical_totals.csv
 outputs/totals_closing_line_backtest_results.csv
 outputs/totals_closing_line_backtest_summary.csv
 outputs/totals_closing_line_backtest_data_quality.json
+outputs/totals_forward_paper_trading_picks.csv
+outputs/totals_forward_paper_trading_summary.json
