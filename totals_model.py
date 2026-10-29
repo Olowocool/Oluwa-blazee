@@ -1,6 +1,6 @@
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -463,6 +463,9 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
     recommendation, confidence_note = classify_total_edge(edge)
 
     return {
+        # Timestamp when the forecast was generated; training later checks it
+        # is timezone-aware and strictly earlier than the game's tip-off.
+        "prediction_time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "history_rows": history_rows,
         "history_columns": history_columns,
         "home_team": home_team,

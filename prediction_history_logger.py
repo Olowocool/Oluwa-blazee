@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import pandas as pd
 
@@ -17,7 +17,19 @@ def latest_injury_snapshot():
     return str(files[-1].resolve()) if files else ""
 
 
-def log_prediction(prediction, game_date=None):
+def _normalize_aware_utc_timestamp(value):
+    if value is None or not str(value).strip():
+        return ""
+    try:
+        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return ""
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return ""
+    return parsed.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def log_prediction(prediction, game_date=None, commence_time_utc=None):
     required = [
         "home_team",
         "away_team",
@@ -32,6 +44,10 @@ def log_prediction(prediction, game_date=None):
 
     row = {
         "prediction_time": datetime.now().astimezone().isoformat(),
+        "prediction_time_utc": _normalize_aware_utc_timestamp(
+            prediction.get("prediction_time_utc")
+        ),
+        "commence_time_utc": _normalize_aware_utc_timestamp(commence_time_utc),
         "game_date": game_date or "",
         "home_team": prediction["home_team"],
         "away_team": prediction["away_team"],

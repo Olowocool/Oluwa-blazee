@@ -1579,11 +1579,25 @@ if data and "games" in data and len(data["games"]) > 0:
                     projected_total=totals_result["projected_total"],
                     sportsbook_total=totals_result["bookmaker_total"],
                     recommendation=totals_result["recommendation"],
+                    prediction_time_utc=totals_result.get("prediction_time_utc"),
+                    commence_time_utc=(
+                        game.get("game_time")
+                        or game.get("commence_time_utc")
+                        or game.get("commence_time")
+                    ),
+                    experimental_adjustments_applied=totals_result.get(
+                        "experimental_adjustments_applied", False
+                    ),
                 )
 
                 log_prediction(
                     prediction=totals_result,
                     game_date=active_date,
+                    commence_time_utc=(
+                        game.get("game_time")
+                        or game.get("commence_time_utc")
+                        or game.get("commence_time")
+                    ),
                 )
 
                 st.success(
