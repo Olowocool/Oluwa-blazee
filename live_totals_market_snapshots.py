@@ -189,6 +189,19 @@ def append_live_totals_market_snapshots(
         merged[identity] = row
         added += 1
 
+    # Do not create or rewrite a file when this poll produced no new valid
+    # snapshots; in particular, an in-play-only poll must not create an empty ledger.
+    if added == 0:
+        return {
+            "status": "success",
+            "path": str(path),
+            "rows_seen": seen,
+            "rows_added": 0,
+            "invalid_rows_skipped": invalid,
+            "post_tipoff_rows_skipped": post_tipoff,
+            "total_rows": len(merged),
+        }
+
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = None
     try:
