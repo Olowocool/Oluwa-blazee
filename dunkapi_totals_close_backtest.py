@@ -372,11 +372,35 @@ def fetch_daily_odds(
         raise RuntimeError(f"DunkAPI connection failed ({type(exc).__name__}).") from None
 
     if response.status_code != 200:
-        # Never log authentication headers or keys.
+        # Never log authentication headers or keys. Surface only a short provider
+        # error message so date/parameter errors can be diagnosed without retries.
         if response.status_code in (401, 403):
             raise RuntimeError("DunkAPI rejected the key or account access (HTTP authentication/plan error).")
         if response.status_code == 429:
             raise RuntimeError("DunkAPI request limit or credits exhausted (HTTP 429).")
+        if response.status_code == 400:
+            message = ""
+            try:
+                error_payload = response.json()
+                if isinstance(error_payload, dict):
+                    candidate = (
+                        error_payload.get("detail")
+                        or error_payload.get("message")
+                        or error_payload.get("error")
+                    )
+                    if isinstance(candidate, (str, int, float)):
+                        message = str(candidate)
+                    elif candidate is not None:
+                        message = json.dumps(candidate, ensure_ascii=True)
+            except (ValueError, TypeError):
+                message = ""
+            if not message:
+                message = str(getattr(response, "text", "") or "")
+            message = " ".join(message.split())[:300]
+            suffix = f" Provider says: {message}" if message else " No provider message was included."
+            raise RuntimeError(
+                f"DunkAPI rejected requested date {target_date.isoformat()} (HTTP 400).{suffix}"
+            )
         raise RuntimeError(f"DunkAPI returned HTTP {response.status_code}.")
 
     try:

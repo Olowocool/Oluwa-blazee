@@ -163,6 +163,22 @@ class DunkAPITotalsCloseBacktestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Conflicting historical market data"):
             bt.merge_market_rows(rows, [conflict])
 
+    def test_http_400_shows_provider_message_without_exposing_headers(self):
+        class FakeResponse:
+            status_code = 400
+            headers = {}
+            text = '{"detail":"No archived games for this date"}'
+
+            def json(self):
+                return {"detail": "No archived games for this date"}
+
+        with patch.object(bt.requests, "post", return_value=FakeResponse()):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"2025-11-27 \(HTTP 400\).*No archived games for this date",
+            ):
+                bt.fetch_daily_odds("do-not-log-this-key", date(2025, 11, 27))
+
     def test_plan_only_never_calls_provider(self):
         args = argparse.Namespace(
             start_date="2025-11-21",
