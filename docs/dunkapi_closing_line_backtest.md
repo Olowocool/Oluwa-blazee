@@ -21,6 +21,7 @@ This requires a **separate free DunkAPI API key**. Do not paste API keys into Ch
 - reserves the most recent chronological games as a holdout;
 - reports model MAE vs. closing-line MAE, edge-stratified win rate, profit, ROI, and opening-to-closing total movement;
 - records the actual development/holdout sample sizes in the data-quality JSON and warns if the requested holdout consumes the entire scored sample (leaving no development split);
+- lists each skipped market row's game ID, date, teams, bookmaker, and skip reason in the data-quality JSON so unmatched scores can be investigated without uploading the full results CSV;
 - rejects missing price pairs and inconsistent score joins.
 
 **Important limitation:** this provider response supplies an opening total and a closing total, but not a separately timestamped, historical Over/Under entry price in this endpoint. The initial evaluation therefore simulates taking the model's signal at the *closing line and returned closing price*. It reports opening-to-closing line movement descriptively, but does **not** claim bet-level CLV for an earlier entry. A true bet-level CLV audit requires matching a recorded entry price/time and the closing market, or a timestamped line-history feed.

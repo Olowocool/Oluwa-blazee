@@ -109,6 +109,39 @@ class DunkAPITotalsCloseBacktestTests(unittest.TestCase):
         self.assertFalse(balanced_diagnostics["holdout_covers_entire_scored_sample"])
         self.assertFalse(balanced_diagnostics["holdout_sample_warning"])
 
+    def test_skipped_game_details_include_matchup_and_reason(self):
+        results = pd.DataFrame([
+            {
+                "prediction_status": "scored",
+                "game_id": "ok-1",
+                "game_date": "2025-12-01",
+                "home_team": "Boston Celtics",
+                "away_team": "New York Knicks",
+                "bookmaker": "DraftKings",
+                "skip_reason": "",
+            },
+            {
+                "prediction_status": "skipped",
+                "game_id": "missing-1",
+                "game_date": pd.Timestamp("2025-12-02"),
+                "home_team": "Miami Heat",
+                "away_team": "Milwaukee Bucks",
+                "bookmaker": "DraftKings",
+                "skip_reason": "No matching final score in local historical history.",
+            },
+        ])
+
+        details = bt._skipped_game_details(results)
+        self.assertEqual(len(details), 1)
+        self.assertEqual(details[0], {
+            "game_id": "missing-1",
+            "game_date": "2025-12-02",
+            "home_team": "Miami Heat",
+            "away_team": "Milwaukee Bucks",
+            "bookmaker": "DraftKings",
+            "skip_reason": "No matching final score in local historical history.",
+        })
+
     def test_american_odds_convert_to_decimal(self):
         self.assertAlmostEqual(bt.american_to_decimal(-110), 1.909091, places=5)
         self.assertAlmostEqual(bt.american_to_decimal(125), 2.25, places=5)
