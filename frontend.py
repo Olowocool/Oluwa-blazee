@@ -11,6 +11,7 @@ from totals_tracker import (
 from datetime import date, datetime, timezone
 from prediction_history_logger import log_prediction
 from best_bet_selector_v2 import select_best_bet_v2
+from betting_guard import BETTING_VALIDATION_COMPLETE, actionable_bet_allowed, betting_gate_message
 from generate_totals_test_data import add_totals_test_data
 from train_totals_model import train_totals_model
 from totals_ai_predictor import totals_ai_prediction
@@ -1738,7 +1739,8 @@ if data and "games" in data and len(data["games"]) > 0:
         with st.expander("Totals Model Details"):
             st.json(totals_result)
 
-        st.subheader("Best Bet Selector")
+        st.subheader("Research Signal Summary (not betting-validated)")
+        st.caption(betting_gate_message())
 
         best_bet_v2 = select_best_bet_v2(
             moneyline_confidence=confidence * 100,
@@ -1751,27 +1753,27 @@ if data and "games" in data and len(data["games"]) > 0:
 
         with selector_col1:
             st.metric(
-                "Recommended Market",
+                "Research Market Signal",
                 best_bet_v2["market"]
             )
 
         with selector_col2:
             st.metric(
-                "Recommended Pick",
+                "Research Pick Signal",
                 best_bet_v2["pick"]
             )
 
         with selector_col3:
             st.metric(
-                "Confidence",
+                "Unvalidated Signal Score",
                 f"{best_bet_v2['confidence']}%"
             )
 
-        st.success(
-            f"🔥 OFFICIAL BEST BET: "
+        st.info(
+            f"Research-only model signal (not an actionable bet): "
             f"{best_bet_v2['market']} | "
             f"{best_bet_v2['pick']} | "
-            f"{best_bet_v2['confidence']}%"
+            f"heuristic score {best_bet_v2['confidence']}%"
         )
 
         if home_odds and away_odds:
@@ -1881,19 +1883,19 @@ if data and "games" in data and len(data["games"]) > 0:
                 )
             )
 
-            st.subheader("Confidence Engine")
+            st.subheader("Heuristic Confidence Engine (not calibrated)")
             conf_col1, conf_col2, conf_col3 = st.columns(3)
 
             with conf_col1:
-                st.metric("Confidence Score", confidence_result["confidence_score"])
+                st.metric("Heuristic Confidence Score", confidence_result["confidence_score"])
 
             with conf_col2:
-                st.metric("Confidence Tier", confidence_result["confidence_tier"])
+                st.metric("Heuristic Confidence Tier", confidence_result["confidence_tier"])
 
             with conf_col3:
-                st.metric("Recommended Action", confidence_result["recommended_action"])
+                st.metric("Heuristic Action (unvalidated)", confidence_result["recommended_action"])
 
-            st.subheader("Best Bet Selector — With Moneyline Odds")
+            st.subheader("Research Signal Comparison — With Moneyline Odds")
 
             best_market = select_best_bet(
                 moneyline_pick=candidate_bet,
@@ -1924,11 +1926,11 @@ if data and "games" in data and len(data["games"]) > 0:
                 totals_pick=totals_result["recommendation"]
             )
 
-            st.success(
-                f"🔥 OFFICIAL BEST BET: "
+            st.info(
+                f"Research-only model signal (not an actionable bet): "
                 f"{best_bet_v2_moneyline['market']} | "
                 f"{best_bet_v2_moneyline['pick']} | "
-                f"{best_bet_v2_moneyline['confidence']}%"
+                f"heuristic score {best_bet_v2_moneyline['confidence']}%"
             )
 
             uncertainty_level = "Low"
@@ -1938,7 +1940,7 @@ if data and "games" in data and len(data["games"]) > 0:
             except Exception:
                 uncertainty_level = "Low"
 
-            passes_filter = (
+            candidate_passes_value_filter = (
                 candidate_ev >= MIN_EV
                 and candidate_edge >= MIN_EDGE
                 and candidate_kelly >= MIN_KELLY
@@ -1946,9 +1948,11 @@ if data and "games" in data and len(data["games"]) > 0:
                 and uncertainty_level not in ["High", "Extreme"]
                 and confidence_result["recommended_action"] in ["Bet", "Bet Small"]
             )
-
-            if TEST_MODE:
-                passes_filter = True
+            passes_filter = actionable_bet_allowed(
+                candidate_passes_value_filter,
+                validation_complete=BETTING_VALIDATION_COMPLETE,
+                test_mode=TEST_MODE,
+            )
 
             if passes_filter:
                 best_bet = candidate_bet
@@ -1991,9 +1995,18 @@ if data and "games" in data and len(data["games"]) > 0:
                     st.success("Bet pick saved successfully!")
 
             else:
-                st.error("🚫 NO BET — failed professional value filter")
+                if not BETTING_VALIDATION_COMPLETE or TEST_MODE:
+                    st.error(
+                        "🚫 NO BET — betting validation is incomplete or test mode is active. "
+                        "This model output is research-only."
+                    )
+                else:
+                    st.error("🚫 NO BET — failed the value and risk filters.")
 
-                st.info("For testing/training, you can still save the best candidate below. This is not a professional value bet.")
+                st.info(
+                    "You may save a paper candidate for training and analysis. "
+                    "This does not authorize or place a sportsbook bet."
+                )
 
                 if candidate_bet == game["home_team"]:
                     test_selected_odds = home_odds
@@ -2006,7 +2019,7 @@ if data and "games" in data and len(data["games"]) > 0:
 
                 test_button_key = f"test_save_{game['home_team']}_{game['away_team']}_{candidate_bet}"
 
-                if st.button(f"Save Candidate Pick for Training: {candidate_bet}", key=test_button_key):
+                if st.button(f"Save Paper Candidate for Training: {candidate_bet}", key=test_button_key):
                     save_bet_pick(
                         game,
                         active_date,
