@@ -923,11 +923,17 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
         )
 
         baseline_total = float(prediction["points_engine_total"])
-        pace_adj = float(prediction["pace_adjustment"])
-        offense_adj = float(prediction["offensive_adjustment"])
-        defense_adj = float(prediction["defensive_adjustment"])
-        venue_adj = float(prediction["home_away_adjustment"])
-        injury_adj = float(prediction["injury_adjustment"])
+        # Adjustment values are optional for compatible mocked/minimal predictors.
+        # Production totals_model returns all components; missing diagnostics default to zero.
+        pace_adj = float(prediction.get("pace_adjustment", 0.0))
+        offense_adj = float(prediction.get("offensive_adjustment", 0.0))
+        defense_adj = float(prediction.get("defensive_adjustment", 0.0))
+        venue_adj = float(prediction.get("home_away_adjustment", 0.0))
+        injury_adj = float(prediction.get("injury_adjustment", 0.0))
+        full_experimental = float(prediction.get(
+            "experimental_projected_total",
+            baseline_total + pace_adj + offense_adj + defense_adj + venue_adj + injury_adj,
+        ))
         base.update({
             "points_engine_baseline_total": round(baseline_total, 2),
             "ablation_pace_only_total": round(baseline_total + pace_adj, 2),
@@ -936,7 +942,7 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
             "ablation_pace_plus_offense_defense_total": round(baseline_total + pace_adj + offense_adj + defense_adj, 2),
             "ablation_all_except_injury_total": round(baseline_total + pace_adj + offense_adj + defense_adj + venue_adj, 2),
             "ablation_injury_only_total": round(baseline_total + injury_adj, 2),
-            "ablation_full_experimental_total": round(float(prediction["experimental_projected_total"]), 2),
+            "ablation_full_experimental_total": round(full_experimental, 2),
             "pace_adjustment_component": pace_adj,
             "offensive_adjustment_component": offense_adj,
             "defensive_adjustment_component": defense_adj,
