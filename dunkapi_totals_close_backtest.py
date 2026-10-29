@@ -28,6 +28,7 @@ import requests
 
 from totals_model import classify_total_edge, predict_game_total
 from totals_betting_backtest import game_key, prepare_score_history, settle_total_bet
+from team_name_utils import normalize_history_team_columns
 
 API_URL = "https://mcp.dunkapi.com/v1/get_odds"
 DEFAULT_SCORE_FILE = "data/historical_nba_scores.csv"
@@ -573,6 +574,36 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
     if missing:
         raise ValueError(f"Market archive is missing columns: {missing}")
     market["game_date"] = pd.to_datetime(market["game_date"], errors="coerce").dt.normalize()
+
+    # Backtest-only runs must use the same requested date/bookmaker bounds as
+    # collection runs; never evaluate every row merely because an archive is larger.
+    start_value = getattr(args, "start_date", None)
+    end_value = getattr(args, "end_date", None)
+    if bool(start_value) != bool(end_value):
+        raise ValueError("Both start_date and end_date are required when either is supplied.")
+    if start_value and end_value:
+        requested_start = pd.to_datetime(start_value, errors="coerce")
+        requested_end = pd.to_datetime(end_value, errors="coerce")
+        if pd.isna(requested_start) or pd.isna(requested_end):
+            raise ValueError("Backtest dates must use YYYY-MM-DD format.")
+        requested_start = requested_start.normalize()
+        requested_end = requested_end.normalize()
+        if requested_end < requested_start:
+            raise ValueError("end_date must be on or after start_date.")
+        market = market.loc[
+            market["game_date"].between(requested_start, requested_end, inclusive="both")
+        ].copy()
+
+    bookmaker_value = getattr(args, "bookmaker", None)
+    if bookmaker_value is not None and str(bookmaker_value).strip():
+        bookmaker_key = str(bookmaker_value).strip().casefold()
+        market = market.loc[
+            market["bookmaker"].astype(str).str.strip().str.casefold() == bookmaker_key
+        ].copy()
+
+    if market.empty:
+        raise ValueError("No market rows match the requested date range and bookmaker.")
+
     for col in [
         "total_open", "total_close", "over_odds_decimal", "under_odds_decimal",
         "actual_home_points", "actual_away_points", "actual_total",
@@ -599,9 +630,94 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
     if market.duplicated(["game_key", "bookmaker"]).any():
         raise ValueError("Market archive contains duplicate game/bookmaker rows.")
 
-    history = prepare_score_history(pd.read_csv(score_path))
-    history["game_date"] = pd.to_datetime(history["game_date"], errors="coerce").dt.normalize()
-    score_lookup = {row["_game_key"]: row for _, row in history.iterrows()}
+    source_history = prepare_score_history(pd.read_csv(score_path))
+    source_history["game_date"] = pd.to_datetime(
+        source_history["game_date"], errors="coerce"
+    ).dt.normalize()
+    source_history = normalize_history_team_columns(source_history)
+    # Keep score validation separate from feature history: a verified override
+    # may settle a target game, while only explicitly eligible rows can become
+    # features for predictions made on later dates.
+    score_lookup = {
+        row["_game_key"]: row for _, row in source_history.iterrows()
+    }
+    history = source_history.copy()
+    score_override_lookup: dict[str, Any] = {}
+    score_overrides_path = (
+        Path(args.score_overrides_file)
+        if getattr(args, "score_overrides_file", None)
+        else None
+    )
+    score_override_rows_used = 0
+    feature_history_override_rows_included = 0
+
+    if score_overrides_path is not None:
+        if not score_overrides_path.is_file():
+            raise FileNotFoundError(
+                f"Verified score overrides not found: {score_overrides_path}."
+            )
+        override_raw = pd.read_csv(score_overrides_path)
+        required_override_columns = {
+            "game_date", "home_team", "away_team", "home_score", "away_score",
+            "include_in_history",
+        }
+        missing_override_columns = required_override_columns - set(override_raw.columns)
+        if missing_override_columns:
+            raise ValueError(
+                "Score override file is missing columns: "
+                f"{sorted(missing_override_columns)}"
+            )
+
+        validation_raw = override_raw.drop(columns=["include_in_history"])
+        validation_overrides = prepare_score_history(validation_raw)
+        validation_overrides["game_date"] = pd.to_datetime(
+            validation_overrides["game_date"], errors="coerce"
+        ).dt.normalize()
+        validation_overrides = normalize_history_team_columns(validation_overrides)
+        score_override_lookup = {
+            row["_game_key"]: row for _, row in validation_overrides.iterrows()
+        }
+
+        include_mask = (
+            override_raw["include_in_history"].fillna(False).astype(str).str.strip().str.casefold()
+            .isin(["true", "1", "yes", "y"])
+        )
+        feature_raw = override_raw.loc[include_mask].drop(
+            columns=["include_in_history"]
+        )
+        if not feature_raw.empty:
+            feature_overrides = prepare_score_history(feature_raw)
+            feature_overrides["game_date"] = pd.to_datetime(
+                feature_overrides["game_date"], errors="coerce"
+            ).dt.normalize()
+            feature_overrides = normalize_history_team_columns(feature_overrides)
+
+            rows_to_add = []
+            for _, override_row in feature_overrides.iterrows():
+                existing = history.loc[
+                    history["_game_key"] == override_row["_game_key"]
+                ]
+                if not existing.empty:
+                    existing_row = existing.iloc[-1]
+                    for score_column in ["home_score", "away_score", "actual_total"]:
+                        left = existing_row.get(score_column)
+                        right = override_row.get(score_column)
+                        if pd.notna(left) and pd.notna(right) and float(left) != float(right):
+                            raise ValueError(
+                                "Verified score override conflicts with existing historical "
+                                f"score for {override_row['_game_key']}."
+                            )
+                    continue
+                rows_to_add.append(override_row.to_dict())
+
+            if rows_to_add:
+                history = pd.concat(
+                    [history, pd.DataFrame(rows_to_add)], ignore_index=True
+                )
+                history = normalize_history_team_columns(history)
+                history = history.sort_values("game_date").reset_index(drop=True)
+                history.attrs["_team_names_normalized"] = True
+                feature_history_override_rows_included = len(rows_to_add)
 
     records: list[dict[str, Any]] = []
     unmatched_scores = 0
@@ -609,9 +725,19 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
     for _, game in market.sort_values(["game_date", "game_id"]).iterrows():
         target_date = pd.Timestamp(game["game_date"]).normalize()
         score = score_lookup.get(game["game_key"])
+        score_validation_source = "historical_score_history"
+        if score is None:
+            score = score_override_lookup.get(game["game_key"])
+            if score is not None:
+                score_validation_source = "verified_score_override"
+                score_override_rows_used += 1
+            else:
+                score_validation_source = "unmatched"
+
         base = game.to_dict()
         base["prediction_status"] = "scored"
         base["skip_reason"] = ""
+        base["score_validation_source"] = score_validation_source
 
         if score is None:
             base["prediction_status"] = "skipped"
@@ -738,6 +864,9 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
         "games_skipped": int((results["prediction_status"] != "scored").sum()),
         "unmatched_score_rows": unmatched_scores,
         "score_mismatch_rows": mismatched_scores,
+        "verified_score_override_rows_used": int(score_override_rows_used),
+        "feature_history_override_rows_included": int(feature_history_override_rows_included),
+        "score_override_file": str(score_overrides_path) if score_overrides_path else None,
         "selected_bookmakers": sorted(market["bookmaker"].dropna().astype(str).unique().tolist()),
         "reserved_holdout_games_requested": int(args.holdout_games),
         "reserved_holdout_start_date": holdout_start.date().isoformat(),
@@ -771,6 +900,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bookmaker", required=True, help="Exact provider label for one book, e.g. DraftKings.")
     parser.add_argument("--output-file", default=DEFAULT_MARKET_FILE)
     parser.add_argument("--scores-file", default=DEFAULT_SCORE_FILE)
+    parser.add_argument(
+        "--score-overrides-file",
+        default=None,
+        help="Optional verified game scores; only rows marked include_in_history=true affect later features.",
+    )
     parser.add_argument("--plan-only", action="store_true", help="Estimate calls/credits only; do not call the API.")
     parser.add_argument("--confirm-api-cost", action="store_true", help="Required before any historical API call.")
     parser.add_argument("--max-api-credits", type=int, default=None, help="Hard maximum credit budget for this run.")
