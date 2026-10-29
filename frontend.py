@@ -25,7 +25,7 @@ try:
 except Exception as e:
     print("Injury update failed:", e)
 from totals_model import predict_game_total, parse_valid_market_total
-from durable_totals_storage import storage_status
+from durable_totals_storage import storage_status, test_database_connection
 from retrain_model import retrain_pipeline
 from confidence_engine import classify_confidence
 from automation_runner import run_daily_automation
@@ -846,6 +846,13 @@ if "last_loaded_date" not in st.session_state:
 _storage_status = storage_status()
 if _storage_status["database_configured"]:
     st.success("Durable paper-trading storage is configured (PostgreSQL).")
+    if st.button("Test PostgreSQL connection (read-only)", key="test_nba_totals_db_connection"):
+        with st.spinner("Testing the PostgreSQL connection without changing data..."):
+            _database_check = test_database_connection()
+        if _database_check["ok"]:
+            st.success(_database_check["message"])
+        else:
+            st.error(_database_check["message"])
 elif _storage_status["durable_storage_required"]:
     st.error(
         "Durable paper-trading storage is required but not configured. "

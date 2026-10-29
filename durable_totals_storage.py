@@ -396,6 +396,51 @@ def sync_csv_mirror(
     return True
 
 
+def test_database_connection() -> dict[str, Any]:
+    """Run a read-only SELECT 1 check without creating tables or changing records."""
+    if not database_is_configured():
+        return {
+            "ok": False,
+            "message": "NBA totals database is not configured. No data was changed.",
+        }
+
+    connection = None
+    try:
+        connection = _connect()
+        if connection is None:
+            return {
+                "ok": False,
+                "message": "No PostgreSQL connection was opened. No data was changed.",
+            }
+        row = connection.execute("SELECT 1").fetchone()
+        if row and row[0] == 1:
+            return {
+                "ok": True,
+                "message": "PostgreSQL connection succeeded; read-only SELECT 1 passed.",
+            }
+        return {
+            "ok": False,
+            "message": "PostgreSQL connected but the read-only check returned an unexpected result.",
+        }
+    except RuntimeError as exc:
+        # Storage-layer RuntimeErrors contain safe messages and never include the DSN.
+        return {"ok": False, "message": str(exc)}
+    except Exception:
+        return {
+            "ok": False,
+            "message": (
+                "The read-only PostgreSQL check failed. Verify the connection string, "
+                "database role, and database availability. No data was changed."
+            ),
+        }
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+
 def storage_status() -> dict[str, Any]:
     """Return a safe status summary without exposing connection details."""
     configured = database_is_configured()
