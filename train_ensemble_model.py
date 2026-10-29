@@ -13,6 +13,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
 from advanced_features import build_advanced_features
+from legacy_training_guard import blocked_legacy_pipeline_result
 
 
 FEATURE_COLUMNS = [
@@ -56,6 +57,7 @@ FEATURE_COLUMNS = [
 
 
 def train_ensemble_model():
+    return blocked_legacy_pipeline_result("legacy ensemble training")
 
     dataset_path = "bet_history.csv"
 
