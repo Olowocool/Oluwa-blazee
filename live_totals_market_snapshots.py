@@ -16,6 +16,13 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from durable_totals_storage import (
+    MARKET_SNAPSHOT_IMMUTABLE_FIELDS,
+    fetch_records,
+    persist_records,
+    sync_csv_mirror,
+)
+
 DEFAULT_OUTPUT_FILE = "data/live_totals_market_snapshots.csv"
 SNAPSHOT_FIELDS = [
     "game_date",
@@ -140,6 +147,13 @@ def append_live_totals_market_snapshots(
             "post_tipoff_rows_skipped": 0,
         }
 
+    path = Path(output_file)
+    database_active = sync_csv_mirror(
+        "market_snapshot",
+        path,
+        fieldnames=SNAPSHOT_FIELDS,
+    )
+
     seen = len(odds_map)
     candidates = []
     invalid = post_tipoff = 0
@@ -156,7 +170,6 @@ def append_live_totals_market_snapshots(
             else:
                 invalid += 1
 
-    path = Path(output_file)
     existing: list[dict[str, str]] = []
     if path.exists() and path.stat().st_size:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -201,6 +214,19 @@ def append_live_totals_market_snapshots(
             "post_tipoff_rows_skipped": post_tipoff,
             "total_rows": len(merged),
         }
+
+    if database_active:
+        # PostgreSQL is authoritative when configured; persist first so a failed
+        # local mirror write cannot silently lose an observed market snapshot.
+        db_result = persist_records(
+            "market_snapshot",
+            candidates,
+            immutable=True,
+            conflict_fields=MARKET_SNAPSHOT_IMMUTABLE_FIELDS,
+        )
+        database_rows = fetch_records("market_snapshot")
+        merged = {_snapshot_identity(row): row for row in database_rows}
+        added = db_result["inserted"]
 
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = None
