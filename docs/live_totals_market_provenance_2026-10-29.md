@@ -14,7 +14,7 @@ For every complete, valid, pre-tipoff totals market returned by the existing Odd
 - A single total line plus Over and Under decimal prices from the same bookmaker and the same line.
 - Source identifier for the live Odds API endpoint.
 
-The ledger is append-only and deduplicates repeated cached snapshots by game, bookmaker, and observation timestamp. A conflicting price for that same identity raises an error and leaves the prior file unchanged. It skips malformed pairs and any snapshot at or after tip-off. It does not fetch additional data by itself; it receives the result of the application's existing odds fetch.
+The ledger is append-only and deduplicates repeated cached snapshots by game, bookmaker, and observation timestamp. A conflicting price for that same identity raises an error and leaves the prior file unchanged. It skips malformed pairs and any snapshot at or after tip-off; if a poll yields no new valid snapshot, it does not create or rewrite the ledger. It does not fetch additional data by itself; it receives the result of the application's existing odds fetch.
 
 ## Saved pick and learning requirements
 
