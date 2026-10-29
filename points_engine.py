@@ -241,6 +241,18 @@ def get_head_to_head_games(history_df, home_team, away_team, limit=10):
     return h2h
 
 
+def _is_neutral_site_value(value):
+    """Interpret optional neutral-site flags safely, treating missing legacy values as false."""
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().casefold() in {"true", "1", "yes", "y"}
+
+
 def calculate_team_points_features(team_name, history_df=None, last_n=10):
     if history_df is None:
         history_df = load_game_history()
@@ -277,13 +289,20 @@ def calculate_team_points_features(team_name, history_df=None, last_n=10):
         if home_team == team_name_lc:
             scored = home_score
             allowed = away_score
-            home_points.append(scored)
         elif away_team == team_name_lc:
             scored = away_score
             allowed = home_score
-            away_points.append(scored)
         else:
             continue
+
+        # Neutral-court games count toward recent scoring form, points allowed,
+        # margins, totals, and rest, but must not contaminate home/away venue splits.
+        is_neutral_site = _is_neutral_site_value(row.get("is_neutral_site", False))
+        if not is_neutral_site:
+            if home_team == team_name_lc:
+                home_points.append(scored)
+            else:
+                away_points.append(scored)
 
         points_for.append(scored)
         points_allowed.append(allowed)
