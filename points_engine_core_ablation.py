@@ -54,7 +54,8 @@ class CoreVariant:
 
 
 # Baseline parameters match points_engine.calculate_matchup_points().
-# All alternatives are fixed before scoring the reserved chronological holdout.
+# Alternatives are predeclared, but the historical late-period subset was already
+# examined in prior ablation work and is NOT a fresh independent holdout.
 VARIANTS: tuple[CoreVariant, ...] = (
     CoreVariant("baseline", (0.30, 0.25, 0.25, 0.20)),
     CoreVariant("no_h2h", (0.30, 0.25, 0.25, 0.20), h2h_strength=0.0),
@@ -356,7 +357,7 @@ def _prepare_history(
 
 def _make_summary(scored: pd.DataFrame) -> pd.DataFrame:
     summaries: list[dict[str, Any]] = []
-    split_names = ["development", "reserved_holdout", "all_games"]
+    split_names = ["development", "late_period_descriptive", "all_games"]
     strategies = ["all_qualifying_edges", "strong_only", "lean_only"]
     for split in split_names:
         split_df = scored if split == "all_games" else scored.loc[scored["evaluation_split"] == split]
@@ -425,10 +426,17 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
     if holdout_games < 1:
         raise ValueError("holdout_games must be at least 1.")
     split_index = max(0, len(market) - holdout_games)
-    holdout_start = pd.Timestamp(market.iloc[split_index]["game_date"]).normalize()
-    diagnostics["reserved_holdout_games_requested"] = holdout_games
-    diagnostics["reserved_holdout_start_date"] = holdout_start.date().isoformat()
-    diagnostics["holdout_boundary_chosen_before_score_matching"] = True
+    late_period_start = pd.Timestamp(market.iloc[split_index]["game_date"]).normalize()
+    diagnostics["late_period_games_requested"] = holdout_games
+    diagnostics["late_period_start_date"] = late_period_start.date().isoformat()
+    diagnostics["late_period_boundary_chosen_before_score_matching"] = True
+    diagnostics["late_period_subset_is_fresh"] = False
+    diagnostics["late_period_subset_warning"] = (
+        "This late-period sample comes from the market archive already examined in "
+        "earlier ablation work. Treat its metrics as descriptive, not confirmatory; "
+        "do not select or promote a formula on this sample. Verify candidates with "
+        "future prospective predictions on genuinely new games."
+    )
 
     records: list[dict[str, Any]] = []
     unmatched_scores = 0
@@ -465,7 +473,7 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
             )
             actual_total = float(score["actual_total"])
             close_line = float(game["total_close"])
-            split = "reserved_holdout" if target_date >= holdout_start else "development"
+            split = "late_period_descriptive" if target_date >= late_period_start else "development"
 
             for variant in VARIANTS:
                 prediction = predict_from_components(components, variant)
@@ -533,7 +541,9 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
         "live_betting_enabled": False,
         "production_formula_modified": False,
         "interpretation": (
-            "Development results are exploratory. The reserved chronological holdout is not for tuning. "
+            "All historical metrics are descriptive because this market archive was already inspected "
+            "in prior ablation work; the late-period subset is not a fresh untouched holdout. "
+            "Do not promote a formula from these results alone. Require future prospective confirmation. "
             "Closing-price ROI is retrospective and does not prove entry-time availability."
         ),
     })
@@ -562,7 +572,11 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
     ]
     print("\n===== POINTS ENGINE CORE ABLATION (RESEARCH ONLY) =====")
     print(summary.loc[summary["strategy"] == "all_qualifying_edges", display_cols].to_string(index=False))
-    print("\nReserved holdout must not be used to choose weights. No production formula was changed.")
+    print(
+        "\nWARNING: This late-period slice was already examined in earlier ablations; "
+        "it is not fresh confirmatory evidence."
+    )
+    print("Use new prospective games to confirm any candidate. No production formula was changed.")
     print(f"Results: {results_path}")
     print(f"Summary: {summary_path}")
     print(f"Data-quality diagnostics: {diagnostics_path}")
@@ -580,7 +594,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end-date", default="2025-12-23", help="Inclusive YYYY-MM-DD.")
     parser.add_argument("--bookmaker", default="DraftKings")
     parser.add_argument("--min-prior-games", type=int, default=100)
-    parser.add_argument("--holdout-games", type=int, default=42)
+    parser.add_argument(
+        "--holdout-games", "--late-period-games", dest="holdout_games",
+        type=int, default=42,
+        help="Size of the late-period descriptive slice (not a fresh holdout).",
+    )
     parser.add_argument("--stake-units", type=float, default=1.0)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     return parser
