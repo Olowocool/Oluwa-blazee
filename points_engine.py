@@ -28,7 +28,7 @@ def safe_number(value, default=0.0):
         return default
 
 
-normalize functiondef standardize_score_history(df):
+def standardize_score_history(df):
     df = df.copy()
 
     df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce")
