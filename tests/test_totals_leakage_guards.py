@@ -165,10 +165,33 @@ class TotalsLeakageGuardTests(unittest.TestCase):
         wrong_label = dict(base, prediction_time_utc="2026-10-20T20:00:00Z",
                            commence_time_utc="2026-10-20T23:00:00Z",
                            actual_total=215.0, result="Win")
+        stale_snapshot = dict(
+            base,
+            prediction_time_utc="2026-10-20T20:00:00Z",
+            market_snapshot_time_utc="2026-10-20T19:50:00Z",
+            market_last_update_utc="2026-10-20T19:49:00Z",
+            commence_time_utc="2026-10-20T23:00:00Z",
+        )
+        snapshot_after_prediction = dict(
+            base,
+            prediction_time_utc="2026-10-20T20:00:00Z",
+            market_snapshot_time_utc="2026-10-20T20:01:00Z",
+            market_last_update_utc="2026-10-20T20:00:30Z",
+            commence_time_utc="2026-10-20T23:00:00Z",
+        )
+        line_mismatch = dict(
+            base,
+            prediction_time_utc="2026-10-20T20:00:00Z",
+            commence_time_utc="2026-10-20T23:00:00Z",
+            market_snapshot_total_line=221.5,
+        )
         with tempfile.TemporaryDirectory() as directory:
             history_path = os.path.join(directory, "totals_history.csv")
             learning_path = os.path.join(directory, "totals_learning_dataset.csv")
-            pd.DataFrame([eligible, post_tipoff, naive_timestamp, wrong_label]).to_csv(history_path, index=False)
+            pd.DataFrame([
+                eligible, post_tipoff, naive_timestamp, wrong_label,
+                stale_snapshot, snapshot_after_prediction, line_mismatch,
+            ]).to_csv(history_path, index=False)
             with patch.object(totals_auto_learning, "TOTALS_HISTORY_FILE", history_path):
                 with patch.object(totals_auto_learning, "TOTALS_LEARNING_FILE", learning_path):
                     result = totals_auto_learning.build_totals_learning_dataset()
@@ -176,6 +199,9 @@ class TotalsLeakageGuardTests(unittest.TestCase):
             self.assertEqual(result["rows"], 1)
             self.assertEqual(result["timestamp_invalid_rows_excluded"], 1)
             self.assertEqual(result["post_tipoff_rows_excluded"], 1)
+            self.assertEqual(result["stale_market_snapshot_rows_excluded"], 1)
+            self.assertEqual(result["market_snapshot_after_prediction_rows_excluded"], 1)
+            self.assertEqual(result["market_snapshot_rows_excluded"], 1)
             self.assertEqual(result["inconsistent_rows_excluded"], 1)
             saved = pd.read_csv(learning_path)
             self.assertEqual(len(saved), 1)
@@ -242,7 +268,10 @@ class TotalsLeakageGuardTests(unittest.TestCase):
         genuine.update({
             "game_date": "2026-10-20",
             "prediction_time_utc": "2026-10-20T20:00:00Z",
+            "market_snapshot_time_utc": "2026-10-20T19:59:00Z",
+            "market_last_update_utc": "2026-10-20T19:58:00Z",
             "commence_time_utc": "2026-10-20T23:00:00Z",
+            "source_event_id": "event-genuine",
             "home_team": "New York Knicks",
             "away_team": "Philadelphia 76ers",
         })
