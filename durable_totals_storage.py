@@ -147,6 +147,15 @@ def _stable_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _has_identifier(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, float) and not math.isfinite(value):
+        return False
+    text = str(value).strip().casefold()
+    return bool(text) and text not in {"nan", "none", "null", "<na>", "nat"}
+
+
 def record_key(record_type: str, record: dict[str, Any]) -> str:
     """Return a stable key for each append-only observation or mutable audit row."""
     if record_type == "market_snapshot":
@@ -166,7 +175,7 @@ def record_key(record_type: str, record: dict[str, Any]) -> str:
         "totals_pick": "pick_id",
         "prediction_audit": "prediction_id",
     }.get(record_type)
-    if id_field and str(record.get(id_field) or "").strip():
+    if id_field and _has_identifier(record.get(id_field)):
         return str(record[id_field]).strip()
 
     # Legacy CSV rows receive a deterministic ID, which is also written back to
@@ -181,7 +190,7 @@ def _ensure_legacy_ids(record_type: str, rows: list[dict[str, Any]]) -> list[dic
     prepared = []
     for original in rows:
         row = dict(original)
-        if not str(row.get(field) or "").strip():
+        if not _has_identifier(row.get(field)):
             row[field] = "legacy-" + _stable_hash(_canonical_json(row))
         prepared.append(row)
     return prepared
