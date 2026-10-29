@@ -10,6 +10,7 @@ import pandas as pd
 
 TOTALS_HISTORY_FILE = "totals_history.csv"
 TOTALS_LEARNING_FILE = "totals_learning_dataset.csv"
+MAX_MARKET_SNAPSHOT_AGE_SECONDS = 300
 
 PREDICTOR_COLUMNS = [
     "projected_total",
@@ -189,6 +190,15 @@ def build_totals_learning_dataset():
     commence_ts = commence_ts.loc[df.index]
     market_update_ts = market_update_ts.loc[df.index]
 
+    snapshot_age_seconds = (prediction_ts - snapshot_ts).dt.total_seconds()
+    stale_snapshot = snapshot_age_seconds > MAX_MARKET_SNAPSHOT_AGE_SECONDS
+    stale_market_snapshot_rows_excluded = int(stale_snapshot.sum())
+    df = df.loc[~stale_snapshot].copy()
+    prediction_ts = prediction_ts.loc[df.index]
+    snapshot_ts = snapshot_ts.loc[df.index]
+    commence_ts = commence_ts.loc[df.index]
+    market_update_ts = market_update_ts.loc[df.index]
+
     for column, values in [
         ("prediction_time_utc", prediction_ts),
         ("market_snapshot_time_utc", snapshot_ts),
@@ -211,6 +221,7 @@ def build_totals_learning_dataset():
             invalid_market_update_rows_excluded=invalid_market_update_rows_excluded,
             post_tipoff_rows_excluded=post_tipoff_rows_excluded,
             market_snapshot_after_prediction_rows_excluded=market_snapshot_after_prediction_rows_excluded,
+            stale_market_snapshot_rows_excluded=stale_market_snapshot_rows_excluded,
             training_allowed=False,
         )
 
@@ -278,6 +289,7 @@ def build_totals_learning_dataset():
             timestamp_invalid_rows_excluded=timestamp_invalid_rows_excluded,
             post_tipoff_rows_excluded=post_tipoff_rows_excluded,
             market_snapshot_after_prediction_rows_excluded=market_snapshot_after_prediction_rows_excluded,
+            stale_market_snapshot_rows_excluded=stale_market_snapshot_rows_excluded,
             invalid_numeric_rows_excluded=invalid_numeric_rows_excluded,
             market_snapshot_rows_excluded=market_snapshot_rows_excluded,
             inconsistent_rows_excluded=inconsistent_rows_excluded,
@@ -311,6 +323,7 @@ def build_totals_learning_dataset():
         "invalid_market_update_rows_excluded": invalid_market_update_rows_excluded,
         "post_tipoff_rows_excluded": post_tipoff_rows_excluded,
         "market_snapshot_after_prediction_rows_excluded": market_snapshot_after_prediction_rows_excluded,
+        "stale_market_snapshot_rows_excluded": stale_market_snapshot_rows_excluded,
         "market_snapshot_rows_excluded": market_snapshot_rows_excluded,
         "invalid_numeric_rows_excluded": invalid_numeric_rows_excluded,
         "inconsistent_rows_excluded": inconsistent_rows_excluded,
@@ -319,7 +332,12 @@ def build_totals_learning_dataset():
         "predictor_columns": PREDICTOR_COLUMNS,
         "post_game_fields_excluded_from_predictors": sorted(POST_GAME_COLUMNS),
         "training_allowed": True,
-        "provenance_rule": "market_snapshot_time_utc must be timezone-aware and <= prediction_time_utc; both must be strictly earlier than commence_time_utc; observed line must match sportsbook_total",
+        "provenance_rule": (
+            "market_snapshot_time_utc must be timezone-aware, <= prediction_time_utc, "
+            f"no more than {MAX_MARKET_SNAPSHOT_AGE_SECONDS} seconds before prediction, "
+            "and both must be strictly earlier than commence_time_utc; observed line "
+            "must match sportsbook_total and the bookmaker must provide valid paired prices"
+        ),
     }
 
 
