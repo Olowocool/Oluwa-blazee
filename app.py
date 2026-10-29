@@ -11,6 +11,8 @@ import requests
 
 from injury_impact import calculate_matchup_injury_adjustment
 
+from pregame_history_guard import history_strictly_before_target_date, parse_target_calendar_date
+
 from model_quality import (
     calculate_recent_form,
     calculate_home_away_strength,
@@ -263,7 +265,7 @@ def fallback_prediction(home_team, away_team, warning):
     }
 
 
-def safe_prediction(home_team, away_team):
+def safe_prediction(home_team, away_team, game_date=None):
     home_team = normalize_team_name(home_team)
     away_team = normalize_team_name(away_team)
 
@@ -276,62 +278,76 @@ def safe_prediction(home_team, away_team):
 
     prediction = predict_matchup({
         "home_team": home_team,
-        "away_team": away_team
+        "away_team": away_team,
+        "game_date": game_date,
     })
 
     if "error" not in prediction:
         return prediction
 
-    return {
-        "home_team": home_team,
-        "away_team": away_team,
-        "home_win_probability": 0.5,
-        "away_win_probability": 0.5,
-        "prediction": home_team,
-        "best_bet": home_team,
-        "confidence": 0.5,
-        "model_status": model_status,
-        "warning": prediction.get("error", "Model prediction failed."),
-        "home_recent_win_rate": 0,
-        "away_recent_win_rate": 0,
-        "home_recent_margin": 0,
-        "away_recent_margin": 0,
-        "home_rest_days": 0,
-        "away_rest_days": 0,
-        "home_strength": 0,
-        "away_strength": 0,
-        "home_injury_penalty": 0,
-        "away_injury_penalty": 0,
-        "injury_diff": 0,
-        "injury_probability_adjustment": 0,
-        "home_injuries": [],
-        "away_injuries": []
-    }
+    return fallback_prediction(
+        home_team,
+        away_team,
+        prediction.get("error", "Model prediction failed."),
+    )
 
 
 @app.post("/predict_matchup")
 def predict_matchup(payload: dict):
-    home_team = normalize_team_name(payload["home_team"])
-    away_team = normalize_team_name(payload["away_team"])
+    home_team = normalize_team_name(payload.get("home_team", ""))
+    away_team = normalize_team_name(payload.get("away_team", ""))
+
+    if not home_team or not away_team:
+        return {"error": "Both home_team and away_team are required."}
+
+    if model is None or not feature_cols:
+        return {
+            "error": "The trained prediction model is unavailable; model-based prediction was blocked.",
+            "model_status": model_status,
+        }
 
     if history.empty:
         return {"error": "Training history is not loaded."}
 
-    home_games = history[
-        (history["home_team_name"] == home_team)
-        | (history["away_team_name"] == home_team)
+    try:
+        target_date = parse_target_calendar_date(payload.get("game_date"))
+        pregame_history = history_strictly_before_target_date(history, target_date)
+    except ValueError as exc:
+        return {"error": str(exc), "model_status": model_status}
+
+    if pregame_history.empty:
+        return {
+            "error": (
+                "No historical games exist strictly before target date "
+                f"{target_date.isoformat()}; prediction was blocked to prevent leakage."
+            ),
+            "target_game_date": target_date.isoformat(),
+            "model_status": model_status,
+        }
+
+    home_games = pregame_history[
+        (pregame_history["home_team_name"] == home_team)
+        | (pregame_history["away_team_name"] == home_team)
     ]
 
-    away_games = history[
-        (history["home_team_name"] == away_team)
-        | (history["away_team_name"] == away_team)
+    away_games = pregame_history[
+        (pregame_history["home_team_name"] == away_team)
+        | (pregame_history["away_team_name"] == away_team)
     ]
 
     if home_games.empty:
-        return {"error": f"Home team not found: {home_team}"}
+        return {
+            "error": f"Home team has no games strictly before {target_date.isoformat()}: {home_team}",
+            "target_game_date": target_date.isoformat(),
+            "model_status": model_status,
+        }
 
     if away_games.empty:
-        return {"error": f"Away team not found: {away_team}"}
+        return {
+            "error": f"Away team has no games strictly before {target_date.isoformat()}: {away_team}",
+            "target_game_date": target_date.isoformat(),
+            "model_status": model_status,
+        }
 
     latest_home = home_games.sort_values("date").iloc[-1]
     latest_away = away_games.sort_values("date").iloc[-1]
@@ -345,23 +361,25 @@ def predict_matchup(payload: dict):
     away_rest_days = calculate_rest_days(away_games)
     injury_adjustment = injury_data["injury_diff"] * 0.004
 
-    raw_prob = 0.5
+    try:
+        row = build_feature_row(latest_home, latest_away)
+        X = pd.DataFrame([row])
 
-    if model is not None and len(feature_cols) > 0:
-        try:
-            row = build_feature_row(latest_home, latest_away)
-            X = pd.DataFrame([row])
+        for col in feature_cols:
+            if col not in X.columns:
+                X[col] = 0
 
-            for col in feature_cols:
-                if col not in X.columns:
-                    X[col] = 0
-
-            X = X[feature_cols]
-            X = X.replace([np.inf, -np.inf], 0)
-            X = X.fillna(0)
-            raw_prob = float(model.predict_proba(X)[0][1])
-        except Exception:
-            raw_prob = 0.5
+        X = X[feature_cols]
+        X = X.replace([np.inf, -np.inf], 0)
+        X = X.fillna(0)
+        raw_prob = float(model.predict_proba(X)[0][1])
+    except Exception as exc:
+        return {
+            "error": "Model inference failed; prediction was blocked rather than replaced with a fallback probability.",
+            "model_status": model_status,
+            "detail": str(exc),
+            "target_game_date": target_date.isoformat(),
+        }
 
     prob = quality_adjust_probability(
         raw_prob=raw_prob,
@@ -386,6 +404,9 @@ def predict_matchup(payload: dict):
         "best_bet": prediction,
         "confidence": round(float(max(prob, 1 - prob)), 4),
         "model_status": model_status,
+        "target_game_date": target_date.isoformat(),
+        "pregame_history_rows": int(len(pregame_history)),
+        "pregame_history_cutoff": "strictly_before_target_lagos_calendar_date",
         "raw_home_win_probability": round(float(raw_prob), 4),
         "home_recent_win_rate": round(float(home_recent_form["recent_win_rate"]), 4),
         "away_recent_win_rate": round(float(away_recent_form["recent_win_rate"]), 4),
@@ -444,7 +465,7 @@ def convert_espn_event_to_game(event, selected_display_date):
     if not home_team or not away_team:
         return None
 
-    prediction = safe_prediction(home_team, away_team)
+    prediction = safe_prediction(home_team, away_team, selected_display_date)
 
     prediction["game_id"] = str(event.get("id", ""))
     prediction["game_date"] = selected_display_date
