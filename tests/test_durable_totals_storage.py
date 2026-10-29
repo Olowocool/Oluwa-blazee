@@ -122,9 +122,19 @@ class DurableTotalsStorageTests(unittest.TestCase):
                 append_live_totals_market_snapshots("10/29/2026", odds, path)
 
             self.assertEqual(path.read_bytes(), before)
+
+            # Keep the prices identical, but change event metadata at the same
+            # capture identity. A source/event mismatch must also fail closed.
+            odds[("Boston Celtics", "New York Knicks")]["over_odds"] = 1.91
+            odds[("Boston Celtics", "New York Knicks")]["source_event_id"] = "different-event-id"
+            with self.assertRaisesRegex(ValueError, "Conflicting market data"):
+                append_live_totals_market_snapshots("10/29/2026", odds, path)
+            self.assertEqual(path.read_bytes(), before)
+
             database_rows = storage.fetch_records("market_snapshot")
             self.assertEqual(len(database_rows), 1)
             self.assertEqual(float(database_rows[0]["over_odds"]), 1.91)
+            self.assertEqual(database_rows[0]["source_event_id"], "nba-event-123")
 
     def test_pick_result_updates_existing_record_by_stable_pick_id(self):
         initial = {
