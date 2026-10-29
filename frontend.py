@@ -1632,10 +1632,18 @@ if data and "games" in data and len(data["games"]) > 0:
                     recommendation=totals_result["recommendation"],
                     prediction_time_utc=totals_result.get("prediction_time_utc"),
                     commence_time_utc=(
-                        game.get("game_time")
+                        odds.get("commence_time_utc")
+                        or game.get("game_time")
                         or game.get("commence_time_utc")
                         or game.get("commence_time")
                     ),
+                    market_snapshot_time_utc=odds.get("snapshot_timestamp_utc"),
+                    market_last_update_utc=odds.get("market_last_update_utc"),
+                    over_odds=odds.get("over_odds"),
+                    under_odds=odds.get("under_odds"),
+                    totals_bookmaker=odds.get("totals_bookmaker"),
+                    snapshot_source=odds.get("snapshot_source"),
+                    source_event_id=odds.get("source_event_id"),
                     experimental_adjustments_applied=totals_result.get(
                         "experimental_adjustments_applied", False
                     ),
@@ -1645,10 +1653,18 @@ if data and "games" in data and len(data["games"]) > 0:
                     prediction=totals_result,
                     game_date=active_date,
                     commence_time_utc=(
-                        game.get("game_time")
+                        odds.get("commence_time_utc")
+                        or game.get("game_time")
                         or game.get("commence_time_utc")
                         or game.get("commence_time")
                     ),
+                    market_snapshot_time_utc=odds.get("snapshot_timestamp_utc"),
+                    market_last_update_utc=odds.get("market_last_update_utc"),
+                    over_odds=odds.get("over_odds"),
+                    under_odds=odds.get("under_odds"),
+                    totals_bookmaker=odds.get("totals_bookmaker"),
+                    snapshot_source=odds.get("snapshot_source"),
+                    source_event_id=odds.get("source_event_id"),
                 )
 
                 st.success(
