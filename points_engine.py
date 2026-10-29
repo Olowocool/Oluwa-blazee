@@ -62,6 +62,25 @@ def history_strictly_before_target_date(history_df, game_date=None):
             target = target.tz_convert("Africa/Lagos").tz_localize(None)
         target = target.normalize()
 
+    target_key = target.date().isoformat()
+    date_values = history_df[date_col]
+
+    # Trusted upstream cutoffs attach the requested date after rebuilding totals.
+    # Reuse that validated snapshot when it still contains only strictly prior
+    # rows; this avoids re-parsing and rewriting tens of thousands of scores for
+    # every prediction in a chronological backtest.
+    if (
+        history_df.attrs.get("_strict_history_cutoff_date") == target_key
+        and pd.api.types.is_datetime64_any_dtype(date_values.dtype)
+        and not date_values.isna().any()
+        and date_values.max() < target
+        and {"home_score", "away_score", "total_score"}.issubset(history_df.columns)
+    ):
+        history = history_df.copy()
+        if date_col != "game_date":
+            history = history.rename(columns={date_col: "game_date"})
+        return normalize_history_team_columns(history)
+
     history = history_df.copy()
     if date_col != "game_date":
         history = history.rename(columns={date_col: "game_date"})
@@ -75,7 +94,9 @@ def history_strictly_before_target_date(history_df, game_date=None):
         history["away_score"] = pd.to_numeric(history["away_score"], errors="coerce")
         history["total_score"] = history["home_score"] + history["away_score"]
 
-    return normalize_history_team_columns(history)
+    history = normalize_history_team_columns(history)
+    history.attrs["_strict_history_cutoff_date"] = target_key
+    return history
 
 
 def standardize_score_history(df):
