@@ -572,7 +572,11 @@ def run_core_ablation(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFr
     ]
     print("\n===== POINTS ENGINE CORE ABLATION (RESEARCH ONLY) =====")
     print(summary.loc[summary["strategy"] == "all_qualifying_edges", display_cols].to_string(index=False))
-    print("\nReserved holdout must not be used to choose weights. No production formula was changed.")
+    print(
+        "\nWARNING: This late-period slice was already examined in earlier ablations; "
+        "it is not fresh confirmatory evidence."
+    )
+    print("Use new prospective games to confirm any candidate. No production formula was changed.")
     print(f"Results: {results_path}")
     print(f"Summary: {summary_path}")
     print(f"Data-quality diagnostics: {diagnostics_path}")
