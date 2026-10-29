@@ -15,6 +15,54 @@ from totals_forward_paper_trading import evaluate_forward_paper_trading
 TEST_DATABASE_URL = os.getenv("NBA_TOTALS_TEST_DATABASE_URL", "").strip()
 
 
+class DatabaseConnectionCheckTests(unittest.TestCase):
+    def test_connection_check_runs_read_only_select_and_closes_connection(self):
+        class FakeConnection:
+            def __init__(self):
+                self.query = None
+                self.closed = False
+
+            def execute(self, query):
+                self.query = query
+                return self
+
+            def fetchone(self):
+                return (1,)
+
+            def close(self):
+                self.closed = True
+
+        connection = FakeConnection()
+        with patch("durable_totals_storage.database_is_configured", return_value=True), patch(
+            "durable_totals_storage._connect", return_value=connection
+        ):
+            result = storage.test_database_connection()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(connection.query, "SELECT 1")
+        self.assertTrue(connection.closed)
+
+    def test_connection_check_fails_without_exposing_connection_details(self):
+        with patch("durable_totals_storage.database_is_configured", return_value=True), patch(
+            "durable_totals_storage._connect",
+            side_effect=RuntimeError("Could not connect to the configured NBA totals database."),
+        ):
+            result = storage.test_database_connection()
+
+        self.assertFalse(result["ok"])
+        self.assertIn("Could not connect", result["message"])
+        self.assertNotIn("postgresql://", result["message"])
+
+    def test_connection_check_does_not_connect_when_not_configured(self):
+        with patch("durable_totals_storage.database_is_configured", return_value=False), patch(
+            "durable_totals_storage._connect"
+        ) as connect:
+            result = storage.test_database_connection()
+
+        self.assertFalse(result["ok"])
+        connect.assert_not_called()
+
+
 @unittest.skipUnless(
     TEST_DATABASE_URL,
     "Set NBA_TOTALS_TEST_DATABASE_URL to run PostgreSQL integration tests.",
