@@ -25,6 +25,7 @@ try:
 except Exception as e:
     print("Injury update failed:", e)
 from totals_model import predict_game_total, parse_valid_market_total
+from durable_totals_storage import storage_status
 from retrain_model import retrain_pipeline
 from confidence_engine import classify_confidence
 from automation_runner import run_daily_automation
@@ -841,6 +842,22 @@ if "daily_data" not in st.session_state:
 if "last_loaded_date" not in st.session_state:
     st.session_state["last_loaded_date"] = None
 
+
+_storage_status = storage_status()
+if _storage_status["database_configured"]:
+    st.success("Durable paper-trading storage is configured (PostgreSQL).")
+elif _storage_status["durable_storage_required"]:
+    st.error(
+        "Durable paper-trading storage is required but not configured. "
+        "Saved picks and market snapshots will fail closed until "
+        "NBA_TOTALS_DATABASE_URL is set in app secrets/environment."
+    )
+else:
+    st.warning(
+        "Paper-trading records currently use local CSV files. Hosted restarts or "
+        "redeploys can lose these records. Configure NBA_TOTALS_DATABASE_URL in "
+        "app secrets/environment before relying on this as a persistent archive."
+    )
 
 st.title("NBA Games")
 
