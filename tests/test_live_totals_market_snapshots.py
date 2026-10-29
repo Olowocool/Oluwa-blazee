@@ -37,7 +37,7 @@ class LiveTotalsMarketSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "data" / "snapshots.csv"
             result = append_live_totals_market_snapshots(
-                "10/20/2026",
+                "10/21/2026",
                 {("Home", "Away"): market_row()},
                 output_file=path,
             )
@@ -48,6 +48,8 @@ class LiveTotalsMarketSnapshotTests(unittest.TestCase):
             with path.open(encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle))
             self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["game_date"], "2026-10-20")
+            self.assertEqual(rows[0]["display_game_date"], "10/21/2026")
             self.assertEqual(rows[0]["snapshot_timestamp_utc"], "2026-10-20T19:59:00Z")
             self.assertEqual(rows[0]["commence_time_utc"], "2026-10-20T23:00:00Z")
             self.assertEqual(float(rows[0]["total_line"]), 220.5)
