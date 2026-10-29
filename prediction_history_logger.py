@@ -1,7 +1,10 @@
 from pathlib import Path
 from datetime import datetime, timezone
 import json
+import uuid
 import pandas as pd
+
+from durable_totals_storage import persist_records, sync_csv_mirror
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "outputs"
@@ -55,6 +58,7 @@ def log_prediction(
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     row = {
+        "prediction_id": uuid.uuid4().hex,
         "prediction_time": datetime.now().astimezone().isoformat(),
         "prediction_time_utc": _normalize_aware_utc_timestamp(
             prediction.get("prediction_time_utc")
@@ -101,7 +105,11 @@ def log_prediction(
         "total_error": None,
     }
 
-        # Prevent duplicate records for the same game, line, and recommendation.
+        # PostgreSQL becomes authoritative when configured. In strict durable mode,
+    # a missing database setting fails closed before any new audit row is saved.
+    database_active = sync_csv_mirror("prediction_audit", HISTORY_FILE)
+
+    # Prevent duplicate records for the same game, line, and recommendation.
     if HISTORY_FILE.exists():
         existing = pd.read_csv(HISTORY_FILE)
 
@@ -132,11 +140,18 @@ def log_prediction(
                 print("Duplicate prediction detected; not logged.")
                 return row
 
-    df = pd.DataFrame([row])
+    # Persist to the durable ledger first. A database failure must not be
+    # hidden by a successful write to an ephemeral hosted filesystem.
+    persist_records("prediction_audit", [row])
 
-    if HISTORY_FILE.exists():
-        df.to_csv(HISTORY_FILE, mode="a", header=False, index=False)
+    if database_active:
+        sync_csv_mirror("prediction_audit", HISTORY_FILE)
     else:
+        if HISTORY_FILE.exists():
+            existing = pd.read_csv(HISTORY_FILE)
+            df = pd.concat([existing, pd.DataFrame([row])], ignore_index=True, sort=False)
+        else:
+            df = pd.DataFrame([row])
         df.to_csv(HISTORY_FILE, index=False)
 
     print(f"Prediction logged: {HISTORY_FILE}")
