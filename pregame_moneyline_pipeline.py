@@ -77,7 +77,9 @@ METADATA_COLUMNS = [
 
 
 def _canonical_team(value: Any) -> str:
-    text = str(value or "").strip()
+    if pd.isna(value):
+        return ""
+    text = str(value).strip()
     aliases = {
         "LA Clippers": "Los Angeles Clippers",
         "LA Lakers": "Los Angeles Lakers",
@@ -101,10 +103,15 @@ def prepare_score_history(raw: pd.DataFrame) -> pd.DataFrame:
         "away_score": ("away_team_score", "away_points", "away score"),
     }
     for canonical, alternatives in aliases.items():
-        if canonical not in df.columns:
-            match = next((name for name in alternatives if name in df.columns), None)
-            if match:
-                df = df.rename(columns={match: canonical})
+        sources = [name for name in (canonical, *alternatives) if name in df.columns]
+        if not sources:
+            continue
+
+        values = df[sources[0]].copy()
+        for source in sources[1:]:
+            has_value = values.notna() & values.astype(str).str.strip().ne("")
+            values = values.where(has_value, df[source])
+        df[canonical] = values
 
     required = ["game_date", "home_team", "away_team", "home_score", "away_score"]
     missing = [name for name in required if name not in df.columns]
