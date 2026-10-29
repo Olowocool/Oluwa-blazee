@@ -118,3 +118,8 @@ data/dunkapi_historical_totals.csv
 outputs/totals_closing_line_backtest_results.csv
 outputs/totals_closing_line_backtest_summary.csv
 outputs/totals_closing_line_backtest_data_quality.json
+
+# Runtime pick/audit/training files are local caches, not public source data.
+totals_history.csv
+outputs/prediction_history.csv
+outputs/totals_learning_dataset.csv
