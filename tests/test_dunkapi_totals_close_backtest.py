@@ -88,6 +88,27 @@ class DunkAPITotalsCloseBacktestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "on or after"):
             bt.parse_date_range("2025-11-26", "2025-11-25")
 
+    def test_split_diagnostics_warn_when_holdout_consumes_all_scored_games(self):
+        all_holdout = pd.DataFrame({
+            "evaluation_split": ["reserved_holdout"] * 178,
+        })
+        diagnostics = bt._evaluation_split_diagnostics(all_holdout, 1000)
+
+        self.assertEqual(diagnostics["scored_games_available"], 178)
+        self.assertEqual(diagnostics["development_games"], 0)
+        self.assertEqual(diagnostics["reserved_holdout_games_actual"], 178)
+        self.assertTrue(diagnostics["holdout_covers_entire_scored_sample"])
+        self.assertTrue(diagnostics["holdout_sample_warning"])
+
+        split_sample = pd.DataFrame({
+            "evaluation_split": ["development", "reserved_holdout"],
+        })
+        balanced_diagnostics = bt._evaluation_split_diagnostics(split_sample, 1)
+        self.assertEqual(balanced_diagnostics["development_games"], 1)
+        self.assertEqual(balanced_diagnostics["reserved_holdout_games_actual"], 1)
+        self.assertFalse(balanced_diagnostics["holdout_covers_entire_scored_sample"])
+        self.assertFalse(balanced_diagnostics["holdout_sample_warning"])
+
     def test_american_odds_convert_to_decimal(self):
         self.assertAlmostEqual(bt.american_to_decimal(-110), 1.909091, places=5)
         self.assertAlmostEqual(bt.american_to_decimal(125), 2.25, places=5)
