@@ -9,6 +9,7 @@ import durable_totals_storage as storage
 from live_totals_market_snapshots import append_live_totals_market_snapshots
 import prediction_history_logger
 import totals_tracker
+from totals_forward_paper_trading import evaluate_forward_paper_trading
 
 
 TEST_DATABASE_URL = os.getenv("NBA_TOTALS_TEST_DATABASE_URL", "").strip()
@@ -269,6 +270,54 @@ class DurableTotalsStorageTests(unittest.TestCase):
             self.assertEqual(len(durable_rows), 1)
             self.assertEqual(durable_rows[0]["recommendation"], "Strong Over")
             self.assertTrue(history_path.exists())
+
+    def test_forward_evaluator_hydrates_both_ledgers_from_postgres(self):
+        snapshot = self.snapshot()
+        pick = {
+            "pick_id": "durable-forward-eval-pick",
+            "game_date": "2026-10-29",
+            "home_team": "Boston Celtics",
+            "away_team": "New York Knicks",
+            "pick_type": "Over",
+            "prediction_time_utc": "2026-10-29T16:02:00Z",
+            "commence_time_utc": "2026-10-29T20:00:00Z",
+            "market_snapshot_time_utc": "2026-10-29T16:00:00Z",
+            "market_last_update_utc": "2026-10-29T15:59:30Z",
+            "market_snapshot_total_line": 220.5,
+            "over_odds": 1.91,
+            "under_odds": 1.93,
+            "totals_bookmaker": "DraftKings",
+            "market_snapshot_source": "the-odds-api-v4-current-endpoint",
+            "source_event_id": "nba-event-123",
+            "sportsbook_total": 220.5,
+            "actual_total": 225,
+            "result": "Win",
+            "stake": 100,
+            "experimental_adjustments_applied": False,
+            "profit_loss": 91,
+        }
+        storage.persist_records(
+            "market_snapshot",
+            [snapshot],
+            immutable=True,
+            conflict_fields=storage.MARKET_SNAPSHOT_IMMUTABLE_FIELDS,
+        )
+        storage.persist_records("totals_pick", [pick])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report = evaluate_forward_paper_trading(
+                totals_history_path=root / "totals_history.csv",
+                market_snapshot_path=root / "live_totals_market_snapshots.csv",
+            )
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["eligible_picks"], 1)
+        self.assertEqual(report["wins"], 1)
+        self.assertEqual(report["net_profit"], 91.0)
+        self.assertEqual(report["roi_pct"], 91.0)
+        self.assertFalse(report["probabilities_used"])
+        self.assertFalse(report["live_betting_enabled"])
 
     def test_required_durable_mode_refuses_missing_database_url(self):
         with patch("durable_totals_storage.get_database_url", return_value=""), patch(
