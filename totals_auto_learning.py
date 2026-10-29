@@ -7,6 +7,8 @@ in the audit ledger but are never silently treated as verified pregame data.
 import os
 import pandas as pd
 
+from durable_totals_storage import sync_csv_mirror
+
 
 TOTALS_HISTORY_FILE = "totals_history.csv"
 TOTALS_LEARNING_FILE = "totals_learning_dataset.csv"
@@ -94,6 +96,16 @@ def _error(message, **details):
 
 
 def build_totals_learning_dataset():
+    try:
+        sync_csv_mirror("totals_pick", TOTALS_HISTORY_FILE)
+    except Exception as exc:
+        return _error(
+            "Durable totals storage could not be synchronized; learning was blocked.",
+            reason=str(exc),
+            rows=0,
+            training_allowed=False,
+        )
+
     if not os.path.exists(TOTALS_HISTORY_FILE):
         return _error("totals_history.csv not found")
 
