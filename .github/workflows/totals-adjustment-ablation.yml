@@ -1,0 +1,78 @@
+name: Totals adjustment ablation
+
+on:
+  pull_request:
+    paths:
+      - "dunkapi_totals_close_backtest.py"
+      - "totals_model.py"
+      - "points_engine.py"
+      - "data/dunkapi_recovered_2025-11-26_to_2025-12-23.csv"
+      - "data/dunkapi_verified_score_overrides.csv"
+      - ".github/workflows/totals-adjustment-ablation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-ablation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backtest dependencies
+        run: python -m pip install --upgrade pip pandas numpy scikit-learn joblib requests
+      - name: Verify historical inputs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          paths = [
+              Path("data/historical_nba_scores.csv"),
+              Path("data/dunkapi_recovered_2025-11-26_to_2025-12-23.csv"),
+              Path("data/dunkapi_verified_score_overrides.csv"),
+          ]
+          for path in paths:
+              if not path.is_file() or path.stat().st_size == 0:
+                  raise SystemExit(f"Missing or empty required input: {path}")
+              print(f"{path}: {path.stat().st_size:,} bytes")
+          scores = pd.read_csv(paths[0])
+          market = pd.read_csv(paths[1])
+          overrides = pd.read_csv(paths[2])
+          print(f"Score rows: {len(scores):,}; market rows: {len(market):,}; override rows: {len(overrides):,}")
+          if len(market) != 181:
+              raise SystemExit(f"Expected 181 market rows, found {len(market)}")
+          if len(overrides) != 3:
+              raise SystemExit(f"Expected 3 verified overrides, found {len(overrides)}")
+          PY
+      - name: Compile backtest modules
+        run: python -m py_compile dunkapi_totals_close_backtest.py totals_model.py points_engine.py team_name_utils.py pace_engine.py injury_impact_engine.py totals_betting_backtest.py
+      - name: Run offline chronological ablation
+        run: |
+          python dunkapi_totals_close_backtest.py \
+            --start-date 2025-11-26 \
+            --end-date 2025-12-23 \
+            --bookmaker DraftKings \
+            --backtest-only \
+            --market-file data/dunkapi_recovered_2025-11-26_to_2025-12-23.csv \
+            --scores-file data/historical_nba_scores.csv \
+            --score-overrides-file data/dunkapi_verified_score_overrides.csv \
+            --output-dir outputs/totals_ablation_2025-11-26_to_2025-12-23 \
+            --holdout-games 42 \
+            --min-prior-games 100 \
+            --stake-units 1
+      - name: Upload ablation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: totals-adjustment-ablation-report
+          path: |
+            outputs/totals_ablation_2025-11-26_to_2025-12-23/*.csv
+            outputs/totals_ablation_2025-11-26_to_2025-12-23/*.json
+          if-no-files-found: warn
+          retention-days: 14
