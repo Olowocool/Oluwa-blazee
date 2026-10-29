@@ -152,6 +152,28 @@ class TotalsProjectionReconciliationTests(unittest.TestCase):
                 self.assertEqual(recommendation, "No Bet")
                 self.assertEqual(note, "Missing or invalid edge")
 
+    def test_market_total_parser_rejects_missing_invalid_and_out_of_range_values(self):
+        for line in [None, "", "   ", "not-a-line", float("nan"), float("inf"), -float("inf"), 0, -1, True, 149.5, 300.5]:
+            with self.subTest(line=line):
+                self.assertIsNone(
+                    totals_model.parse_valid_market_total(
+                        line,
+                        minimum=150.0,
+                        maximum=300.0,
+                    )
+                )
+
+    def test_market_total_parser_accepts_valid_manual_total(self):
+        self.assertEqual(
+            totals_model.parse_valid_market_total(
+                "220.5",
+                minimum=150.0,
+                maximum=300.0,
+            ),
+            220.5,
+        )
+        self.assertIsNone(totals_model.parse_valid_market_total(None))
+
     def test_recommendation_thresholds_match_rounded_edge(self):
         cases = [
             (225.00, 220.00, "Strong Over"),
