@@ -499,6 +499,26 @@ def _reserved_holdout_start(games: pd.DataFrame, holdout_games: int) -> pd.Times
     return pd.Timestamp(ordered.iloc[index]["game_date"]).normalize()
 
 
+def _skipped_game_details(results: pd.DataFrame) -> list[dict[str, str]]:
+    """Return compact, JSON-safe details for rows excluded from scoring."""
+    if "prediction_status" not in results.columns:
+        raise ValueError("results must include prediction_status.")
+    skipped = results.loc[results["prediction_status"] != "scored"]
+    details: list[dict[str, str]] = []
+    for _, row in skipped.iterrows():
+        raw_date = pd.to_datetime(row.get("game_date"), errors="coerce")
+        game_date = raw_date.date().isoformat() if pd.notna(raw_date) else str(row.get("game_date") or "")
+        details.append({
+            "game_id": str(row.get("game_id") or ""),
+            "game_date": game_date,
+            "home_team": str(row.get("home_team") or ""),
+            "away_team": str(row.get("away_team") or ""),
+            "bookmaker": str(row.get("bookmaker") or ""),
+            "skip_reason": str(row.get("skip_reason") or ""),
+        })
+    return details
+
+
 def _evaluation_split_diagnostics(
     scored: pd.DataFrame,
     holdout_games_requested: int,
@@ -891,6 +911,7 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
         "market_rows": int(len(market)),
         "games_scored": int((results["prediction_status"] == "scored").sum()),
         "games_skipped": int((results["prediction_status"] != "scored").sum()),
+        "skipped_game_details": _skipped_game_details(results),
         "unmatched_score_rows": unmatched_scores,
         "score_mismatch_rows": mismatched_scores,
         "verified_score_override_rows_used": int(score_override_rows_used),
