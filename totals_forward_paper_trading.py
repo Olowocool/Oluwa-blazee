@@ -47,7 +47,7 @@ PICK_REQUIRED_COLUMNS = {
 SNAPSHOT_REQUIRED_COLUMNS = {
     "home_team",
     "away_team",
-    "totals_bookmaker",
+    "bookmaker",
     "source_event_id",
     "snapshot_timestamp_utc",
     "market_last_update_utc",
@@ -115,6 +115,11 @@ def _same_text(left: Any, right: Any) -> bool:
     return _clean(left).casefold() == _clean(right).casefold()
 
 
+def _snapshot_bookmaker(snapshot: dict[str, Any]) -> str:
+    """Read the canonical field written by the live ledger, with legacy fallback."""
+    return _clean(snapshot.get("bookmaker") or snapshot.get("totals_bookmaker"))
+
+
 def _same_number(left: Any, right: Any, tolerance: float = LINE_MATCH_TOLERANCE) -> bool:
     a, b = _number(left), _number(right)
     return a is not None and b is not None and abs(a - b) <= tolerance
@@ -179,7 +184,7 @@ def _snapshot_is_valid(snapshot: dict[str, Any]) -> tuple[bool, datetime | None]
         return False, None
     if _valid_decimal_odds(snapshot.get("under_odds")) is None:
         return False, None
-    if not _clean(snapshot.get("totals_bookmaker")):
+    if not _snapshot_bookmaker(snapshot):
         return False, None
     return True, snapshot_time
 
@@ -201,7 +206,7 @@ def _snapshot_matches_entry(
         return False
     if not _same_event(pick, snapshot):
         return False
-    if not _same_text(bookmaker, snapshot.get("totals_bookmaker")):
+    if not _same_text(bookmaker, _snapshot_bookmaker(snapshot)):
         return False
     if not _same_number(line, snapshot.get("total_line")):
         return False
@@ -346,7 +351,7 @@ def _evaluate_one(
             continue
         if snap_time >= commence_time or not _same_event(pick, snapshot):
             continue
-        if not _same_text(bookmaker, snapshot.get("totals_bookmaker")):
+        if not _same_text(bookmaker, _snapshot_bookmaker(snapshot)):
             continue
         later_snapshots.append((snap_time, snapshot))
 
