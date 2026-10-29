@@ -128,14 +128,19 @@ def prepare_score_history(raw: pd.DataFrame) -> pd.DataFrame:
         & (df["home_score"] != df["away_score"])
     ].copy()
 
-    # One game per unordered team pair/calendar date. This also rejects an
-    # accidentally duplicated row where the home/away display order was flipped.
+    # Identical duplicate records can be collapsed. A conflicting duplicate
+    # (especially one with home/away flipped) is ambiguous and all such copies
+    # are excluded rather than letting arbitrary row order decide the label.
+    df = df.drop_duplicates(
+        ["game_date", "home_team", "away_team", "home_score", "away_score"],
+        keep="last",
+    )
     df["_pair_key"] = df.apply(
         lambda row: "|".join(sorted([row["home_team"], row["away_team"]])),
         axis=1,
     )
-    df = df.drop_duplicates(["game_date", "_pair_key"], keep="last")
-    df = df.drop(columns=["_pair_key"])
+    pair_counts = df.groupby(["game_date", "_pair_key"])["_pair_key"].transform("size")
+    df = df.loc[pair_counts.eq(1)].drop(columns=["_pair_key"])
     if df.empty:
         raise ValueError("No valid completed games remain after score validation.")
 
@@ -299,6 +304,7 @@ def train_chronological_model(
     )
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
+    from sklearn.impute import SimpleImputer
     import joblib
 
     if not 0.05 <= float(holdout_fraction) <= 0.5:
@@ -359,7 +365,7 @@ def train_chronological_model(
     y_holdout = holdout_df[LABEL_COLUMN].astype(int)
 
     validation_model = Pipeline([
-        ("imputer", __import__("sklearn.impute", fromlist=["SimpleImputer"]).SimpleImputer(strategy="median")),
+        ("imputer", SimpleImputer(strategy="median")),
         ("scale", StandardScaler()),
         ("classifier", LogisticRegression(max_iter=2000, solver="lbfgs")),
     ])
