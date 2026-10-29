@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "analysis/totals-durable-postgres-ledger-20261029"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "analysis/timestamped-live-totals-market-20261029"]
   workflow_dispatch:
 
 jobs:
