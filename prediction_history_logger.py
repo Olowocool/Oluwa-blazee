@@ -29,7 +29,18 @@ def _normalize_aware_utc_timestamp(value):
     return parsed.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def log_prediction(prediction, game_date=None, commence_time_utc=None):
+def log_prediction(
+    prediction,
+    game_date=None,
+    commence_time_utc=None,
+    market_snapshot_time_utc=None,
+    market_last_update_utc=None,
+    over_odds=None,
+    under_odds=None,
+    totals_bookmaker=None,
+    snapshot_source=None,
+    source_event_id=None,
+):
     required = [
         "home_team",
         "away_team",
@@ -49,16 +60,16 @@ def log_prediction(prediction, game_date=None, commence_time_utc=None):
         ),
         "commence_time_utc": _normalize_aware_utc_timestamp(commence_time_utc),
         "market_snapshot_time_utc": _normalize_aware_utc_timestamp(
-            prediction.get("market_snapshot_time_utc")
+            market_snapshot_time_utc or prediction.get("market_snapshot_time_utc")
         ),
         "market_last_update_utc": _normalize_aware_utc_timestamp(
-            prediction.get("market_last_update_utc")
+            market_last_update_utc or prediction.get("market_last_update_utc")
         ),
-        "over_odds": prediction.get("over_odds"),
-        "under_odds": prediction.get("under_odds"),
-        "totals_bookmaker": prediction.get("totals_bookmaker", ""),
-        "snapshot_source": prediction.get("snapshot_source", ""),
-        "source_event_id": prediction.get("source_event_id", ""),
+        "over_odds": over_odds if over_odds is not None else prediction.get("over_odds"),
+        "under_odds": under_odds if under_odds is not None else prediction.get("under_odds"),
+        "totals_bookmaker": totals_bookmaker or prediction.get("totals_bookmaker", ""),
+        "snapshot_source": snapshot_source or prediction.get("snapshot_source", ""),
+        "source_event_id": source_event_id or prediction.get("source_event_id", ""),
         "game_date": game_date or "",
         "home_team": prediction["home_team"],
         "away_team": prediction["away_team"],
