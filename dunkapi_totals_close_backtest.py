@@ -954,7 +954,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--score-overrides-file",
         default=None,
-        help="Optional verified game scores; only rows marked include_in_history=true affect later features.",
+        help=(
+            "Optional verified game scores. Only rows marked include_in_history=true affect "
+            "later features; optional is_neutral_site=true prevents neutral-court games from "
+            "entering home/away venue splits."
+        ),
     )
     parser.add_argument("--plan-only", action="store_true", help="Estimate calls/credits only; do not call the API.")
     parser.add_argument("--confirm-api-cost", action="store_true", help="Required before any historical API call.")
