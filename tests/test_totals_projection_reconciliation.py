@@ -121,6 +121,37 @@ class TotalsProjectionReconciliationTests(unittest.TestCase):
             experimental_result["projected_total"],
         )
 
+    def test_missing_or_invalid_market_total_fails_closed_to_no_bet(self):
+        history = pd.DataFrame({
+            "game_date": ["2026-10-20"],
+            "home_team": ["Home"],
+            "away_team": ["Away"],
+            "home_score": [110],
+            "away_score": [100],
+        })
+
+        for line in [None, "not-a-line", float("nan"), float("inf"), -float("inf"), 0, -1, True]:
+            with self.subTest(line=line):
+                result = totals_model.predict_game_total(
+                    home_team="Home",
+                    away_team="Away",
+                    bookmaker_total=line,
+                    game_date="2026-10-27",
+                    history_df=history,
+                )
+                self.assertEqual(result["recommendation"], "No Bet")
+                self.assertEqual(result["confidence_note"], "No valid sportsbook total line")
+                self.assertIsNone(result["bookmaker_total"])
+                self.assertIsNone(result["edge"])
+                self.assertIsInstance(result["projected_total"], float)
+
+    def test_invalid_edges_fail_closed_to_no_bet(self):
+        for edge in [None, "bad-edge", float("nan"), float("inf"), -float("inf")]:
+            with self.subTest(edge=edge):
+                recommendation, note = totals_model.classify_total_edge(edge)
+                self.assertEqual(recommendation, "No Bet")
+                self.assertEqual(note, "Missing or invalid edge")
+
     def test_recommendation_thresholds_match_rounded_edge(self):
         cases = [
             (225.00, 220.00, "Strong Over"),
