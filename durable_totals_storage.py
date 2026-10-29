@@ -87,7 +87,7 @@ def _connect():
         raise RuntimeError(
             "Could not connect to the configured NBA totals database. "
             "The durable write was not completed; CSV-only fallback was refused."
-        ) from exc
+        ) from None
 
 
 def _ensure_schema(connection) -> None:
