@@ -309,5 +309,176 @@ class DunkAPITotalsCloseBacktestTests(unittest.TestCase):
             self.assertAlmostEqual(holdout["roi_pct"], -100.0)
 
 
+
+    def test_backtest_applies_requested_date_and_bookmaker_filters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            score_rows = []
+            start = pd.Timestamp("2025-06-01")
+            for i in range(101):
+                score_rows.append({
+                    "game_date": (start + pd.Timedelta(days=i)).date().isoformat(),
+                    "home_team": f"Prior Home {i}",
+                    "away_team": f"Prior Away {i}",
+                    "home_score": 110,
+                    "away_score": 108,
+                })
+
+            games = [
+                ("g1", "2025-11-21", "LA Clippers", "LA Lakers", "DraftKings", 120, 110),
+                ("g2", "2025-11-22", "Boston Celtics", "New York Knicks", "DraftKings", 100, 105),
+                ("g3", "2025-11-22", "Chicago Bulls", "Miami Heat", "BetMGM", 100, 101),
+                ("g4", "2025-11-25", "Atlanta Hawks", "Brooklyn Nets", "DraftKings", 108, 109),
+            ]
+            market_rows = []
+            for game_id, game_date, home, away, book, home_score, away_score in games:
+                score_rows.append({
+                    "game_date": game_date, "home_team": home, "away_team": away,
+                    "home_score": home_score, "away_score": away_score,
+                })
+                market_rows.append({
+                    "game_id": game_id, "game_date": game_date, "home_team": home,
+                    "away_team": away, "bookmaker": book, "total_open": 220.5,
+                    "total_close": 221.5, "over_odds_decimal": 1.91,
+                    "under_odds_decimal": 1.91, "actual_home_points": home_score,
+                    "actual_away_points": away_score, "actual_total": home_score + away_score,
+                })
+
+            scores_path = tmp_path / "scores.csv"
+            market_path = tmp_path / "market.csv"
+            pd.DataFrame(score_rows).to_csv(scores_path, index=False)
+            pd.DataFrame(market_rows).to_csv(market_path, index=False)
+
+            args = argparse.Namespace(
+                market_file=str(market_path),
+                scores_file=str(scores_path),
+                output_dir=str(tmp_path / "outputs"),
+                holdout_games=1,
+                min_prior_games=100,
+                stake_units=1.0,
+                start_date="2025-11-21",
+                end_date="2025-11-22",
+                bookmaker="DraftKings",
+            )
+
+            def fake_predict(**kwargs):
+                prior = kwargs["history_df"]
+                target = pd.Timestamp(kwargs["game_date"]).normalize()
+                self.assertTrue((prior["game_date"] < target).all())
+                return {
+                    "projected_total": 230.5,
+                    "points_engine_total": 230.5,
+                    "experimental_adjustments_applied": False,
+                }
+
+            with patch.object(bt, "predict_game_total", side_effect=fake_predict):
+                results, summary, diagnostics = bt.run_closing_line_backtest(args)
+
+            self.assertEqual(diagnostics["market_rows"], 2)
+            self.assertEqual(diagnostics["games_scored"], 2)
+            self.assertEqual(set(results["game_id"]), {"g1", "g2"})
+            self.assertEqual(set(results["bookmaker"]), {"DraftKings"})
+            self.assertTrue(results["game_date"].astype(str).str[:10].isin(
+                ["2025-11-21", "2025-11-22"]
+            ).all())
+
+    def test_verified_score_overrides_separate_settlement_from_feature_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            score_rows = []
+            start = pd.Timestamp("2025-06-01")
+            for i in range(101):
+                score_rows.append({
+                    "game_date": (start + pd.Timedelta(days=i)).date().isoformat(),
+                    "home_team": f"Prior Home {i}",
+                    "away_team": f"Prior Away {i}",
+                    "home_score": 110,
+                    "away_score": 108,
+                })
+
+            # The third target is present in normal score history. The first two
+            # are validated by the override file only.
+            score_rows.append({
+                "game_date": "2025-11-23", "home_team": "Chicago Bulls",
+                "away_team": "Miami Heat", "home_score": 105, "away_score": 106,
+            })
+
+            games = [
+                ("override-regular", "2025-11-21", "LA Clippers", "LA Lakers", 120, 110),
+                ("override-title", "2025-11-22", "Boston Celtics", "New York Knicks", 100, 110),
+                ("historical", "2025-11-23", "Chicago Bulls", "Miami Heat", 105, 106),
+            ]
+            market_rows = []
+            override_rows = []
+            for game_id, game_date, home, away, home_score, away_score in games:
+                market_rows.append({
+                    "game_id": game_id, "game_date": game_date, "home_team": home,
+                    "away_team": away, "bookmaker": "DraftKings", "total_open": 220.5,
+                    "total_close": 221.5, "over_odds_decimal": 1.91,
+                    "under_odds_decimal": 1.91, "actual_home_points": home_score,
+                    "actual_away_points": away_score, "actual_total": home_score + away_score,
+                })
+            override_rows = [
+                {
+                    "game_date": "2025-11-21", "home_team": "LA Clippers",
+                    "away_team": "LA Lakers", "home_score": 120, "away_score": 110,
+                    "include_in_history": True,
+                },
+                {
+                    "game_date": "2025-11-22", "home_team": "Boston Celtics",
+                    "away_team": "New York Knicks", "home_score": 100, "away_score": 110,
+                    "include_in_history": False,
+                },
+            ]
+
+            scores_path = tmp_path / "scores.csv"
+            market_path = tmp_path / "market.csv"
+            overrides_path = tmp_path / "overrides.csv"
+            pd.DataFrame(score_rows).to_csv(scores_path, index=False)
+            pd.DataFrame(market_rows).to_csv(market_path, index=False)
+            pd.DataFrame(override_rows).to_csv(overrides_path, index=False)
+
+            args = argparse.Namespace(
+                market_file=str(market_path),
+                scores_file=str(scores_path),
+                score_overrides_file=str(overrides_path),
+                output_dir=str(tmp_path / "outputs"),
+                holdout_games=1,
+                min_prior_games=100,
+                stake_units=1.0,
+                start_date="2025-11-21",
+                end_date="2025-11-23",
+                bookmaker="DraftKings",
+            )
+            observed_prior = {}
+
+            def fake_predict(**kwargs):
+                prior = kwargs["history_df"]
+                target = pd.Timestamp(kwargs["game_date"]).normalize()
+                self.assertTrue((prior["game_date"] < target).all())
+                observed_prior[target.date().isoformat()] = set(prior["_game_key"])
+                return {
+                    "projected_total": 230.5,
+                    "points_engine_total": 230.5,
+                    "experimental_adjustments_applied": False,
+                }
+
+            with patch.object(bt, "predict_game_total", side_effect=fake_predict):
+                results, summary, diagnostics = bt.run_closing_line_backtest(args)
+
+            first_key = bt.game_key("2025-11-21", "LA Clippers", "LA Lakers")
+            second_key = bt.game_key("2025-11-22", "Boston Celtics", "New York Knicks")
+            self.assertEqual(diagnostics["verified_score_override_rows_used"], 2)
+            self.assertEqual(diagnostics["feature_history_override_rows_included"], 1)
+            self.assertEqual(diagnostics["games_scored"], 3)
+            self.assertEqual(
+                results.sort_values("game_date")["score_validation_source"].tolist(),
+                ["verified_score_override", "verified_score_override", "historical_score_history"],
+            )
+            self.assertNotIn(first_key, observed_prior["2025-11-21"])
+            self.assertIn(first_key, observed_prior["2025-11-22"])
+            self.assertIn(first_key, observed_prior["2025-11-23"])
+            self.assertNotIn(second_key, observed_prior["2025-11-23"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

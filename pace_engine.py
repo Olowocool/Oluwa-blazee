@@ -2,6 +2,8 @@
 
 import pandas as pd
 
+from team_name_utils import normalize_history_team_columns, normalize_team_name
+
 
 NBA_LEAGUE_AVG_TOTAL = 225.0
 PACE_BASELINE = 100.0
@@ -46,8 +48,7 @@ def _prepare_history(history_df):
         if col not in df.columns:
             return pd.DataFrame()
 
-    df["home_team"] = df["home_team"].astype(str).str.strip()
-    df["away_team"] = df["away_team"].astype(str).str.strip()
+    df = normalize_history_team_columns(df)
 
     df["home_score"] = pd.to_numeric(
         df["home_score"],
@@ -92,16 +93,15 @@ def _prepare_history(history_df):
 
 
 def _team_games(df, team_name):
-    if df.empty:
+    if df is None or df.empty:
         return pd.DataFrame()
 
-    team_name = str(team_name).strip().lower()
+    history = normalize_history_team_columns(df)
+    team_key = normalize_team_name(team_name).casefold()
+    home_key = history["home_team"].astype(str).str.casefold()
+    away_key = history["away_team"].astype(str).str.casefold()
 
-    games = df[
-        (df["home_team"].astype(str).str.lower() == team_name)
-        |
-        (df["away_team"].astype(str).str.lower() == team_name)
-    ].copy()
+    games = history[(home_key == team_key) | (away_key == team_key)].copy()
 
     if "game_date" in games.columns:
         games = games.sort_values("game_date")
@@ -139,28 +139,21 @@ def _average_total_as_pace(games, default=PACE_BASELINE):
 
 
 def _venue_games(games, team_name, venue):
-    """
-    venue:
-    - "home" means games where team_name was home
-    - "away" means games where team_name was away
-    """
+    """Return canonicalized games where a team played at the requested venue."""
     if games is None or games.empty:
         return pd.DataFrame()
 
-    team_name = str(team_name).strip().lower()
+    history = normalize_history_team_columns(games)
+    team_key = normalize_team_name(team_name).casefold()
 
     if venue == "home":
-        return games[
-            games["home_team"].astype(str).str.lower() == team_name
-        ].copy()
+        mask = history["home_team"].astype(str).str.casefold() == team_key
+    elif venue == "away":
+        mask = history["away_team"].astype(str).str.casefold() == team_key
+    else:
+        mask = pd.Series(True, index=history.index)
 
-    if venue == "away":
-        return games[
-            games["away_team"].astype(str).str.lower() == team_name
-        ].copy()
-
-    return pd.DataFrame()
-
+    return history.loc[mask].copy()
 
 def calculate_team_advanced_pace(
     history_df,

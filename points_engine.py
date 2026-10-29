@@ -4,6 +4,8 @@
 import os
 import pandas as pd
 
+from team_name_utils import normalize_history_team_columns, normalize_team_name
+
 TRAINING_DATA_PATH = "outputs/training_dataset.parquet"
 
 HISTORICAL_SCORE_FILES = [
@@ -26,16 +28,13 @@ def safe_number(value, default=0.0):
         return default
 
 
-def normalize_team_name(name):
-    return str(name or "").strip()
-
-
 def standardize_score_history(df):
     df = df.copy()
 
     df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce")
     df["home_team"] = df["home_team"].astype(str).str.strip()
     df["away_team"] = df["away_team"].astype(str).str.strip()
+    df = normalize_history_team_columns(df)
     df["home_score"] = pd.to_numeric(df["home_score"], errors="coerce")
     df["away_score"] = pd.to_numeric(df["away_score"], errors="coerce")
 
@@ -137,15 +136,14 @@ def get_team_games(history_df, team_name):
     if history_df is None or history_df.empty:
         return pd.DataFrame()
 
-    team_name = normalize_team_name(team_name).lower()
+    history = normalize_history_team_columns(history_df)
+    team_key = normalize_team_name(team_name).casefold()
+    home_key = history["home_team"].astype(str).str.casefold()
+    away_key = history["away_team"].astype(str).str.casefold()
 
-    games = history_df[
-        (history_df["home_team"].astype(str).str.lower() == team_name)
-        |
-        (history_df["away_team"].astype(str).str.lower() == team_name)
-    ].copy()
+    games = history[(home_key == team_key) | (away_key == team_key)].copy()
 
-    if not games.empty:
+    if not games.empty and "game_date" in games.columns:
         games = games.sort_values("game_date")
 
     return games
@@ -155,24 +153,18 @@ def get_head_to_head_games(history_df, home_team, away_team, limit=10):
     if history_df is None or history_df.empty:
         return pd.DataFrame()
 
-    home_team = normalize_team_name(home_team).lower()
-    away_team = normalize_team_name(away_team).lower()
+    history = normalize_history_team_columns(history_df)
+    home_key = normalize_team_name(home_team).casefold()
+    away_key = normalize_team_name(away_team).casefold()
+    history_home = history["home_team"].astype(str).str.casefold()
+    history_away = history["away_team"].astype(str).str.casefold()
 
-    h2h = history_df[
-        (
-            (history_df["home_team"].astype(str).str.lower() == home_team)
-            &
-            (history_df["away_team"].astype(str).str.lower() == away_team)
-        )
-        |
-        (
-            (history_df["home_team"].astype(str).str.lower() == away_team)
-            &
-            (history_df["away_team"].astype(str).str.lower() == home_team)
-        )
+    h2h = history[
+        ((history_home == home_key) & (history_away == away_key))
+        | ((history_home == away_key) & (history_away == home_key))
     ].copy()
 
-    if not h2h.empty:
+    if not h2h.empty and "game_date" in h2h.columns:
         h2h = h2h.sort_values("game_date").tail(limit)
 
     return h2h

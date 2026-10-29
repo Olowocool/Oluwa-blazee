@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from team_name_utils import normalize_history_team_columns, normalize_team_name
+
 from injury_impact_engine import get_injury_impact
 from pace_engine import calculate_matchup_pace
 from points_engine import calculate_matchup_points, load_game_history
@@ -103,7 +105,7 @@ def load_history():
             if "total_score" not in df.columns:
                 df["total_score"] = df["home_score"] + df["away_score"]
 
-            return df
+            return normalize_history_team_columns(df)
 
         except Exception:
             continue
@@ -141,7 +143,7 @@ def load_history():
         if "total_score" not in df.columns:
             df["total_score"] = df["home_score"] + df["away_score"]
 
-        return df
+        return normalize_history_team_columns(df)
 
     except Exception as exc:
         print(f"Could not load NBA historical data: {exc}")
@@ -174,7 +176,8 @@ def get_team_recent_stats(history_df, team_name, game_date=None):
         if col not in history_df.columns:
             return default_team_stats()
 
-    team_name = str(team_name).strip()
+    history_df = normalize_history_team_columns(history_df)
+    team_name = normalize_team_name(team_name)
 
     team_games = history_df[
         (
@@ -287,7 +290,7 @@ def _history_before_date(history_df, game_date):
     if pd.isna(cutoff):
         raise ValueError(f"Invalid target game date: {game_date!r}")
 
-    history = history_df.copy()
+    history = normalize_history_team_columns(history_df)
     history[date_col] = pd.to_datetime(history[date_col], errors="coerce")
     return history.loc[history[date_col].notna() & (history[date_col] < cutoff)].copy()
 
