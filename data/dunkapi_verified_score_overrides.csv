@@ -1,0 +1,4 @@
+index,game_date,home_team,away_team,home_score,away_score,include_in_history,is_neutral_site
+0,2025-12-13,Orlando Magic,New York Knicks,120,132,True,True
+1,2025-12-13,Oklahoma City Thunder,San Antonio Spurs,109,111,True,True
+2,2025-12-16,New York Knicks,San Antonio Spurs,124,113,True,True

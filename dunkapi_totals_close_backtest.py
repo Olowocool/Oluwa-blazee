@@ -595,6 +595,83 @@ def _score_split(results: pd.DataFrame, split: str, strategy: str) -> dict[str, 
     }
 
 
+
+ABLATION_VARIANTS = {
+    "points_engine_baseline": "points_engine_baseline_total",
+    "pace_only": "ablation_pace_only_total",
+    "offense_defense_only": "ablation_offense_defense_total",
+    "venue_split_only": "ablation_venue_split_total",
+    "pace_plus_offense_defense": "ablation_pace_plus_offense_defense_total",
+    "all_experimental_except_injury": "ablation_all_except_injury_total",
+    "injury_only_diagnostic": "ablation_injury_only_total",
+    "full_experimental_diagnostic": "ablation_full_experimental_total",
+}
+
+
+def _adjustment_ablation_summary(results: pd.DataFrame, split: str, variant: str, stake_units: float) -> dict[str, Any]:
+    """Evaluate a variant on the same dates, scores, closing lines, and closing prices."""
+    subset = results.copy() if split == "all_games" else results.loc[results["evaluation_split"] == split].copy()
+    total_col = ABLATION_VARIANTS[variant]
+    predicted = pd.to_numeric(subset[total_col], errors="coerce")
+    actual = pd.to_numeric(subset["actual_total"], errors="coerce")
+    close = pd.to_numeric(subset["total_close"], errors="coerce")
+    error = predicted - actual
+    market_error = close - actual
+    profit = 0.0
+    risked = 0.0
+    bets = wins = losses = pushes = 0
+    used_odds = []
+    for _, row in subset.iterrows():
+        pred = pd.to_numeric(pd.Series([row.get(total_col)]), errors="coerce").iloc[0]
+        line = pd.to_numeric(pd.Series([row.get("total_close")]), errors="coerce").iloc[0]
+        total = pd.to_numeric(pd.Series([row.get("actual_total")]), errors="coerce").iloc[0]
+        over = pd.to_numeric(pd.Series([row.get("over_odds_decimal")]), errors="coerce").iloc[0]
+        under = pd.to_numeric(pd.Series([row.get("under_odds_decimal")]), errors="coerce").iloc[0]
+        if pd.isna(pred) or pd.isna(line) or pd.isna(total) or pd.isna(over) or pd.isna(under):
+            continue
+        recommendation, _ = classify_total_edge(round(float(pred - line), 2))
+        if recommendation.endswith("Over"):
+            side, odds = "Over", float(over)
+        elif recommendation.endswith("Under"):
+            side, odds = "Under", float(under)
+        else:
+            continue
+        outcome, row_profit, row_stake = settle_total_bet(
+            side=side, actual_total=float(total), line=float(line),
+            decimal_odds=odds, stake_units=stake_units,
+        )
+        bets += 1
+        risked += float(row_stake)
+        profit += float(row_profit)
+        used_odds.append(odds)
+        wins += int(outcome == "Win")
+        losses += int(outcome == "Loss")
+        pushes += int(outcome == "Push")
+    resolved = wins + losses
+    injury_dependent = variant in {"injury_only_diagnostic", "full_experimental_diagnostic"}
+    return {
+        "split": split,
+        "variant": variant,
+        "games_scored": int(len(subset)),
+        "model_mae": float(error.abs().mean()) if error.notna().any() else np.nan,
+        "market_close_mae": float(market_error.abs().mean()) if market_error.notna().any() else np.nan,
+        "model_minus_market_close_mae": float(error.abs().mean() - market_error.abs().mean()) if error.notna().any() and market_error.notna().any() else np.nan,
+        "model_rmse": float(np.sqrt(np.square(error.dropna()).mean())) if error.notna().any() else np.nan,
+        "model_bias": float(error.mean()) if error.notna().any() else np.nan,
+        "within_5_points_pct": float((error.abs() <= 5).mean() * 100) if error.notna().any() else np.nan,
+        "within_10_points_pct": float((error.abs() <= 10).mean() * 100) if error.notna().any() else np.nan,
+        "bets": bets, "wins": wins, "losses": losses, "pushes": pushes,
+        "win_rate_pct_excluding_pushes": 100 * wins / resolved if resolved else np.nan,
+        "average_decimal_odds": float(np.mean(used_odds)) if used_odds else np.nan,
+        "stake_units_risked": risked,
+        "net_profit_units": profit,
+        "roi_pct": 100 * profit / risked if risked else np.nan,
+        "injury_adjustment_temporal_validity": "NOT_VERIFIED" if injury_dependent else "not_applicable",
+        "candidate_status": "DIAGNOSTIC_ONLY: historic injury inputs not verified as-of-game-time" if injury_dependent else "research_candidate_only; fresh out-of-sample confirmation required",
+        "bet_price_basis": "historical closing price; not entry-time CLV",
+    }
+
+
 def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     market_path = Path(args.market_file)
     score_path = Path(args.scores_file)
@@ -845,8 +922,32 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
             stake_units=args.stake_units,
         )
 
+        baseline_total = float(prediction["points_engine_total"])
+        # Adjustment values are optional for compatible mocked/minimal predictors.
+        # Production totals_model returns all components; missing diagnostics default to zero.
+        pace_adj = float(prediction.get("pace_adjustment", 0.0))
+        offense_adj = float(prediction.get("offensive_adjustment", 0.0))
+        defense_adj = float(prediction.get("defensive_adjustment", 0.0))
+        venue_adj = float(prediction.get("home_away_adjustment", 0.0))
+        injury_adj = float(prediction.get("injury_adjustment", 0.0))
+        full_experimental = float(prediction.get(
+            "experimental_projected_total",
+            baseline_total + pace_adj + offense_adj + defense_adj + venue_adj + injury_adj,
+        ))
         base.update({
-            "points_engine_baseline_total": round(float(prediction["points_engine_total"]), 2),
+            "points_engine_baseline_total": round(baseline_total, 2),
+            "ablation_pace_only_total": round(baseline_total + pace_adj, 2),
+            "ablation_offense_defense_total": round(baseline_total + offense_adj + defense_adj, 2),
+            "ablation_venue_split_total": round(baseline_total + venue_adj, 2),
+            "ablation_pace_plus_offense_defense_total": round(baseline_total + pace_adj + offense_adj + defense_adj, 2),
+            "ablation_all_except_injury_total": round(baseline_total + pace_adj + offense_adj + defense_adj + venue_adj, 2),
+            "ablation_injury_only_total": round(baseline_total + injury_adj, 2),
+            "ablation_full_experimental_total": round(full_experimental, 2),
+            "pace_adjustment_component": pace_adj,
+            "offensive_adjustment_component": offense_adj,
+            "defensive_adjustment_component": defense_adj,
+            "venue_split_adjustment_component": venue_adj,
+            "injury_adjustment_component_diagnostic": injury_adj,
             "projected_total": projected_total,
             "model_error": round(projected_total - score_total, 2),
             "market_close_error": round(close_line - score_total, 2),
@@ -895,13 +996,23 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
     ]
     summary = pd.DataFrame(summaries)
 
+    # All ablations share the same chronological predictions, scores, closing lines and prices.
+    # Injury-dependent variants stay diagnostic until historic injury timing is verified.
+    ablation_summary = pd.DataFrame([
+        _adjustment_ablation_summary(scored, split, variant, args.stake_units)
+        for split in ["development", "reserved_holdout", "all_games"]
+        for variant in ABLATION_VARIANTS
+    ])
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     results_path = output_dir / "totals_closing_line_backtest_results.csv"
     summary_path = output_dir / "totals_closing_line_backtest_summary.csv"
+    ablation_summary_path = output_dir / "totals_adjustment_ablation_summary.csv"
     diagnostics_path = output_dir / "totals_closing_line_backtest_data_quality.json"
     results.to_csv(results_path, index=False)
     summary.to_csv(summary_path, index=False)
+    ablation_summary.to_csv(ablation_summary_path, index=False)
 
     diagnostics = {
         "status": "success",
@@ -929,7 +1040,13 @@ def run_closing_line_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, p
             "closing Over/Under price. Opening-to-closing movement is descriptive only. "
             "This does not establish CLV for an earlier entry price."
         ),
-        "outputs": [str(results_path), str(summary_path), str(diagnostics_path)],
+        "outputs": [str(results_path), str(summary_path), str(ablation_summary_path), str(diagnostics_path)],
+        "ablation_variants": list(ABLATION_VARIANTS),
+        "ablation_methodology": (
+            "Same target dates and strict prior score history across variants. Baseline includes Points Engine H2H/rest. "
+            "The non-injury ablation is the research comparison; injury-only and full-experimental are diagnostic because "
+            "historical injury inputs are not verified as-of-game-time. Do not tune using the previously inspected reserved holdout; use development for this comparison and require fresh forward data before selection."
+        ),
     }
     with diagnostics_path.open("w", encoding="utf-8") as handle:
         json.dump(diagnostics, handle, indent=2)
