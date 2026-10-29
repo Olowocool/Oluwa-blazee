@@ -12,6 +12,7 @@ import totals_model
 import train_totals_model
 import generate_totals_test_data
 import totals_tracker
+import live_totals_market_snapshots
 
 
 class TotalsLeakageGuardTests(unittest.TestCase):
@@ -146,6 +147,14 @@ class TotalsLeakageGuardTests(unittest.TestCase):
             "profit_loss": 91.0,
             "result": "Win",
             "source": "live_prediction_ui",
+            "market_snapshot_time_utc": "2026-10-20T19:59:00Z",
+            "market_last_update_utc": "2026-10-20T19:58:00Z",
+            "market_snapshot_total_line": 220.0,
+            "over_odds": 1.91,
+            "under_odds": 1.93,
+            "totals_bookmaker": "DraftKings",
+            "market_snapshot_source": "the-odds-api-v4-current-endpoint",
+            "source_event_id": "event-1",
         }
         eligible = dict(base, prediction_time_utc="2026-10-20T20:00:00Z",
                         commence_time_utc="2026-10-20T23:00:00Z")
@@ -185,9 +194,21 @@ class TotalsLeakageGuardTests(unittest.TestCase):
                     recommendation="Lean Over",
                     prediction_time_utc="2026-10-20T20:00:00Z",
                     commence_time_utc="2026-10-20T23:00:00Z",
+                    market_snapshot_time_utc="2026-10-20T19:59:00Z",
+                    market_last_update_utc="2026-10-20T19:58:00Z",
+                    market_snapshot_total_line=220.0,
+                    over_odds=1.91,
+                    under_odds=1.93,
+                    totals_bookmaker="DraftKings",
+                    snapshot_source="the-odds-api-v4-current-endpoint",
+                    source_event_id="event-1",
                 )
             saved = pd.read_csv(history_path)
             self.assertEqual(saved.iloc[0]["prediction_time_utc"], "2026-10-20T20:00:00Z")
+            self.assertEqual(saved.iloc[0]["market_snapshot_time_utc"], "2026-10-20T19:59:00Z")
+            self.assertEqual(saved.iloc[0]["market_snapshot_total_line"], 220.0)
+            self.assertEqual(saved.iloc[0]["over_odds"], 1.91)
+            self.assertEqual(saved.iloc[0]["totals_bookmaker"], "DraftKings")
             self.assertEqual(saved.iloc[0]["commence_time_utc"], "2026-10-20T23:00:00Z")
             self.assertTrue(saved.iloc[0]["saved_at_utc"])
 
@@ -196,6 +217,14 @@ class TotalsLeakageGuardTests(unittest.TestCase):
             "game_date": "06/14/2026",
             "prediction_time_utc": "2026-06-14T17:00:00Z",
             "commence_time_utc": "2026-06-14T20:00:00Z",
+            "market_snapshot_time_utc": "2026-06-14T16:59:00Z",
+            "market_last_update_utc": "2026-06-14T16:58:00Z",
+            "market_snapshot_total_line": 230.0,
+            "over_odds": 1.91,
+            "under_odds": 1.91,
+            "totals_bookmaker": "DraftKings",
+            "market_snapshot_source": "the-odds-api-v4-current-endpoint",
+            "source_event_id": "event-synthetic",
             "home_team": "Boston Celtics",
             "away_team": "Denver Nuggets",
             "market": "Totals",
@@ -254,7 +283,14 @@ class TotalsLeakageGuardTests(unittest.TestCase):
                 rows.append({
                     "game_date": date_value,
                     "prediction_time_utc": date_text + "T12:00:00Z",
+                    "market_snapshot_time_utc": date_text + "T11:59:00Z",
+                    "market_last_update_utc": date_text + "T11:58:00Z",
                     "commence_time_utc": date_text + "T18:00:00Z",
+                    "market_snapshot_total_line": line,
+                    "over_odds": 1.91,
+                    "under_odds": 1.93,
+                    "totals_bookmaker": "DraftKings",
+                    "market_snapshot_source": "the-odds-api-v4-current-endpoint",
                     "pick_type": pick,
                     "projected_total": line + edge,
                     "sportsbook_total": line,
