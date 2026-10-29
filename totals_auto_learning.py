@@ -31,7 +31,7 @@ REQUIRED_HISTORY_COLUMNS = {
     "actual_total", "profit_loss", "result",
     "prediction_time_utc", "market_snapshot_time_utc", "market_last_update_utc",
     "commence_time_utc", "market_snapshot_total_line", "over_odds", "under_odds",
-    "totals_bookmaker", "market_snapshot_source",
+    "totals_bookmaker", "market_snapshot_source", "source_event_id",
 }
 
 
@@ -215,10 +215,12 @@ def build_totals_learning_dataset():
         )
 
     # Only completed, settled Over/Under picks can become binary labels.
+    rows_before_grade_filter = len(df)
     df["result"] = df["result"].astype(str).str.strip().str.lower()
     df["pick_type"] = df["pick_type"].astype(str).str.strip().str.lower()
     df = df.loc[df["result"].isin(["win", "loss"])].copy()
     df = df.loc[df["pick_type"].isin(["over", "under"])].copy()
+    ungraded_or_non_over_under_rows_excluded = rows_before_grade_filter - len(df)
     if df.empty:
         return _error(
             "No eligible real, graded Over/Under picks found after provenance checks.",
@@ -240,6 +242,7 @@ def build_totals_learning_dataset():
         [float("inf"), float("-inf")], float("nan")
     )
     numeric_valid = df[numeric_columns].notna().all(axis=1)
+    invalid_numeric_rows_excluded = int((~numeric_valid).sum())
     df = df.loc[numeric_valid].copy()
 
     # Use the same observed line that generated the forecast edge, and require
@@ -274,6 +277,9 @@ def build_totals_learning_dataset():
             synthetic_rows_excluded=synthetic_rows_excluded,
             timestamp_invalid_rows_excluded=timestamp_invalid_rows_excluded,
             post_tipoff_rows_excluded=post_tipoff_rows_excluded,
+            market_snapshot_after_prediction_rows_excluded=market_snapshot_after_prediction_rows_excluded,
+            invalid_numeric_rows_excluded=invalid_numeric_rows_excluded,
+            market_snapshot_rows_excluded=market_snapshot_rows_excluded,
             inconsistent_rows_excluded=inconsistent_rows_excluded,
             training_allowed=False,
         )
@@ -306,12 +312,9 @@ def build_totals_learning_dataset():
         "post_tipoff_rows_excluded": post_tipoff_rows_excluded,
         "market_snapshot_after_prediction_rows_excluded": market_snapshot_after_prediction_rows_excluded,
         "market_snapshot_rows_excluded": market_snapshot_rows_excluded,
+        "invalid_numeric_rows_excluded": invalid_numeric_rows_excluded,
         "inconsistent_rows_excluded": inconsistent_rows_excluded,
-        "ungraded_or_non_over_under_rows_excluded": (
-            original_rows - synthetic_rows_excluded
-            - timestamp_invalid_rows_excluded - post_tipoff_rows_excluded
-            - len(learning_df) - inconsistent_rows_excluded
-        ),
+        "ungraded_or_non_over_under_rows_excluded": ungraded_or_non_over_under_rows_excluded,
         "file": TOTALS_LEARNING_FILE,
         "predictor_columns": PREDICTOR_COLUMNS,
         "post_game_fields_excluded_from_predictors": sorted(POST_GAME_COLUMNS),
