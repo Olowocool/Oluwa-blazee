@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 
 from totals_clv import calculate_totals_clv
+from totals_tracker import load_totals_history, save_totals_history
 
 
 TOTALS_HISTORY_FILE = "totals_history.csv"
@@ -64,13 +65,8 @@ def fetch_final_score(game_date, home_team, away_team):
 
 def grade_totals_results():
 
-    if not os.path.exists(TOTALS_HISTORY_FILE):
-        return {
-            "status": "error",
-            "message": "totals_history.csv not found"
-        }
-
-    df = pd.read_csv(TOTALS_HISTORY_FILE)
+    # Hydrate the CSV mirror from PostgreSQL when durable storage is configured.
+    df = load_totals_history()
 
     if df.empty:
         return {
@@ -165,7 +161,8 @@ def grade_totals_results():
 
         updated_rows += 1
 
-    df.to_csv(TOTALS_HISTORY_FILE, index=False)
+    # Persist grading/settlement updates to the durable ledger before updating the CSV mirror.
+    save_totals_history(df)
 
     return {
         "status": "success",

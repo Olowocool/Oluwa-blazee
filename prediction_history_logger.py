@@ -1,7 +1,10 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import json
+import uuid
 import pandas as pd
+
+from durable_totals_storage import persist_records, sync_csv_mirror
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "outputs"
@@ -17,7 +20,31 @@ def latest_injury_snapshot():
     return str(files[-1].resolve()) if files else ""
 
 
-def log_prediction(prediction, game_date=None):
+def _normalize_aware_utc_timestamp(value):
+    if value is None or not str(value).strip():
+        return ""
+    try:
+        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return ""
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return ""
+    return parsed.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def log_prediction(
+    prediction,
+    game_date=None,
+    commence_time_utc=None,
+    market_snapshot_time_utc=None,
+    market_last_update_utc=None,
+    market_snapshot_total_line=None,
+    over_odds=None,
+    under_odds=None,
+    totals_bookmaker=None,
+    snapshot_source=None,
+    source_event_id=None,
+):
     required = [
         "home_team",
         "away_team",
@@ -31,7 +58,28 @@ def log_prediction(prediction, game_date=None):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     row = {
+        "prediction_id": uuid.uuid4().hex,
         "prediction_time": datetime.now().astimezone().isoformat(),
+        "prediction_time_utc": _normalize_aware_utc_timestamp(
+            prediction.get("prediction_time_utc")
+        ),
+        "commence_time_utc": _normalize_aware_utc_timestamp(commence_time_utc),
+        "market_snapshot_time_utc": _normalize_aware_utc_timestamp(
+            market_snapshot_time_utc or prediction.get("market_snapshot_time_utc")
+        ),
+        "market_last_update_utc": _normalize_aware_utc_timestamp(
+            market_last_update_utc or prediction.get("market_last_update_utc")
+        ),
+        "market_snapshot_total_line": (
+            market_snapshot_total_line
+            if market_snapshot_total_line is not None
+            else prediction.get("market_snapshot_total_line")
+        ),
+        "over_odds": over_odds if over_odds is not None else prediction.get("over_odds"),
+        "under_odds": under_odds if under_odds is not None else prediction.get("under_odds"),
+        "totals_bookmaker": totals_bookmaker or prediction.get("totals_bookmaker", ""),
+        "snapshot_source": snapshot_source or prediction.get("snapshot_source", ""),
+        "source_event_id": source_event_id or prediction.get("source_event_id", ""),
         "game_date": game_date or "",
         "home_team": prediction["home_team"],
         "away_team": prediction["away_team"],
@@ -57,7 +105,11 @@ def log_prediction(prediction, game_date=None):
         "total_error": None,
     }
 
-        # Prevent duplicate records for the same game, line, and recommendation.
+        # PostgreSQL becomes authoritative when configured. In strict durable mode,
+    # a missing database setting fails closed before any new audit row is saved.
+    database_active = sync_csv_mirror("prediction_audit", HISTORY_FILE)
+
+    # Prevent duplicate records for the same game, line, and recommendation.
     if HISTORY_FILE.exists():
         existing = pd.read_csv(HISTORY_FILE)
 
@@ -88,11 +140,18 @@ def log_prediction(prediction, game_date=None):
                 print("Duplicate prediction detected; not logged.")
                 return row
 
-    df = pd.DataFrame([row])
+    # Persist to the durable ledger first. A database failure must not be
+    # hidden by a successful write to an ephemeral hosted filesystem.
+    persist_records("prediction_audit", [row])
 
-    if HISTORY_FILE.exists():
-        df.to_csv(HISTORY_FILE, mode="a", header=False, index=False)
+    if database_active:
+        sync_csv_mirror("prediction_audit", HISTORY_FILE)
     else:
+        if HISTORY_FILE.exists():
+            existing = pd.read_csv(HISTORY_FILE)
+            df = pd.concat([existing, pd.DataFrame([row])], ignore_index=True, sort=False)
+        else:
+            df = pd.DataFrame([row])
         df.to_csv(HISTORY_FILE, index=False)
 
     print(f"Prediction logged: {HISTORY_FILE}")

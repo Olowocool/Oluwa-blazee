@@ -1,6 +1,7 @@
 
+import math
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -14,9 +15,41 @@ from points_engine import calculate_matchup_points, load_game_history
 NBA_AVG_TEAM_POINTS = 114
 
 
+def parse_valid_market_total(value, *, minimum=None, maximum=None):
+    """Return a finite positive total line, or None for invalid input.
+
+    Optional bounds are intended for user-interface input validation. A blank
+    line must never be replaced with a guessed default.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        line = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(line) or line <= 0:
+        return None
+    if minimum is not None and line < float(minimum):
+        return None
+    if maximum is not None and line > float(maximum):
+        return None
+    return round(line, 2)
+
+
 def classify_total_edge(edge):
-    """Map the displayed, rounded total edge to one canonical recommendation."""
-    edge = round(float(edge), 2)
+    """Map a valid, rounded total edge to one canonical recommendation.
+
+    Missing, non-numeric, and non-finite edges fail closed to No Bet.
+    """
+    try:
+        edge = float(edge)
+    except (TypeError, ValueError, OverflowError):
+        return "No Bet", "Missing or invalid edge"
+
+    if not math.isfinite(edge):
+        return "No Bet", "Missing or invalid edge"
+
+    edge = round(edge, 2)
     if edge >= 5:
         return "Strong Over", "Strong Over edge"
     if edge >= 2.5:
@@ -325,6 +358,10 @@ def _history_before_date(history_df, game_date):
 
 
 def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, history_df=None, apply_experimental_adjustments=False):
+    # Fail closed for a missing or invalid sportsbook total. This validates
+    # the line only; it does not prove the price is live, current, or usable.
+    bookmaker_total = parse_valid_market_total(bookmaker_total)
+
     # Even callers that omit a target date must not accidentally consume
     # today's partial/future results. Historical callers must pass the actual
     # target date explicitly; the frontend does this for selected games.
@@ -423,8 +460,6 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
         if apply_experimental_adjustments
         else round(raw_projected_total, 2)
     )
-    bookmaker_total = round(float(bookmaker_total), 2)
-
     # Split the experimental adjustments into team projections. Where a factor
     # has a natural attribution, assign it to the affected team.
     experimental_home_model_adjustment = (
@@ -458,18 +493,25 @@ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, hi
     # home and away projections always add to the same total used for the edge.
     projected_away_points = round(projected_total - projected_home_points, 2)
 
-    edge = round(projected_total - bookmaker_total, 2)
-
-    recommendation, confidence_note = classify_total_edge(edge)
+    if bookmaker_total is None:
+        edge = None
+        recommendation = "No Bet"
+        confidence_note = "No valid sportsbook total line"
+    else:
+        edge = round(projected_total - bookmaker_total, 2)
+        recommendation, confidence_note = classify_total_edge(edge)
 
     return {
+        # Timestamp when the forecast was generated; training later checks it
+        # is timezone-aware and strictly earlier than the game's tip-off.
+        "prediction_time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "history_rows": history_rows,
         "history_columns": history_columns,
         "home_team": home_team,
         "away_team": away_team,
         "projected_total": round(projected_total, 2),
-        "bookmaker_total": round(float(bookmaker_total), 2),
-        "edge": round(edge, 2),
+        "bookmaker_total": round(bookmaker_total, 2) if bookmaker_total is not None else None,
+        "edge": round(edge, 2) if edge is not None else None,
         "recommendation": recommendation,
         "confidence_note": confidence_note,
         "raw_projected_total": round(raw_projected_total, 2),

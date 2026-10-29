@@ -14,3 +14,4 @@ beautifulsoup4
 streamlit
 requests
 beautifulsoup4
+psycopg[binary]>=3.2,<4

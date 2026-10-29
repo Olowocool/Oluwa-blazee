@@ -108,6 +108,7 @@ venv.bak/
 .DS_Store
 
 # Historical market data from a provider may be licensed or quota-metered.
+data/live_totals_market_snapshots.csv
 # Keep collected prices and local betting-backtest outputs out of public Git by default.
 data/historical_totals_market_snapshots.csv
 outputs/totals_betting_backtest_results.csv
@@ -117,3 +118,13 @@ data/dunkapi_historical_totals.csv
 outputs/totals_closing_line_backtest_results.csv
 outputs/totals_closing_line_backtest_summary.csv
 outputs/totals_closing_line_backtest_data_quality.json
+
+# Runtime pick/audit/training files are local caches, not public source data.
+totals_history.csv
+outputs/prediction_history.csv
+outputs/totals_learning_dataset.csv
+# The learning builder currently writes this file at the repository root.
+totals_learning_dataset.csv
+# Generated forward paper-trading reports contain recorded pick/market data.
+outputs/totals_forward_paper_trading_picks.csv
+outputs/totals_forward_paper_trading_summary.json
