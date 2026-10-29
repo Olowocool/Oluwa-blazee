@@ -22,6 +22,7 @@ This requires a **separate free DunkAPI API key**. Do not paste API keys into Ch
 - reports model MAE vs. closing-line MAE, edge-stratified win rate, profit, ROI, and opening-to-closing total movement;
 - records the actual development/holdout sample sizes in the data-quality JSON and warns if the requested holdout consumes the entire scored sample (leaving no development split);
 - lists each skipped market row's game ID, date, teams, bookmaker, and skip reason in the data-quality JSON so unmatched scores can be investigated without uploading the full results CSV;
+- accepts an optional `is_neutral_site=true` column in verified score overrides; neutral-court games count toward recent scoring form but do not contaminate home/away venue splits;
 - rejects missing price pairs and inconsistent score joins.
 
 **Important limitation:** this provider response supplies an opening total and a closing total, but not a separately timestamped, historical Over/Under entry price in this endpoint. The initial evaluation therefore simulates taking the model's signal at the *closing line and returned closing price*. It reports opening-to-closing line movement descriptively, but does **not** claim bet-level CLV for an earlier entry. A true bet-level CLV audit requires matching a recorded entry price/time and the closing market, or a timestamped line-history feed.
@@ -71,3 +72,5 @@ Collected odds and results are kept local by default. Do not publish provider da
 The free allowance is limited. Start with the five-date smoke test, verify the book coverage and data-quality report, then collect additional non-overlapping dates across a longer period as the available allowance permits. To approach 1,000 scored holdout games may require several monthly free-credit allotments or another authorized market archive. The holdout must remain reserved: don't tune thresholds on it.
 
 A successful unit-test run is not a completed betting validation. Don't report profitability until the real closing-price backtest has been run and its sample size, skipped rows, odds coverage, ROI, and drawdowns reviewed.
+
+For score overrides involving neutral-site tournaments (such as the NBA Cup semifinals and final), use `is_neutral_site=true` alongside `include_in_history=true`. The game contributes to recent form and rest calculations for later dates, but the Points Engine excludes it from home/away venue splits. Older score files without this column retain the existing behavior.
