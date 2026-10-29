@@ -267,10 +267,10 @@ def get_team_recent_stats(history_df, team_name, game_date=None):
 
 
 def _history_before_date(history_df, game_date):
-    """Return only games completed strictly before the target game date.
+    """Return only games completed strictly before the target calendar date.
 
-    If no date is supplied, use today's Lagos calendar date as a safe cutoff.
-    This prevents accidental inclusion of future rows by older callers.
+    Dates are treated as calendar dates, so target-day results are never used
+    even when the caller supplies a timestamp with a time component.
     """
     if history_df is None or history_df.empty:
         return history_df
@@ -289,11 +289,25 @@ def _history_before_date(history_df, game_date):
     cutoff = pd.to_datetime(game_date, errors="coerce")
     if pd.isna(cutoff):
         raise ValueError(f"Invalid target game date: {game_date!r}")
+    if getattr(cutoff, "tzinfo", None) is not None:
+        cutoff = cutoff.tz_convert("Africa/Lagos").tz_localize(None)
+    cutoff = cutoff.normalize()
 
     history = normalize_history_team_columns(history_df)
-    history[date_col] = pd.to_datetime(history[date_col], errors="coerce")
-    return history.loc[history[date_col].notna() & (history[date_col] < cutoff)].copy()
+    if date_col != "game_date":
+        history = history.rename(columns={date_col: "game_date"})
+    history["game_date"] = pd.to_datetime(history["game_date"], errors="coerce")
+    history = history.loc[
+        history["game_date"].notna() & (history["game_date"] < cutoff)
+    ].copy()
 
+    if {"home_score", "away_score"}.issubset(history.columns):
+        history["home_score"] = pd.to_numeric(history["home_score"], errors="coerce")
+        history["away_score"] = pd.to_numeric(history["away_score"], errors="coerce")
+        history["total_score"] = history["home_score"] + history["away_score"]
+
+    history.attrs["_strict_history_cutoff_date"] = cutoff.date().isoformat()
+    return history
 
 def predict_game_total(home_team, away_team, bookmaker_total, game_date=None, history_df=None, apply_experimental_adjustments=False):
     # Even callers that omit a target date must not accidentally consume
