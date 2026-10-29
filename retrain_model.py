@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.calibration import CalibratedClassifierCV
 from xgboost import XGBClassifier
+from legacy_training_guard import LEGACY_PIPELINE_BLOCK_REASON, blocked_legacy_pipeline_result
 
 
 LEARNING_DATASET = "learning_dataset.csv"
@@ -46,9 +47,6 @@ def prepare_training_data(df):
 
         "kelly",
 
-        "clv",
-
-        "profit_loss"
 
     ]
 
@@ -81,6 +79,7 @@ def prepare_training_data(df):
 
 
 def train_model(X, y):
+    raise RuntimeError(LEGACY_PIPELINE_BLOCK_REASON)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -139,6 +138,7 @@ def save_model(model, feature_cols):
 
 
 def retrain_pipeline():
+    return blocked_legacy_pipeline_result("legacy XGBoost retraining")
 
     df = load_learning_data()
 
