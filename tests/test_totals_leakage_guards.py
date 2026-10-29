@@ -235,30 +235,41 @@ class TotalsLeakageGuardTests(unittest.TestCase):
             self.assertEqual(len(saved), 1)
             self.assertEqual(saved.iloc[0]["home_team"], "New York Knicks")
 
-    def test_training_uses_chronological_holdout(self):
+    def test_training_uses_chronological_holdout_and_validates_pregame_timestamps(self):
         rows = []
         for day in range(10):
+            date_value = pd.Timestamp("2026-01-01") + pd.Timedelta(days=day)
+            date_text = date_value.strftime("%Y-%m-%d")
             for within_day in range(4):
                 index = day * 4 + within_day
                 line = 218 + (index % 7)
-                under = index % 2
+                pick = "Over" if index % 2 == 0 else "Under"
+                target = 0 if index % 3 == 0 else 1
+                if pick == "Over":
+                    actual_total = line + 2 if target else line - 2
+                    edge = 1.0
+                else:
+                    actual_total = line - 2 if target else line + 2
+                    edge = -1.0
                 rows.append({
-                    "game_date": pd.Timestamp("2026-01-01") + pd.Timedelta(days=day),
-                    "projected_total": line + (1 if under else -1),
+                    "game_date": date_value,
+                    "prediction_time_utc": date_text + "T12:00:00Z",
+                    "commence_time_utc": date_text + "T18:00:00Z",
+                    "pick_type": pick,
+                    "projected_total": line + edge,
                     "sportsbook_total": line,
-                    "edge": 1 if under else -1,
-                    "is_under": under,
-                    "is_over": 1 - under,
-                    "actual_total": line + (index % 5),  # outcome column must not be a predictor
-                    "profit_loss": 91 if index % 2 else -100,
-                    "target": index % 2,
+                    "edge": edge,
+                    "is_under": int(pick == "Under"),
+                    "is_over": int(pick == "Over"),
+                    "actual_total": actual_total,
+                    "profit_loss": 91 if target else -100,
+                    "target": target,
                 })
 
         with tempfile.TemporaryDirectory() as directory:
             data_path = os.path.join(directory, "totals_learning_dataset.csv")
             model_path = os.path.join(directory, "model.joblib")
             pd.DataFrame(rows).to_csv(data_path, index=False)
-
             with patch.object(train_totals_model, "DATA_FILE", data_path):
                 with patch.object(train_totals_model, "MODEL_FILE", model_path):
                     result = train_totals_model.train_totals_model()
@@ -271,6 +282,41 @@ class TotalsLeakageGuardTests(unittest.TestCase):
             )
             self.assertNotIn("actual_total", result["features_used"])
             self.assertNotIn("profit_loss", result["features_used"])
+            self.assertEqual(result["timestamp_invalid_rows_excluded"], 0)
+            self.assertEqual(result["post_tipoff_rows_excluded"], 0)
+
+    def test_training_refuses_dataset_without_timestamp_provenance(self):
+        rows = []
+        for day in range(10):
+            date_value = pd.Timestamp("2026-01-01") + pd.Timedelta(days=day)
+            for within_day in range(4):
+                index = day * 4 + within_day
+                line = 220.0
+                pick = "Over" if index % 2 == 0 else "Under"
+                target = index % 2
+                actual_total = line + 2 if ((pick == "Over") == bool(target)) else line - 2
+                edge = 5.0 if pick == "Over" else -5.0
+                rows.append({
+                    "game_date": date_value,
+                    "pick_type": pick,
+                    "projected_total": line + edge,
+                    "sportsbook_total": line,
+                    "edge": edge,
+                    "is_under": int(pick == "Under"),
+                    "is_over": int(pick == "Over"),
+                    "actual_total": actual_total,
+                    "target": target,
+                })
+        with tempfile.TemporaryDirectory() as directory:
+            data_path = os.path.join(directory, "totals_learning_dataset.csv")
+            model_path = os.path.join(directory, "model.joblib")
+            pd.DataFrame(rows).to_csv(data_path, index=False)
+            with patch.object(train_totals_model, "DATA_FILE", data_path):
+                with patch.object(train_totals_model, "MODEL_FILE", model_path):
+                    result = train_totals_model.train_totals_model()
+            self.assertEqual(result["status"], "error")
+            self.assertFalse(result["training_allowed"])
+            self.assertFalse(os.path.exists(model_path))
 
     def test_synthetic_generator_does_not_touch_real_totals_ledger(self):
         with tempfile.TemporaryDirectory() as directory:
