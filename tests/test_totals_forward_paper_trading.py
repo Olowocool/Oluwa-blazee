@@ -182,6 +182,18 @@ class TotalsForwardPaperTradingTests(unittest.TestCase):
         self.assertEqual(report["eligible_picks"], 0)
         self.assertEqual(report["excluded_by_reason"]["entry_snapshot_not_found_or_mismatched"], 1)
 
+    def test_missing_experimental_flag_is_excluded(self):
+        pick = pick_row(experimental_adjustments_applied="")
+        report = self.run_evaluation([pick], [snapshot_row()])
+        self.assertEqual(report["eligible_picks"], 0)
+        self.assertEqual(report["excluded_by_reason"]["missing_or_invalid_experimental_flag"], 1)
+
+    def test_provider_update_timestamp_must_match_entry_snapshot(self):
+        pick = pick_row(market_last_update_utc="2026-10-29T17:54:00Z")
+        report = self.run_evaluation([pick], [snapshot_row()])
+        self.assertEqual(report["eligible_picks"], 0)
+        self.assertEqual(report["excluded_by_reason"]["entry_snapshot_not_found_or_mismatched"], 1)
+
     def test_experimental_adjustment_pick_is_not_in_official_results(self):
         pick = pick_row(experimental_adjustments_applied="true")
         report = self.run_evaluation([pick], [snapshot_row()])
