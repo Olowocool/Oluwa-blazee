@@ -1,15 +1,9 @@
 name: Full totals chronological backtest
 
 on:
-  pull_request:
-    branches: ["main"]
-    paths:
-      - "totals_full_model_backtest.py"
-      - "totals_model.py"
-      - "points_engine.py"
-      - "pace_engine.py"
-      - "data/historical_nba_scores.csv"
-      - ".github/workflows/totals-full-backtest.yml"
+  # The all-history chronological evaluation is intentionally manual because
+  # it can be substantially slower than deterministic unit tests. Pull requests
+  # run the fast regression suite in .github/workflows/blank.yml.
 
 jobs:
   chronological-backtest:
