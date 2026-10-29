@@ -5,6 +5,7 @@ from pathlib import Path
 from legacy_training_guard import (
     LEGACY_PIPELINE_BLOCK_REASON,
     blocked_legacy_pipeline_result,
+    finalize_automation_status,
 )
 
 
@@ -23,6 +24,35 @@ class LegacyTrainingGuardTests(unittest.TestCase):
         self.assertEqual(result["reason_code"], "unverified_point_in_time_features")
         self.assertIn("chronological holdout", result["message"])
         self.assertEqual(result["message"], LEGACY_PIPELINE_BLOCK_REASON)
+
+    def test_automation_is_partial_when_any_step_is_blocked_or_fails(self):
+        summary = {
+            "status": "success",
+            "steps": {
+                "result_sync": {"status": "success"},
+                "ensemble_training": {"status": "blocked"},
+                "model_evaluation": {"status": "error"},
+            },
+        }
+
+        result = finalize_automation_status(summary)
+
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["incomplete_steps"], ["ensemble_training", "model_evaluation"])
+        self.assertIn("do not treat this run as a complete model update", result["message"])
+        self.assertEqual(summary["status"], "success")
+
+    def test_automation_stays_success_when_all_steps_succeed(self):
+        result = finalize_automation_status({
+            "status": "success",
+            "steps": {
+                "result_sync": {"status": "success"},
+                "learning_dataset": {"status": "success"},
+            },
+        })
+
+        self.assertEqual(result["status"], "success")
+        self.assertNotIn("incomplete_steps", result)
 
     def test_unsafe_entry_points_return_guard_before_loading_data_or_training(self):
         entry_points = {
