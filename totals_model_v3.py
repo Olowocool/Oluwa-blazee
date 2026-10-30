@@ -399,23 +399,45 @@ def _weighted_average(values: pd.Series, dates: pd.Series, target: pd.Timestamp,
     return float(np.average(data, weights=weights))
 
 
-def _fit_ridge_ratings(logs: pd.DataFrame, league_efficiency: float,
-                       target_date: pd.Timestamp, half_life_days: float) -> dict[str, Any]:
+def _fit_ridge_ratings(
+    logs: pd.DataFrame,
+    league_efficiency: float,
+    target_date: pd.Timestamp,
+    half_life_days: float,
+    league_shot_profile: dict[str, float],
+) -> dict[str, Any]:
+    zero_betas = {column: 0.0 for column in SHOT_PROFILE_COLUMNS}
     if logs.empty:
-        return {"off": {}, "def": {}, "home_advantage": 0.0}
+        return {"off": {}, "def": {}, "home_advantage": 0.0, "shot_betas": zero_betas}
+
     teams = sorted(set(logs["team_name"]) | set(logs["opponent_name"]))
     team_index = {team: index for index, team in enumerate(teams)}
     n_teams = len(teams)
     if len(logs) < 12:
-        return {"off": {}, "def": {}, "home_advantage": 0.0}
+        return {"off": {}, "def": {}, "home_advantage": 0.0, "shot_betas": zero_betas}
 
-    x = np.zeros((len(logs), 2 * n_teams + 1), dtype=float)
+    home_index = 2 * n_teams
+    shot_start = home_index + 1
+    x = np.zeros((len(logs), shot_start + len(SHOT_PROFILE_COLUMNS)), dtype=float)
     rows = np.arange(len(logs))
     team_ids = logs["team_name"].map(team_index).to_numpy(dtype=int)
     opp_ids = logs["opponent_name"].map(team_index).to_numpy(dtype=int)
     x[rows, team_ids] = 1.0
     x[rows, n_teams + opp_ids] = 1.0
-    x[rows, -1] = logs["is_home"].map(lambda value: 1.0 if value is True else 0.0).to_numpy()
+    x[rows, home_index] = logs["is_home"].map(
+        lambda value: 1.0 if value is True else 0.0
+    ).to_numpy()
+
+    # Attempt rates are centered on the pregame league baseline. Missing
+    # historical box-score fields therefore contribute zero deviation rather
+    # than creating a synthetic team advantage.
+    for offset, column in enumerate(SHOT_PROFILE_COLUMNS):
+        baseline = float(league_shot_profile.get(column, 0.0))
+        if column in logs:
+            values = pd.to_numeric(logs[column], errors="coerce").fillna(baseline)
+        else:
+            values = pd.Series(baseline, index=logs.index, dtype=float)
+        x[:, shot_start + offset] = values.to_numpy(dtype=float) - baseline
 
     y = logs["points_per_100"].to_numpy(dtype=float) - league_efficiency
     age_days = (
@@ -446,9 +468,12 @@ def _fit_ridge_ratings(logs: pd.DataFrame, league_efficiency: float,
             team: float(league_efficiency + defence_suppression[team_index[team]])
             for team in teams
         },
-        "home_advantage": float(beta[-1]),
+        "home_advantage": float(beta[home_index]),
+        "shot_betas": {
+            column: float(beta[shot_start + offset])
+            for offset, column in enumerate(SHOT_PROFILE_COLUMNS)
+        },
     }
-
 
 def _recent_team_sample(logs: pd.DataFrame, n_games: int) -> pd.DataFrame:
     if logs.empty:
