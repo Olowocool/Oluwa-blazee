@@ -257,16 +257,16 @@ def metrics(frame, prediction_col):
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     raw, metadata = connect_and_load()
-    required = {"fga", "fta", "oreb", "tov", "poss", "pts", "game_date", "team_id", "opp_team_id"}
+    required = {"fga", "fta", "oreb", "tov", "source_poss", "pts", "game_date", "team_id", "opp_team_id"}
     missing = sorted(required - set(raw.columns))
     if missing:
         raise RuntimeError(f"Source schema missing required columns: {missing}")
     # possession formula audit is team-game level, before any modelling.
     check = raw.copy()
-    for c in ("fga", "fta", "oreb", "tov", "poss"):
+    for c in ("fga", "fta", "oreb", "tov", "source_poss"):
         check[c] = pd.to_numeric(check[c], errors="coerce")
     check["formula_poss"] = check.fga + 0.44 * check.fta - check.oreb + check.tov
-    delta = check.formula_poss - check.poss
+    delta = check.formula_poss - check.source_poss
     audit = {
         "source_columns_verified": sorted(required),
         "team_game_rows": int(len(check)),
@@ -274,7 +274,7 @@ def main():
         "formula_vs_source_poss_median_abs_difference": round(float(delta.abs().median()), 5),
         "formula_vs_source_poss_p95_abs_difference": round(float(delta.abs().quantile(0.95)), 5),
         "formula_vs_source_poss_exact_match_pct": round(float(np.isclose(delta, 0.0, atol=0.01).mean() * 100), 2),
-        "formula_vs_source_poss_corr": round(float(check[["formula_poss", "poss"]].corr().iloc[0, 1]), 6),
+        "formula_vs_source_poss_corr": round(float(check[["formula_poss", "source_poss"]].corr().iloc[0, 1]), 6),
         "formula_definition": "FGA + 0.44*FTA - OREB + TOV",
     }
     predictions = build_point_in_time(raw)
