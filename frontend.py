@@ -2107,6 +2107,48 @@ if data and "games" in data and len(data["games"]) > 0:
 elif data:
     st.warning("No games returned from API.")
 
+st.subheader("Prospective Totals Paper Validation")
+st.caption(
+    "Uses only saved DraftKings entry snapshots and settled paper picks. "
+    "No live bets are placed and no missing prices are estimated."
+)
+if st.button("Refresh Forward Paper Results", key="refresh_forward_totals_paper_results"):
+    with st.spinner("Checking captured entry quotes and settled results..."):
+        paper_report = evaluate_forward_paper_trading()
+    st.session_state["forward_totals_paper_report"] = paper_report
+
+paper_report = st.session_state.get("forward_totals_paper_report")
+if paper_report:
+    if paper_report.get("status") == "error":
+        st.error(paper_report.get("message", "Paper evaluation failed."))
+    else:
+        report_cols = st.columns(4)
+        with report_cols[0]:
+            st.metric("Eligible settled picks", paper_report.get("eligible_picks", 0))
+        with report_cols[1]:
+            st.metric("Wins / Losses / Pushes", (
+                f"{paper_report.get('wins', 0)} / "
+                f"{paper_report.get('losses', 0)} / "
+                f"{paper_report.get('pushes', 0)}"
+            ))
+        with report_cols[2]:
+            roi = paper_report.get("roi_pct")
+            st.metric("Realized ROI", f"{roi:.2f}%" if roi is not None else "Not available")
+        with report_cols[3]:
+            clv = paper_report.get("mean_line_clv_points")
+            st.metric("Mean line CLV", f"{clv:+.2f}" if clv is not None else "Not available")
+        st.caption(
+            f"Seen: {paper_report.get('picks_seen', 0)} | "
+            f"Excluded: {paper_report.get('excluded_picks', 0)} | "
+            f"Stake risked: {paper_report.get('stake_risked', 0)} | "
+            f"Net profit: {paper_report.get('net_profit', 0)}"
+        )
+        if paper_report.get("excluded_by_reason"):
+            with st.expander("Paper record exclusions"):
+                st.json(paper_report["excluded_by_reason"])
+else:
+    st.info("No paper-results evaluation has been run in this session yet.")
+
 st.title("Autonomous Update System")
 
 st.subheader("Model Health Dashboard")
