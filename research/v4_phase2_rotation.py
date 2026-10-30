@@ -740,7 +740,7 @@ def main():
         )
         afeat, amins = rotation_for_team(
             gid, str(g.away_team_id), gd, away_report, team_hist, player_hist,
-            first_seen, actual_lookup, rapm
+            first_seen, actual_lookup, rapm, team_actual_totals
         )
         if hfeat is None or afeat is None:
             continue
