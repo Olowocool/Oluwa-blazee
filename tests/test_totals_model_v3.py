@@ -127,7 +127,15 @@ def test_v3_prediction_is_finite_and_team_points_sum_to_total():
         logs, "Team A", "Team B", "2021-12-15"
     )
 
-    assert prediction["model_version"] == "totals-v3.1-possession-ridge-season-baseline"
+    assert prediction["model_version"] == "totals-v3.2-possession-ridge-shot-profile"
+    assert pd.notna(prediction["home_shot_profile_adjustment"])
+    assert pd.notna(prediction["away_shot_profile_adjustment"])
+    assert set(prediction["shot_profile_betas"]) == {
+        "three_pa_rate",
+        "free_throw_rate",
+        "opponent_three_pa_rate",
+        "opponent_free_throw_rate",
+    }
     assert 80 <= prediction["expected_possessions"] <= 120
     assert prediction["projected_total"] > 0
     assert abs(
@@ -345,3 +353,66 @@ def test_league_baseline_blends_from_eight_seasons_to_current_season():
         mature["league_efficiency"] - mature["league_efficiency_current"]
     ) < 1e-9
     assert mature["league_efficiency"] > early["league_efficiency"]
+
+
+
+def test_shot_rates_use_attempts_and_correct_opponent_pairing():
+    logs = prepare_team_game_logs(make_raw_games(count=1))
+    home = logs.loc[logs["team_name"] == "Team A"].iloc[0]
+    away = logs.loc[logs["team_name"] == "Team B"].iloc[0]
+
+    assert abs(home["three_pa_rate"] - (35 / 88)) < 1e-9
+    assert abs(home["free_throw_rate"] - (21 / 88)) < 1e-9
+    assert abs(home["opponent_three_pa_rate"] - (33 / 86)) < 1e-9
+    assert abs(home["opponent_free_throw_rate"] - (19 / 86)) < 1e-9
+
+    assert abs(away["three_pa_rate"] - (33 / 86)) < 1e-9
+    assert abs(away["free_throw_rate"] - (19 / 86)) < 1e-9
+    assert abs(away["opponent_three_pa_rate"] - (35 / 88)) < 1e-9
+    assert abs(away["opponent_free_throw_rate"] - (21 / 88)) < 1e-9
+
+
+def test_missing_shot_profile_data_falls_back_to_neutral_baseline():
+    raw = make_raw_games(start_date="2020-10-20", count=24, season_id="22020")
+    current = make_raw_games(start_date="2021-10-20", count=18, season_id="22021")
+    raw = pd.concat([raw, current], ignore_index=True)
+    logs = prepare_team_game_logs(raw)
+    logs = logs.drop(columns=[
+        "fga", "fta", "fg3a", "three_pa_rate", "free_throw_rate",
+        "opponent_three_pa_rate", "opponent_free_throw_rate",
+    ])
+
+    prediction = predict_game_total_v3(
+        logs, "Team A", "Team B", "2021-12-15"
+    )
+
+    assert prediction["home_shot_profile_adjustment"] == 0.0
+    assert prediction["away_shot_profile_adjustment"] == 0.0
+    assert all(value == 0.0 for value in prediction["shot_profile_betas"].values())
+
+
+def test_shot_profile_ratings_use_strictly_pregame_rates():
+    prior_season = make_raw_games(
+        start_date="2020-10-20", count=12, season_id="22020"
+    )
+    current_season = make_raw_games(
+        start_date="2021-10-20", count=20, season_id="22021"
+    )
+    target_date = pd.Timestamp("2021-11-10")
+    full_logs = prepare_team_game_logs(
+        pd.concat([prior_season, current_season], ignore_index=True)
+    )
+    strict_logs = full_logs.loc[full_logs["game_date"] < target_date].copy()
+
+    from_full = estimate_pregame_ratings(full_logs, target_date)
+    from_strict = estimate_pregame_ratings(strict_logs, target_date)
+
+    assert from_full["league_shot_profile"] == from_strict["league_shot_profile"]
+    assert from_full["shot_betas"] == from_strict["shot_betas"]
+    assert from_full["teams"] == from_strict["teams"]
+
+
+def test_attempt_rates_are_not_shooting_percentages():
+    logs = prepare_team_game_logs(make_raw_games(count=1))
+    forbidden = {"fg3_pct", "fg_pct", "ft_pct", "three_point_percentage"}
+    assert forbidden.isdisjoint(set(logs.columns))
