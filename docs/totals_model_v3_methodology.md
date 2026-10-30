@@ -80,6 +80,29 @@ described as an untouched holdout for subsequent V3 feature selection. Any
 further tuning requires a new evaluation period or prospective observations.
 The first report is score-prediction research only and says nothing about ROI.
 
+## V3.1 season-aware baseline result
+
+V3.1 adds a 60-day current-season league-efficiency and pace baseline that
+gradually replaces the eight-season prior over the first 20 team games. On the
+same 500-game development window, its score metrics were:
+
+| Metric | V2 Points Engine | V3.1 |
+|---|---:|---:|
+| MAE | 15.2993 | 14.9275 |
+| RMSE | 19.8090 | 19.4970 |
+| Mean error bias | -0.6105 | +0.6581 |
+| Within 5 points | 22.0% | 25.4% |
+| Within 10 points | 43.0% | 43.8% |
+
+V3.1 improved MAE by 0.3718 points and RMSE by 0.3120 points on this sample.
+The V2 numbers are from the earlier same-game comparison on the identical
+500 game IDs; the V3.1 workflow skips recomputing that unchanged baseline.
+
+This is promising but not independent validation: the same 500-game window was
+already inspected while developing V3. The next validation expands the
+chronological sample. V3.1 remains research-only and is not connected to
+predictions or paper-trading.
+
 ## Pace versus efficiency diagnostic
 
 A later V3-only run decomposed the same 500-game sample into pace and scoring
