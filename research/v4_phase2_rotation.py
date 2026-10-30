@@ -634,17 +634,25 @@ STATUS_HISTORY = pd.DataFrame(columns=["game_date", "status", "played"])
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    print("Phase 2: loading NBA player, schedule, rotation and event data", flush=True)
     games, team_logs, player_logs, player_names, team_names, rotations, events = load_sources()
+    print(f"Loaded {len(games)} regular-season games, {len(player_logs)} player-game rows, {len(rotations)} rotation rows and {len(events)} scoring events", flush=True)
     segments, segment_audit = build_lineup_segments(games, team_logs, rotations, events)
+    print(f"Reconstructed lineup segments: {segment_audit}", flush=True)
     segments.to_pickle(OUT / "v4_phase2_lineup_segments.pkl")
+    print("Phase 2: fitting point-in-time player RAPM snapshots", flush=True)
     snapshots, snapshot_manifest = build_rapm_snapshots(segments)
+    print(f"Fitted {len(snapshots)} RAPM snapshots", flush=True)
     snapshot_manifest.to_csv(OUT / "v4_phase2_rapm_snapshots.csv", index=False)
 
     # Retrieve only official reports from 10:00 a.m. ET or an earlier available snapshot.
     report_dates = games[games.season.isin(SEASONS)].game_date.drop_duplicates().tolist()
+    print(f"Phase 2: retrieving official injury reports for {len(report_dates)} game dates", flush=True)
     raw_reports, report_manifest = fetch_injury_reports(report_dates)
+    print(f"Retrieved {len(raw_reports)} injury rows across {(report_manifest.status == 'complete').sum()} complete report dates", flush=True)
     report_manifest.to_csv(OUT / "v4_phase2_injury_report_manifest.csv", index=False)
     mapped_reports, unmatched_reports = map_injury_rows(raw_reports, games, player_names, team_names)
+    print(f"Mapped {len(mapped_reports)} injury rows; unmatched {len(unmatched_reports)}", flush=True)
     unmatched_reports.to_csv(OUT / "v4_phase2_unmatched_injury_rows.csv", index=False)
 
     actual_played = set(zip(player_logs.game_id.astype(str), player_logs.player_id.astype(str)))
@@ -734,6 +742,7 @@ def main():
 
     features = pd.DataFrame(feature_rows)
     minutes = pd.DataFrame(minute_rows)
+    print(f"Built injury/rotation features for {len(features)} games and {len(minutes)} player-game rotations", flush=True)
     if features.empty:
         raise RuntimeError("No injury-adjusted game features were generated")
     features.to_csv(OUT / "v4_phase2_game_features.csv", index=False)
