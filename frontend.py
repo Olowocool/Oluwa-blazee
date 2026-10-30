@@ -217,6 +217,11 @@ def get_odds():
                     # Keep a complete Over/Under pair from one bookmaker and one line.
                     # Never combine Over from one book with Under from another.
                     if market_key == "totals":
+                        # Keep the prospective paper sample on one named book.
+                        # Missing DraftKings quotes fail closed; do not silently
+                        # substitute another bookmaker on another rerun/game.
+                        if str(bookmaker.get("key", "")).strip().casefold() != "draftkings":
+                            continue
                         outcomes = market.get("outcomes", [])
                         overs = [
                             item for item in outcomes
@@ -1675,26 +1680,62 @@ if data and "games" in data and len(data["games"]) > 0:
                     []
                 )
             )
-        if st.button(
-            f"Save Totals Pick {game['away_team']} @ {game['home_team']}",
-            disabled=bookmaker_total is None,
-            help="Enter a valid sportsbook total line before saving a pick.",
+        # Capture every qualifying production-model signal automatically.
+        # This avoids human cherry-picking; the tracker keeps only the first
+        # qualifying forecast for each provider event.
+        paper_quote_ready = False
+        try:
+            _entry_time = pd.to_datetime(
+                odds.get("snapshot_timestamp_utc"), utc=True, errors="coerce"
+            )
+            _market_update_time = pd.to_datetime(
+                odds.get("market_last_update_utc"), utc=True, errors="coerce"
+            )
+            _forecast_time = pd.to_datetime(
+                totals_result.get("prediction_time_utc"), utc=True, errors="coerce"
+            )
+            _tipoff_time = pd.to_datetime(
+                odds.get("commence_time_utc"), utc=True, errors="coerce"
+            )
+            _over_price = float(odds.get("over_odds"))
+            _under_price = float(odds.get("under_odds"))
+            paper_quote_ready = bool(
+                valid_live_total_line is not None
+                and str(totals_bookmaker).strip().casefold() == "draftkings"
+                and str(odds.get("source_event_id") or "").strip()
+                and odds.get("snapshot_source") == "the-odds-api-v4-current-endpoint"
+                and not pd.isna(_entry_time)
+                and not pd.isna(_market_update_time)
+                and not pd.isna(_forecast_time)
+                and not pd.isna(_tipoff_time)
+                and _entry_time < _forecast_time < _tipoff_time
+                and _market_update_time <= _entry_time
+                and (_forecast_time - _entry_time).total_seconds() <= 300
+                and math.isfinite(_over_price)
+                and math.isfinite(_under_price)
+                and _over_price > 1.0
+                and _under_price > 1.0
+            )
+        except (TypeError, ValueError, OverflowError):
+            paper_quote_ready = False
+
+        if (
+            paper_quote_ready
+            and totals_result.get("recommendation") in {
+                "Strong Over", "Lean Over", "Strong Under", "Lean Under"
+            }
+            and not totals_result.get("experimental_adjustments_applied", False)
         ):
             try:
-                save_totals_pick(
+                paper_pick_saved = save_totals_pick(
                     game_date=active_date,
                     home_team=game["home_team"],
                     away_team=game["away_team"],
                     projected_total=totals_result["projected_total"],
-                    sportsbook_total=totals_result["bookmaker_total"],
+                    sportsbook_total=valid_live_total_line,
                     recommendation=totals_result["recommendation"],
                     prediction_time_utc=totals_result.get("prediction_time_utc"),
-                    commence_time_utc=(
-                        odds.get("commence_time_utc")
-                        or game.get("game_time")
-                        or game.get("commence_time_utc")
-                        or game.get("commence_time")
-                    ),
+                    commence_time_utc=odds.get("commence_time_utc"),
                     market_snapshot_time_utc=odds.get("snapshot_timestamp_utc"),
                     market_last_update_utc=odds.get("market_last_update_utc"),
                     market_snapshot_total_line=odds.get("total_line"),
@@ -1703,39 +1744,40 @@ if data and "games" in data and len(data["games"]) > 0:
                     totals_bookmaker=odds.get("totals_bookmaker"),
                     snapshot_source=odds.get("snapshot_source"),
                     source_event_id=odds.get("source_event_id"),
-                    experimental_adjustments_applied=totals_result.get(
-                        "experimental_adjustments_applied", False
-                    ),
+                    experimental_adjustments_applied=False,
                 )
-
-                log_prediction(
-                    prediction=totals_result,
-                    game_date=active_date,
-                    commence_time_utc=(
-                        odds.get("commence_time_utc")
-                        or game.get("game_time")
-                        or game.get("commence_time_utc")
-                        or game.get("commence_time")
-                    ),
-                    market_snapshot_time_utc=odds.get("snapshot_timestamp_utc"),
-                    market_last_update_utc=odds.get("market_last_update_utc"),
-                    market_snapshot_total_line=odds.get("total_line"),
-                    over_odds=odds.get("over_odds"),
-                    under_odds=odds.get("under_odds"),
-                    totals_bookmaker=odds.get("totals_bookmaker"),
-                    snapshot_source=odds.get("snapshot_source"),
-                    source_event_id=odds.get("source_event_id"),
-                )
-
-                st.success(
-                    "Totals pick and prediction history saved."
-                )
-
+                if paper_pick_saved:
+                    log_prediction(
+                        prediction=totals_result,
+                        game_date=active_date,
+                        commence_time_utc=odds.get("commence_time_utc"),
+                        market_snapshot_time_utc=odds.get("snapshot_timestamp_utc"),
+                        market_last_update_utc=odds.get("market_last_update_utc"),
+                        market_snapshot_total_line=odds.get("total_line"),
+                        over_odds=odds.get("over_odds"),
+                        under_odds=odds.get("under_odds"),
+                        totals_bookmaker=odds.get("totals_bookmaker"),
+                        snapshot_source=odds.get("snapshot_source"),
+                        source_event_id=odds.get("source_event_id"),
+                    )
+                    st.success(
+                        f"Paper signal automatically recorded: "
+                        f"{totals_result['recommendation']} at DraftKings "
+                        f"{valid_live_total_line}."
+                    )
+                else:
+                    st.caption(
+                        "This game already has its first qualifying paper signal recorded."
+                    )
             except Exception as e:
-                st.error(
-                    f"Saving was incomplete: {e}. "
-                    "Check both history files before retrying."
-                )
+                st.error(f"Prospective paper signal could not be saved: {e}")
+        elif totals_result.get("recommendation") in {
+            "Strong Over", "Lean Over", "Strong Under", "Lean Under"
+        }:
+            st.caption(
+                "Signal not included in the paper sample: a fresh, complete "
+                "DraftKings Over/Under quote and matching pre-tipoff timestamps are required."
+            )
 
         with st.expander("Totals Model Details"):
             st.json(totals_result)
