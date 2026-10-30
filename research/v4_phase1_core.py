@@ -29,7 +29,7 @@ RIDGE_ALPHA = 20.0
 def load_project_game_csv() -> pd.DataFrame:
     """Convert the repository's one-row-per-game home/away file to team-game rows."""
     required = [
-        "game_id", "game_date", "season_type",
+        "season_id", "game_id", "game_date", "season_type",
         "team_id_home", "team_id_away",
         "fga_home", "fta_home", "oreb_home", "tov_home", "pts_home",
         "fga_away", "fta_away", "oreb_away", "tov_away", "pts_away",
@@ -46,7 +46,7 @@ def load_project_game_csv() -> pd.DataFrame:
             "game_id": "string",
             "team_id_home": "string",
             "team_id_away": "string",
-            "season_type": "string",
+            "season_type": "string",\n            "season_id": "string",
         },
         low_memory=False,
     )
@@ -286,7 +286,7 @@ def main():
         raise RuntimeError("Invalid formula possession values in data/game.csv")
     data_audit = {
         "source_file": str(DATA_PATH),
-        "regular_season_team_game_rows": int(len(team_games)),
+        **load_audit,\n        "regular_season_team_game_rows": int(len(team_games)),
         "regular_season_games": int(team_games[["season", "game_id"]].drop_duplicates().shape[0]),
         "first_game_date": str(team_games.game_date.min().date()),
         "last_game_date": str(team_games.game_date.max().date()),
