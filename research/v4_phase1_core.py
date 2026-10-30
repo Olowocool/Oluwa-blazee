@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""V4 Phase 1 core totals research using the repository's own data/game.csv.
+"""Phase 1 V4 core totals research: possession audit + recency/season-blended ridge ratings.
 
-Research-only: no production model, frontend, paper ledger, or deployment is changed.
-All rolling features are computed strictly before each target game date.
+Research-only. Reads llimllib/nba_data v2; never imports or edits production code.
+All features for a target date are built before any results from that date enter history.
 """
 from __future__ import annotations
 
@@ -10,15 +10,17 @@ import json
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.request import urlopen
 
+import duckdb
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
 
-DATA_PATH = Path("data/game.csv")
+BASE = "https://basketball-data.billmill.org"
 OUT = Path("outputs/research/v4_phase1")
-FIRST_SEASON = 2019  # 2018-19 is prior-season context for the first evaluated season
-LAST_SEASON = 2026   # 2025-26; partial 2026-27 is deliberately excluded
+FIRST_SEASON = 2019  # 2018-19, giving a prior season for the first scored season
+LAST_SEASON = 2026   # through 2025-26; current partial season excluded
 TEST_SEASONS = list(range(2020, LAST_SEASON + 1))
 ROLLING_GAMES = 25
 RECENCY_HALF_LIFE = 12.0
@@ -26,96 +28,30 @@ PRIOR_STRENGTH_GAMES = 20.0
 RIDGE_ALPHA = 20.0
 
 
-def load_project_game_csv() -> pd.DataFrame:
-    """Convert the repository's one-row-per-game home/away file to team-game rows."""
-    required = [
-        "season_id", "game_id", "game_date", "season_type",
-        "team_id_home", "team_id_away",
-        "fga_home", "fta_home", "oreb_home", "tov_home", "pts_home",
-        "fga_away", "fta_away", "oreb_away", "tov_away", "pts_away",
-    ]
-    header = pd.read_csv(DATA_PATH, nrows=0)
-    missing = sorted(set(required) - set(header.columns))
-    if missing:
-        raise RuntimeError(f"data/game.csv missing required columns: {missing}")
-
-    games = pd.read_csv(
-        DATA_PATH,
-        usecols=required,
-        dtype={
-            "game_id": "string",
-            "team_id_home": "string",
-            "team_id_away": "string",
-            "season_type": "string",
-            "season_id": "string",
-        },
-        low_memory=False,
-    )
-    games["game_date"] = pd.to_datetime(games["game_date"], errors="coerce").dt.normalize()
-    games = games.loc[
-        games["season_type"].fillna("").str.strip().str.casefold().eq("regular season")
-    ].copy()
-    # NBA Stats season_id is 2YYYY for regular-season data; YYYY is the season start year.
-    # Convert to end-year so July/August 2020 bubble games remain in the 2019-20 season.
-    games["season"] = pd.to_numeric(games["season_id"].astype(str).str[-4:], errors="coerce") + 1
-    games = games.loc[games["season"].between(FIRST_SEASON - 1, LAST_SEASON)].copy()
-    candidate_games = int(len(games))
-
-    numeric = [
-        "fga_home", "fta_home", "oreb_home", "tov_home", "pts_home",
-        "fga_away", "fta_away", "oreb_away", "tov_away", "pts_away",
-    ]
-    for col in numeric:
-        games[col] = pd.to_numeric(games[col], errors="coerce")
-    missing_by_column = games[["game_id", "game_date", "team_id_home", "team_id_away", *numeric]].isna().sum().astype(int).to_dict()
-    games = games.dropna(subset=[
-        "game_id", "game_date", "team_id_home", "team_id_away", *numeric
-    ])
-    games = games.loc[
-        games["team_id_home"].ne(games["team_id_away"])
-        & games["game_id"].fillna("").str.strip().ne("")
-    ].copy()
-    if games.duplicated(["season", "game_id"]).any():
-        raise RuntimeError("data/game.csv contains duplicate season/game rows after regular-season filtering")
-
-    home = pd.DataFrame({
-        "season": games["season"].astype(int),
-        "game_id": games["game_id"].astype(str),
-        "game_date": games["game_date"],
-        "team_id": games["team_id_home"].astype(str),
-        "opp_team_id": games["team_id_away"].astype(str),
-        "pts": games["pts_home"].astype(float),
-        "fga": games["fga_home"].astype(float),
-        "fta": games["fta_home"].astype(float),
-        "oreb": games["oreb_home"].astype(float),
-        "tov": games["tov_home"].astype(float),
-        "home_flag": 1,
-    })
-    away = pd.DataFrame({
-        "season": games["season"].astype(int),
-        "game_id": games["game_id"].astype(str),
-        "game_date": games["game_date"],
-        "team_id": games["team_id_away"].astype(str),
-        "opp_team_id": games["team_id_home"].astype(str),
-        "pts": games["pts_away"].astype(float),
-        "fga": games["fga_away"].astype(float),
-        "fta": games["fta_away"].astype(float),
-        "oreb": games["oreb_away"].astype(float),
-        "tov": games["tov_away"].astype(float),
-        "home_flag": 0,
-    })
-    team_games = pd.concat([home, away], ignore_index=True)
-    if team_games.duplicated(["season", "game_id", "team_id"]).any():
-        raise RuntimeError("Duplicate team/game key in transformed game.csv")
-    load_audit = {
-        "candidate_regular_season_games_in_window": candidate_games,
-        "valid_games_after_required_boxscore_check": int(len(games)),
-        "games_excluded_for_missing_required_values": int(candidate_games - len(games)),
-        "missing_values_by_column_before_drop": missing_by_column,
-    }
-    team_games = team_games.sort_values(["game_date", "season", "game_id", "team_id"]).reset_index(drop=True)
-    team_games.attrs["load_audit"] = load_audit
-    return team_games
+def connect_and_load():
+    with urlopen(f"{BASE}/nba/metadata.json", timeout=60) as response:
+        metadata = json.loads(response.read().decode())["datasets"]
+    con = duckdb.connect()
+    con.execute("INSTALL httpfs")
+    con.execute("LOAD httpfs")
+    seasons = list(range(FIRST_SEASON - 1, LAST_SEASON + 1))
+    for name in ("team_game_logs", "games"):
+        urls = ", ".join("'" + f"{BASE}/nba/stats/{name}/season={s}/data.parquet" + "'" for s in seasons)
+        con.execute(
+            f"CREATE VIEW {name} AS SELECT * FROM read_parquet([{urls}], "
+            "hive_partitioning=true, hive_types={'season': INTEGER}, union_by_name=true)"
+        )
+    raw = con.execute("""
+        SELECT t.season, t.game_id, t.game_date, t.team_id, t.opp_team_id,
+               t.pts, t.poss AS source_poss, t.pace AS source_pace,
+               t.fga, t.fta, t.oreb, t.tov, t.home,
+               g.game_type, g.neutral_site
+        FROM team_game_logs t JOIN games g USING (season, game_id)
+        WHERE t.season BETWEEN ? AND ?
+          AND g.game_type = 'regular_season'
+        ORDER BY t.game_date, t.season, t.game_id, t.team_id
+    """, [FIRST_SEASON - 1, LAST_SEASON]).fetchdf()
+    return raw, metadata
 
 
 def fit_rating_model(history: pd.DataFrame):
@@ -147,7 +83,8 @@ def predict_eff(rating, team_id, opponent_id, home_flag):
     if rating is None:
         return np.nan
     idx, n, model = rating["index"], rating["n"], rating["model"]
-    team, opp = str(team_id), str(opponent_id)
+    team = str(team_id)
+    opp = str(opponent_id)
     value = float(model.intercept_)
     if team in idx:
         value += float(model.coef_[idx[team]])
@@ -157,69 +94,99 @@ def predict_eff(rating, team_id, opponent_id, home_flag):
     return value
 
 
-def weighted_recent_mean(frame: pd.DataFrame, column: str) -> float:
+def weighted_recent_mean(frame, column):
     if frame.empty:
         return np.nan
     f = frame.sort_values(["game_date", "game_id"]).tail(ROLLING_GAMES)
     age = np.arange(len(f) - 1, -1, -1, dtype=float)
-    weights = np.exp(-np.log(2.0) * age / RECENCY_HALF_LIFE)
-    return float(np.average(f[column].to_numpy(dtype=float), weights=weights))
+    w = np.exp(-np.log(2.0) * age / RECENCY_HALF_LIFE)
+    return float(np.average(f[column].to_numpy(dtype=float), weights=w))
 
 
-def build_point_in_time(team_games: pd.DataFrame) -> pd.DataFrame:
-    d = team_games.copy()
-    for col in ("pts", "fga", "fta", "oreb", "tov"):
+def build_point_in_time(raw: pd.DataFrame):
+    d = raw.copy()
+    d["game_date"] = pd.to_datetime(d.game_date, errors="coerce").dt.normalize()
+    for col in ("pts", "source_poss", "source_pace", "fga", "fta", "oreb", "tov"):
         d[col] = pd.to_numeric(d[col], errors="coerce")
+    d["season"] = pd.to_numeric(d.season, errors="coerce").astype("Int64")
+    d["team_id"] = d.team_id.astype(str)
+    d["opp_team_id"] = d.opp_team_id.astype(str)
+    d = d.dropna(subset=["game_date", "season", "pts", "fga", "fta", "oreb", "tov"])
+    if d.duplicated(["season", "game_id", "team_id"]).any():
+        raise RuntimeError("Duplicate season/game/team key")
     d["formula_poss"] = d.fga + 0.44 * d.fta - d.oreb + d.tov
-    d = d.dropna(subset=["game_date", "season", "pts", "formula_poss", "team_id", "opp_team_id"])
-    d = d.loc[d.formula_poss.gt(0)].copy()
+    d = d[d.formula_poss.gt(0)].copy()
+    d["poss_diff"] = d.formula_poss - d.source_poss
     d["off_eff"] = 100.0 * d.pts / d.formula_poss
+    d["home_flag"] = d.home.fillna(False).astype(bool).astype(int)
 
-    season_frames = {int(s): g.copy() for s, g in d.groupby("season", sort=True)}
-    output = []
+    # Pair each team's box score with the opponent's points and possessions.
+    paired = d.merge(
+        d[["season", "game_id", "team_id", "pts", "formula_poss"]],
+        left_on=["season", "game_id", "opp_team_id"],
+        right_on=["season", "game_id", "team_id"],
+        how="left", suffixes=("", "_opp"), validate="one_to_one",
+    )
+    if paired["pts_opp"].isna().any():
+        raise RuntimeError("Unmatched opponent box-score rows")
+    paired["actual_total"] = paired.pts + paired.pts_opp
+
+    season_frames = {int(s): g.copy() for s, g in paired.groupby("season", sort=True)}
+    all_rows = []
     for season in range(FIRST_SEASON, LAST_SEASON + 1):
         season_data = season_frames.get(season)
         if season_data is None:
             continue
         prior_data = season_frames.get(season - 1, pd.DataFrame())
+        history = pd.DataFrame(columns=paired.columns)
         prior_rating = fit_rating_model(prior_data) if not prior_data.empty else None
-        prior_pace_by_team = {
-            str(team): weighted_recent_mean(group, "formula_poss")
-            for team, group in prior_data.groupby("team_id")
-        } if not prior_data.empty else {}
+        prior_pace_by_team = {}
+        if not prior_data.empty:
+            for team, group in prior_data.groupby("team_id"):
+                prior_pace_by_team[str(team)] = weighted_recent_mean(group, "formula_poss")
         prior_league_pace = float(prior_data["formula_poss"].mean()) if not prior_data.empty else 100.0
 
-        history = pd.DataFrame(columns=d.columns)
+        # Process every game on a date from the same frozen pre-date history.
         for date, todays in season_data.groupby("game_date", sort=True):
-            current_rating = fit_rating_model(history) if not history.empty else None
-            league_pace = float(history["formula_poss"].mean()) if not history.empty else prior_league_pace
+            if history.empty:
+                current_rating = None
+                league_pace = prior_league_pace
+            else:
+                current_rating = fit_rating_model(history)
+                league_pace = float(history["formula_poss"].mean())
+                if not np.isfinite(league_pace):
+                    league_pace = prior_league_pace
             team_history = {
                 str(team): group.sort_values(["game_date", "game_id"]).tail(ROLLING_GAMES)
                 for team, group in history.groupby("team_id")
             }
             for gid, game in todays.groupby("game_id", sort=False):
                 if len(game) != 2:
-                    raise RuntimeError(f"Expected two team rows for game {gid}; found {len(game)}")
+                    raise RuntimeError(f"Expected two team rows for {gid}, got {len(game)}")
                 rows = game.to_dict("records")
-                rows.sort(key=lambda row: int(row["home_flag"]), reverse=True)
+                # home_flag identifies the actual home team; neutral games have neither.
+                rows.sort(key=lambda r: int(r["home_flag"]), reverse=True)
                 home, away = rows[0], rows[1]
-                if int(home["home_flag"]) != 1 or int(away["home_flag"]) != 0:
-                    raise RuntimeError(f"Home/away pairing failed for game {gid}")
-
+                if home["home_flag"] == away["home_flag"]:
+                    # For neutral-site games both are false; stable team-id order.
+                    rows.sort(key=lambda r: str(r["team_id"]))
+                    home, away = rows[0], rows[1]
                 h_id, a_id = str(home["team_id"]), str(away["team_id"])
-                h_hist = team_history.get(h_id, pd.DataFrame())
-                a_hist = team_history.get(a_id, pd.DataFrame())
+                h_hist, a_hist = team_history.get(h_id, pd.DataFrame()), team_history.get(a_id, pd.DataFrame())
+                # Use full current-season game counts for the season blend; the
+                # feature windows themselves remain capped at the latest 25 games.
                 h_n = int((history.team_id.astype(str) == h_id).sum()) if not history.empty else 0
                 a_n = int((history.team_id.astype(str) == a_id).sum()) if not history.empty else 0
                 if min(h_n, a_n) < 5:
                     continue
 
-                h_now = predict_eff(current_rating, h_id, a_id, 1)
-                a_now = predict_eff(current_rating, a_id, h_id, 0)
-                h_prev = predict_eff(prior_rating, h_id, a_id, 1)
-                a_prev = predict_eff(prior_rating, a_id, h_id, 0)
+                # Estimate matchup efficiencies from current-season and previous-season
+                # ridge ratings. Current-season influence grows with evidence.
+                h_now = predict_eff(current_rating, h_id, a_id, home["home_flag"])
+                a_now = predict_eff(current_rating, a_id, h_id, away["home_flag"])
+                h_prev = predict_eff(prior_rating, h_id, a_id, home["home_flag"])
+                a_prev = predict_eff(prior_rating, a_id, h_id, away["home_flag"])
                 blend = min(0.90, (0.5 * (h_n + a_n)) / (0.5 * (h_n + a_n) + PRIOR_STRENGTH_GAMES))
-
                 if np.isfinite(h_now) and np.isfinite(h_prev):
                     h_eff = blend * h_now + (1.0 - blend) * h_prev
                 elif np.isfinite(h_now):
@@ -243,12 +210,10 @@ def build_point_in_time(team_games: pd.DataFrame) -> pd.DataFrame:
                 a_pace_prev = prior_pace_by_team.get(a_id, prior_league_pace)
                 h_pace = blend * h_pace_now + (1.0 - blend) * h_pace_prev
                 a_pace = blend * a_pace_now + (1.0 - blend) * a_pace_prev
-                expected_pace = float(
-                    league_pace + 0.5 * ((h_pace - league_pace) + (a_pace - league_pace))
-                )
+                expected_pace = float(league_pace + 0.5 * ((h_pace - league_pace) + (a_pace - league_pace)))
                 projection = expected_pace * (h_eff + a_eff) / 100.0
 
-                output.append({
+                all_rows.append({
                     "season": season, "game_id": str(gid), "game_date": date,
                     "home_team_id": h_id, "away_team_id": a_id,
                     "home_games_prior": h_n, "away_games_prior": a_n,
@@ -262,21 +227,25 @@ def build_point_in_time(team_games: pd.DataFrame) -> pd.DataFrame:
                     "actual_total": float(home["pts"] + away["pts"]),
                     "home_formula_poss": float(home["formula_poss"]),
                     "away_formula_poss": float(away["formula_poss"]),
+                    "home_source_poss": float(home["source_poss"]),
+                    "away_source_poss": float(away["source_poss"]),
+                    "home_poss_abs_diff": abs(float(home["poss_diff"])),
+                    "away_poss_abs_diff": abs(float(away["poss_diff"])),
                     "max_history_date": max(h_hist.game_date.max(), a_hist.game_date.max()),
                 })
 
-            # Batch update: no result from this calendar date enters another same-day forecast.
+            # Only after all games for this date are featured, append their results.
             history = pd.concat([history, todays], ignore_index=True)
 
-    result = pd.DataFrame(output)
+    result = pd.DataFrame(all_rows)
     if result.empty:
-        raise RuntimeError("No point-in-time predictions were produced from data/game.csv")
+        raise RuntimeError("No point-in-time predictions were produced")
     if not (pd.to_datetime(result.max_history_date) < pd.to_datetime(result.game_date)).all():
         raise RuntimeError("Temporal leakage: same-day or future result entered history")
     return result
 
 
-def metrics(frame: pd.DataFrame, prediction_col: str) -> dict:
+def metrics(frame, prediction_col):
     err = frame[prediction_col].to_numpy(float) - frame.actual_total.to_numpy(float)
     return {
         "games": int(len(frame)),
@@ -290,64 +259,58 @@ def metrics(frame: pd.DataFrame, prediction_col: str) -> dict:
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    team_games = load_project_game_csv()
-    load_audit = team_games.attrs.get("load_audit", {})
-    if team_games.empty:
-        raise RuntimeError("No regular-season team games found in data/game.csv")
-    formula_poss = team_games.fga + 0.44 * team_games.fta - team_games.oreb + team_games.tov
-    if not np.isfinite(formula_poss.to_numpy(float)).all() or not formula_poss.gt(0).all():
-        raise RuntimeError("Invalid formula possession values in data/game.csv")
-    data_audit = {
-        "source_file": str(DATA_PATH),
-        **load_audit,
-        "regular_season_team_game_rows": int(len(team_games)),
-        "regular_season_games": int(team_games[["season", "game_id"]].drop_duplicates().shape[0]),
-        "first_game_date": str(team_games.game_date.min().date()),
-        "last_game_date": str(team_games.game_date.max().date()),
-        "first_season_end_year": int(team_games.season.min()),
-        "last_season_end_year": int(team_games.season.max()),
-        "formula_possessions_mean": round(float(formula_poss.mean()), 4),
-        "formula_possessions_median": round(float(formula_poss.median()), 4),
-        "formula_possessions_min": round(float(formula_poss.min()), 4),
-        "formula_possessions_max": round(float(formula_poss.max()), 4),
+    raw, metadata = connect_and_load()
+    required = {"fga", "fta", "oreb", "tov", "source_poss", "pts", "game_date", "team_id", "opp_team_id"}
+    missing = sorted(required - set(raw.columns))
+    if missing:
+        raise RuntimeError(f"Source schema missing required columns: {missing}")
+    # possession formula audit is team-game level, before any modelling.
+    check = raw.copy()
+    for c in ("fga", "fta", "oreb", "tov", "source_poss"):
+        check[c] = pd.to_numeric(check[c], errors="coerce")
+    check["formula_poss"] = check.fga + 0.44 * check.fta - check.oreb + check.tov
+    delta = check.formula_poss - check.source_poss
+    audit = {
+        "source_columns_verified": sorted(required),
+        "team_game_rows": int(len(check)),
+        "formula_vs_source_poss_mean_abs_difference": round(float(delta.abs().mean()), 5),
+        "formula_vs_source_poss_median_abs_difference": round(float(delta.abs().median()), 5),
+        "formula_vs_source_poss_p95_abs_difference": round(float(delta.abs().quantile(0.95)), 5),
+        "formula_vs_source_poss_exact_match_pct": round(float(np.isclose(delta, 0.0, atol=0.01).mean() * 100), 2),
+        "formula_vs_source_poss_corr": round(float(check[["formula_poss", "source_poss"]].corr().iloc[0, 1]), 6),
         "formula_definition": "FGA + 0.44*FTA - OREB + TOV",
     }
-    predictions = build_point_in_time(team_games)
+    predictions = build_point_in_time(raw)
     predictions.to_csv(OUT / "v4_phase1_walk_forward.csv", index=False)
-    by_season = {
-        str(int(season)): metrics(part, "projected_total")
-        for season, part in predictions.groupby("season")
-    }
+    by_season = {}
+    for season, part in predictions.groupby("season"):
+        by_season[str(int(season))] = metrics(part, "projected_total")
     scored = predictions[predictions.season.isin(TEST_SEASONS)].copy()
     summary = {
         "run_utc": datetime.now(timezone.utc).isoformat(),
-        "model": "V4 Phase 1: game.csv formula possessions + 25-game recency-weighted ridge matchup efficiency + prior-season blend",
-        "source": str(DATA_PATH),
-        "warmup_season_end_year": FIRST_SEASON - 1,
-        "evaluated_seasons_end_year": TEST_SEASONS,
+        "model": "V4 Phase 1: formula possessions + 25-game recency-weighted ridge matchup efficiency + prior-season blend",
+        "source": "llimllib/nba_data v2 NBA Stats team_game_logs",
+        "source_seasons": [FIRST_SEASON, LAST_SEASON],
+        "evaluated_seasons": TEST_SEASONS,
         "rolling_games_per_team": ROLLING_GAMES,
         "recency_half_life_team_games": RECENCY_HALF_LIFE,
         "prior_season_strength_equivalent_games": PRIOR_STRENGTH_GAMES,
         "ridge_alpha": RIDGE_ALPHA,
-        "data_audit": data_audit,
+        "possession_audit": audit,
         "total_predictions": int(len(predictions)),
         "evaluation": metrics(scored, "projected_total"),
         "by_season": by_season,
         "same_day_results_excluded": True,
-        "all_history_strictly_prior": bool(
-            (pd.to_datetime(predictions.max_history_date) < pd.to_datetime(predictions.game_date)).all()
-        ),
+        "all_history_strictly_prior": bool((pd.to_datetime(predictions.max_history_date) < pd.to_datetime(predictions.game_date)).all()),
         "production_modified": False,
         "notes": [
-            "The model reads the repository's own data/game.csv; it does not substitute an external dataset.",
-            "Only regular-season games are used; the 2018-19 season is warm-up context and evaluation covers 2019-20 through 2025-26.",
-            "Possessions are a box-score estimate from FGA + 0.44*FTA - OREB + TOV; the same denominator is used consistently for pace and efficiency.",
-            "Opponent-adjusted efficiencies are estimated jointly by ridge regression with team-offense and opponent-defense effects.",
-            "Each current-season rating uses each team's latest 25 completed games with exponential recency weighting (12-game half-life).",
-            "Current-season ratings are blended with the previous season's final 25-game ratings; current weight grows with actual games played.",
+            "Training/evaluation uses regular-season games only.",
+            "Current-season ratings are ridge estimates from each team's latest 25 completed games, with exponential recency weighting.",
+            "Current-season matchup efficiencies are blended with the previous season's final 25-game ridge ratings; current influence rises with games played.",
+            "Possessions use FGA + 0.44*FTA - OREB + TOV; the source poss field is retained only for an audit.",
             "No injuries, market lines, spreads, referees, travel, altitude, or player metrics are included in Phase 1.",
             "This is a score-prediction test, not a betting ROI or profitability test.",
-            "Historical game.csv is a current reconstruction, not a point-in-time archive of what was known on each historical date."
+            "Historical NBA data may contain retrospective corrections; date cutoff prevents future games from entering features but cannot reconstruct historical stat vintages."
         ],
     }
     (OUT / "v4_phase1_summary.json").write_text(json.dumps(summary, indent=2))
