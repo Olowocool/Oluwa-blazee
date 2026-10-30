@@ -423,13 +423,33 @@ def fetch_injury_reports(game_dates):
                     continue
                 frame = injury.get_reportdata(ts, local=True, localdir=CACHE, return_df=True)
                 if frame.empty:
-                    errors.append(f"{clock}:empty_table")
-                    continue
+                    target_label = game_date.strftime("%m/%d/%Y")
+                    if target_label not in text:
+                        errors.append(f"{clock}:empty_table_without_target_date")
+                        continue
+                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                    manifest.append({
+                        "game_date": str(game_date.date()), "status": "complete",
+                        "snapshot_time": ts.isoformat(), "url": url, "sha256": digest,
+                        "rows": 0, "pdf_pages": len(pdf.pages),
+                    })
+                    found = True
+                    break
                 frame["game_date"] = pd.to_datetime(frame["Game Date"], errors="coerce").dt.normalize()
                 frame = frame[frame.game_date == game_date].copy()
                 if frame.empty:
-                    errors.append(f"{clock}:no_target_game_date")
-                    continue
+                    target_label = game_date.strftime("%m/%d/%Y")
+                    if target_label not in text:
+                        errors.append(f"{clock}:no_target_game_date")
+                        continue
+                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                    manifest.append({
+                        "game_date": str(game_date.date()), "status": "complete",
+                        "snapshot_time": ts.isoformat(), "url": url, "sha256": digest,
+                        "rows": 0, "pdf_pages": len(pdf.pages),
+                    })
+                    found = True
+                    break
                 digest = hashlib.sha256(path.read_bytes()).hexdigest()
                 frame["snapshot_time"] = ts.isoformat()
                 frame["snapshot_url"] = url
@@ -689,9 +709,14 @@ def main():
     status_rows = mapped_reports[["game_date", "status", "played"]].copy()
     global STATUS_HISTORY
     STATUS_HISTORY = status_rows
+    complete_report_dates = set(
+        pd.to_datetime(report_manifest.loc[report_manifest.status == "complete", "game_date"]).dt.normalize()
+    )
     target_games = games[games.season.isin(TARGET_SEASONS)].sort_values(["game_date", "game_id"])
     for g in target_games.itertuples():
         gid, season, gd = str(g.game_id), int(g.season), pd.Timestamp(g.game_date).normalize()
+        if gd not in complete_report_dates:
+            continue
         base = baseline_lookup.get(gid)
         if base is None:
             continue
