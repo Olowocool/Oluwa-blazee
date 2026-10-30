@@ -121,6 +121,26 @@ current-season league-efficiency baseline. This is a development adjustment,
 not an approved model change; it must pass the same walk-forward checks and a
 new prospective validation before use.
 
+## Expanded V3.1 chronological robustness check
+
+The 1,500-game V3.1 run covered 2022-03-06 through 2023-04-09. Results:
+
+| Metric | V3.1 |
+|---|---:|
+| Games | 1,500 |
+| MAE | 14.6032 |
+| RMSE | 18.6616 |
+| Mean error bias | -0.3660 |
+| Within 5 points | 23.47% |
+| Within 10 points | 42.93% |
+| Mean pace error | -0.0657 possessions |
+| Mean efficiency error | -0.3580 points per 100 |
+
+This supports the season-aware baseline across a wider historical window.
+There is no same-window 1,500-game V2 benchmark in this run, so these figures
+must not be presented as a 1,500-game improvement over V2. The same-game V2
+comparison remains the 500-game result above.
+
 ## Not yet included
 
 - Market opening/closing totals and market-residual calibration. Historical
