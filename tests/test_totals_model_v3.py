@@ -416,3 +416,21 @@ def test_attempt_rates_are_not_shooting_percentages():
     logs = prepare_team_game_logs(make_raw_games(count=1))
     forbidden = {"fg3_pct", "fg_pct", "ft_pct", "three_point_percentage"}
     assert forbidden.isdisjoint(set(logs.columns))
+
+
+def test_preparing_team_logs_twice_preserves_shot_profile_columns():
+    once = prepare_team_game_logs(make_raw_games(count=3))
+    twice = prepare_team_game_logs(once)
+
+    for column in (
+        "three_pa_rate",
+        "free_throw_rate",
+        "opponent_three_pa_rate",
+        "opponent_free_throw_rate",
+    ):
+        assert column in twice.columns
+        pd.testing.assert_series_equal(
+            once[column].reset_index(drop=True),
+            twice[column].reset_index(drop=True),
+            check_names=False,
+        )
