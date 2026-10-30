@@ -54,7 +54,7 @@ from auto_learning import summarize_learning, build_learning_dataset
 from auto_update_results import update_bet_results
 from uncertainty_engine import classify_uncertainty
 from best_bet_selector import select_best_bet
-API_URL = "https://oluwa-blazee-new.onrender.com"
+API_URL = os.getenv("NBA_API_URL", "https://oluwa-blazee-new.onrender.com").rstrip("/")
 STAKE = 100
 TEST_MODE = False
 
