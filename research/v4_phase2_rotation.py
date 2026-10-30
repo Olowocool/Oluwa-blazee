@@ -491,7 +491,7 @@ def map_injury_rows(raw_reports, games, player_names, team_names):
             continue
         gid = game_lookup.get((season, gd, team_id))
         if gid is None:
-            unmatched.append({"game_date": str(gd.date()), "team": str(row.Team), "player": str(row._asdict().get("Player Name","")), "reason": "team_game_unmatched"})
+            unmatched.append({"game_date": str(gd.date()), "team": team_name, "player": raw_name, "reason": "team_game_unmatched"})
             continue
         pnorm = normalize_name(raw_name)
         pmap = names_by_season.get(season, {})
