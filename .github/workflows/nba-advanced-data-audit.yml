@@ -386,6 +386,9 @@ jobs:
           print("\nAudit files written to", OUT)
           PY
 
+      - name: Verify repository game.csv possession inputs
+        run: python research/inspect_project_game_csv.py
+
       - name: Compile and run V4 Phase 1 core model
         run: |
           python -m py_compile research/v4_phase1_core.py
