@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from totals_result_grader import grade_totals_results
+from totals_result_grader import fetch_final_score, grade_totals_results
 
 
 def make_pick(**overrides):
@@ -92,6 +92,54 @@ class TotalsResultGraderTests(unittest.TestCase):
         graded = self.grade(make_pick(stake=25.0), 210.0)
         self.assertEqual(graded["result"], "Loss")
         self.assertEqual(float(graded["profit_loss"]), -25.0)
+
+
+    def test_http_429_uses_local_research_score_fallback(self):
+        class RateLimitedResponse:
+            status_code = 429
+
+        completed = {
+            "status": "completed",
+            "home_score": 112,
+            "away_score": 108,
+            "home_team": "Boston Celtics",
+            "away_team": "New York Knicks",
+        }
+        diagnostics = {}
+        with patch("totals_result_grader.requests.get", return_value=RateLimitedResponse()), \\
+             patch("totals_result_grader._local_score_result", return_value=completed) as fallback:
+            result = fetch_final_score(
+                "10/30/2026",
+                "Boston Celtics",
+                "New York Knicks",
+                diagnostics=diagnostics,
+            )
+
+        fallback.assert_called_once()
+        self.assertEqual(result["home_score"], 112.0)
+        self.assertEqual(result["away_score"], 108.0)
+        self.assertEqual(diagnostics["shared_api_unavailable"], 1)
+
+    def test_pending_score_is_reported_separately_from_lookup_errors(self):
+        class PendingResponse:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"status": "pending", "message": "Game not final yet."}
+
+        diagnostics = {}
+        with patch("totals_result_grader.requests.get", return_value=PendingResponse()):
+            result = fetch_final_score(
+                "10/30/2026",
+                "Boston Celtics",
+                "New York Knicks",
+                diagnostics=diagnostics,
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual(diagnostics["pending_rows"], 1)
+        self.assertNotIn("score_lookup_errors", diagnostics)
 
 
 if __name__ == "__main__":
