@@ -649,6 +649,19 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                 game_date, neutral_site=neutral_site
             )
             actual_total = float(home_row["points"] + away_row["points"])
+            actual_possessions = float(
+                (home_row["possessions"] + away_row["possessions"]) / 2.0
+            )
+            actual_points_per_100 = (
+                actual_total / actual_possessions * 100.0
+                if actual_possessions > 0 else float("nan")
+            )
+            expected_points_per_100 = float(
+                prediction["home_expected_efficiency"]
+                + prediction["away_expected_efficiency"]
+            )
+            pace_error = float(prediction["expected_possessions"] - actual_possessions)
+            efficiency_error = expected_points_per_100 - actual_points_per_100
             predicted_total = float(prediction["projected_total"])
             baseline = calculate_matchup_points(
                 home_team=home_row["team_name"],
@@ -671,6 +684,11 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                 "v2_error": baseline_total - actual_total,
                 "v2_absolute_error": abs(baseline_total - actual_total),
                 "expected_possessions": prediction["expected_possessions"],
+                "actual_possessions": round(actual_possessions, 3),
+                "pace_error": round(pace_error, 3),
+                "expected_points_per_100": round(expected_points_per_100, 3),
+                "actual_points_per_100": round(actual_points_per_100, 3),
+                "efficiency_error": round(efficiency_error, 3),
                 "history_rows_used": prediction["history_rows_used"],
                 "seasons_used": ",".join(map(str, prediction["seasons_used"])),
             })
@@ -703,6 +721,12 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
         "v2_within_5_points_pct_same_games": round(float((results["v2_absolute_error"] <= 5).mean() * 100), 2),
         "v2_within_10_points_pct_same_games": round(float((results["v2_absolute_error"] <= 10).mean() * 100), 2),
         "v3_mae_improvement_vs_v2_points": round(v2_mae - v3_mae, 4),
+        "mean_actual_possessions": round(float(results["actual_possessions"].mean()), 4),
+        "mean_expected_possessions": round(float(results["expected_possessions"].mean()), 4),
+        "mean_pace_error": round(float(results["pace_error"].mean()), 4),
+        "mean_actual_points_per_100": round(float(results["actual_points_per_100"].mean()), 4),
+        "mean_expected_points_per_100": round(float(results["expected_points_per_100"].mean()), 4),
+        "mean_efficiency_error": round(float(results["efficiency_error"].mean()), 4),
         "min_prior_team_rows": int(min_prior_team_rows),
         "max_games_requested": int(max_games),
         "note": (
