@@ -127,7 +127,7 @@ def test_v3_prediction_is_finite_and_team_points_sum_to_total():
         logs, "Team A", "Team B", "2021-12-15"
     )
 
-    assert prediction["model_version"] == "totals-v3-possession-ridge"
+    assert prediction["model_version"] == "totals-v3.1-possession-ridge-season-baseline"
     assert 80 <= prediction["expected_possessions"] <= 120
     assert prediction["projected_total"] > 0
     assert abs(
