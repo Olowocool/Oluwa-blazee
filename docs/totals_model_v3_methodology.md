@@ -53,6 +53,30 @@ The walk-forward script compares V3 with the existing Points Engine V2 on the
 same target games. It reports MAE, RMSE, bias and the proportion of forecasts
 within 5 and 10 points. It is a score-prediction test, not a betting ROI test.
 
+## First same-game comparison against V2
+
+The initial walk-forward benchmark used the latest 500 eligible games available
+in this historical file, from 2023-01-26 through 2023-04-09. Both models were
+evaluated on the same game IDs.
+
+| Metric | V2 Points Engine | V3 challenger |
+|---|---:|---:|
+| MAE | 15.2993 | 15.3700 |
+| RMSE | 19.8090 | 20.1325 |
+| Mean error bias | -0.6105 | -5.0393 |
+| Within 5 points | 22.0% | 23.2% |
+| Within 10 points | 43.0% | 44.4% |
+
+The V3 MAE and RMSE were slightly worse, and V3 underpredicted totals by about
+five points on average. The small improvement in the within-5/within-10 rates
+does not outweigh the higher overall error and bias. V3 is therefore not
+approved to replace V2 or to feed the paper-trading ledger.
+
+This test window has now been examined during development; it must not be
+described as an untouched holdout for subsequent V3 feature selection. Any
+further tuning requires a new evaluation period or prospective observations.
+The first report is score-prediction research only and says nothing about ROI.
+
 ## Not yet included
 
 - Market opening/closing totals and market-residual calibration. Historical
