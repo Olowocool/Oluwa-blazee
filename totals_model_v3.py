@@ -603,7 +603,8 @@ def _build_game_score_history(team_logs: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
-                              min_prior_team_rows: int = 500) -> tuple[pd.DataFrame, dict[str, Any]]:
+                              min_prior_team_rows: int = 500,
+                              include_v2_benchmark: bool = True) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Chronological game-level backtest; every forecast sees strictly prior dates."""
     logs = prepare_team_game_logs(raw_logs)
     game_meta = (
@@ -663,14 +664,17 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
             pace_error = float(prediction["expected_possessions"] - actual_possessions)
             efficiency_error = expected_points_per_100 - actual_points_per_100
             predicted_total = float(prediction["projected_total"])
-            baseline = calculate_matchup_points(
-                home_team=home_row["team_name"],
-                away_team=away_row["team_name"],
-                history_df=prior_scores,
-                bookmaker_total=None,
-                game_date=game_date,
-            )
-            baseline_total = float(baseline["projected_total"])
+            if include_v2_benchmark:
+                baseline = calculate_matchup_points(
+                    home_team=home_row["team_name"],
+                    away_team=away_row["team_name"],
+                    history_df=prior_scores,
+                    bookmaker_total=None,
+                    game_date=game_date,
+                )
+                baseline_total = float(baseline["projected_total"])
+            else:
+                baseline_total = float("nan")
             records.append({
                 "game_id": str(game_id),
                 "game_date": pd.Timestamp(game_date).date().isoformat(),
@@ -702,7 +706,10 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
     errors = results["error"].astype(float)
     baseline_errors = results["v2_error"].astype(float)
     v3_mae = float(results["absolute_error"].mean())
-    v2_mae = float(results["v2_absolute_error"].mean())
+    v2_mae = (
+        float(results["v2_absolute_error"].mean())
+        if include_v2_benchmark else None
+    )
     summary = {
         "model_version": MODEL_VERSION,
         "test_games": int(len(results)),
@@ -715,12 +722,26 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
         "v3_mean_error_bias": round(float(errors.mean()), 4),
         "v3_within_5_points_pct": round(float((results["absolute_error"] <= 5).mean() * 100), 2),
         "v3_within_10_points_pct": round(float((results["absolute_error"] <= 10).mean() * 100), 2),
-        "v2_mean_absolute_error_same_games": round(v2_mae, 4),
-        "v2_root_mean_squared_error_same_games": round(float(np.sqrt(np.mean(baseline_errors ** 2))), 4),
-        "v2_mean_error_bias_same_games": round(float(baseline_errors.mean()), 4),
-        "v2_within_5_points_pct_same_games": round(float((results["v2_absolute_error"] <= 5).mean() * 100), 2),
-        "v2_within_10_points_pct_same_games": round(float((results["v2_absolute_error"] <= 10).mean() * 100), 2),
-        "v3_mae_improvement_vs_v2_points": round(v2_mae - v3_mae, 4),
+        "v2_benchmark_included": bool(include_v2_benchmark),
+        "v2_mean_absolute_error_same_games": round(v2_mae, 4) if v2_mae is not None else None,
+        "v2_root_mean_squared_error_same_games": (
+            round(float(np.sqrt(np.mean(baseline_errors ** 2))), 4)
+            if include_v2_benchmark else None
+        ),
+        "v2_mean_error_bias_same_games": (
+            round(float(baseline_errors.mean()), 4) if include_v2_benchmark else None
+        ),
+        "v2_within_5_points_pct_same_games": (
+            round(float((results["v2_absolute_error"] <= 5).mean() * 100), 2)
+            if include_v2_benchmark else None
+        ),
+        "v2_within_10_points_pct_same_games": (
+            round(float((results["v2_absolute_error"] <= 10).mean() * 100), 2)
+            if include_v2_benchmark else None
+        ),
+        "v3_mae_improvement_vs_v2_points": (
+            round(v2_mae - v3_mae, 4) if v2_mae is not None else None
+        ),
         "mean_actual_possessions": round(float(results["actual_possessions"].mean()), 4),
         "mean_expected_possessions": round(float(results["expected_possessions"].mean()), 4),
         "mean_pace_error": round(float(results["pace_error"].mean()), 4),
@@ -744,6 +765,11 @@ def main() -> None:
     parser.add_argument("--output", default="outputs/research/totals_v3", help="Output directory.")
     parser.add_argument("--max-games", type=int, default=1500)
     parser.add_argument("--min-prior-team-rows", type=int, default=500)
+    parser.add_argument(
+        "--skip-v2-benchmark",
+        action="store_true",
+        help="Skip the slower V2 comparison when only V3 diagnostics are required.",
+    )
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -751,7 +777,8 @@ def main() -> None:
         raise SystemExit(f"Input file not found: {input_path}")
     raw = pd.read_csv(input_path, low_memory=False)
     results, summary = run_walk_forward_backtest(
-        raw, max_games=args.max_games, min_prior_team_rows=args.min_prior_team_rows
+        raw, max_games=args.max_games, min_prior_team_rows=args.min_prior_team_rows,
+        include_v2_benchmark=not args.skip_v2_benchmark,
     )
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
