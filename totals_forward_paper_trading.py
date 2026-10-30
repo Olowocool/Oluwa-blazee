@@ -261,6 +261,9 @@ def _evaluate_one(
         "entry_line": None,
         "entry_odds": None,
         "latest_pre_tip_line": None,
+        "latest_pre_tip_over_odds": None,
+        "latest_pre_tip_under_odds": None,
+        "latest_pre_tip_bookmaker": "",
         "latest_pre_tip_snapshot_time_utc": "",
         "line_clv_points": None,
         "computed_result": "",
@@ -358,11 +361,17 @@ def _evaluate_one(
         later_snapshots.append((snap_time, snapshot))
 
     latest_line = None
+    latest_over_odds = None
+    latest_under_odds = None
+    latest_bookmaker = ""
     latest_time = None
     line_clv = None
     if later_snapshots:
         latest_time, latest = max(later_snapshots, key=lambda item: item[0])
         latest_line = _positive_number(latest.get("total_line"))
+        latest_over_odds = _valid_decimal_odds(latest.get("over_odds"))
+        latest_under_odds = _valid_decimal_odds(latest.get("under_odds"))
+        latest_bookmaker = _snapshot_bookmaker(latest)
         if latest_line is not None:
             # Positive CLV means the saved line was better than the later line.
             line_clv = (
@@ -374,6 +383,9 @@ def _evaluate_one(
         "entry_line": round(line, 4),
         "entry_odds": round(entry_odds, 4),
         "latest_pre_tip_line": round(latest_line, 4) if latest_line is not None else None,
+        "latest_pre_tip_over_odds": round(latest_over_odds, 4) if latest_over_odds is not None else None,
+        "latest_pre_tip_under_odds": round(latest_under_odds, 4) if latest_under_odds is not None else None,
+        "latest_pre_tip_bookmaker": latest_bookmaker,
         "latest_pre_tip_snapshot_time_utc": _utc_text(latest_time),
         "line_clv_points": round(line_clv, 4) if line_clv is not None else None,
         "computed_result": computed_result,
@@ -392,7 +404,8 @@ def _write_picks(path: str | Path, rows: list[dict[str, Any]]) -> None:
         "pick_row", "game_date", "home_team", "away_team", "pick_type",
         "prediction_time_utc", "commence_time_utc", "market_snapshot_time_utc",
         "totals_bookmaker", "source_event_id", "entry_line", "entry_odds",
-        "latest_pre_tip_line", "latest_pre_tip_snapshot_time_utc", "line_clv_points",
+        "latest_pre_tip_line", "latest_pre_tip_over_odds", "latest_pre_tip_under_odds",
+        "latest_pre_tip_bookmaker", "latest_pre_tip_snapshot_time_utc", "line_clv_points",
         "computed_result", "stake", "net_profit", "tracker_profit_loss",
         "evaluation_status", "exclusion_reason",
     ]
