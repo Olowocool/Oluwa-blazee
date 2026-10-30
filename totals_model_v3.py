@@ -22,7 +22,7 @@ import pandas as pd
 from team_name_utils import normalize_team_name
 from points_engine import calculate_matchup_points
 
-MODEL_VERSION = "totals-v3.3-possession-ridge-shot-schedule"
+MODEL_VERSION = "totals-v3.3.1-possession-ridge-shot-schedule-reset"
 BASELINE_MODEL_VERSION = "totals-v3.2-possession-ridge-shot-profile"
 SEASONS_TO_KEEP = 8
 RECENT_TEAM_GAMES = 25
@@ -40,6 +40,7 @@ SHOT_PROFILE_COLUMNS = (
     "opponent_free_throw_rate",
 )
 SCHEDULE_FEATURE_COLUMNS = ("rest_days", "back_to_back", "three_in_four")
+MAX_SCHEDULE_REST_DAYS = 3.0
 
 NORMALIZED_COLUMNS = {
     "game_id", "game_date", "season", "team_name", "opponent_name",
@@ -408,14 +409,16 @@ def _add_historical_schedule_features(team_logs: pd.DataFrame) -> pd.DataFrame:
     out["back_to_back"] = 0.0
     out["three_in_four"] = 0.0
 
-    for team, group in out.groupby("team_name", sort=False):
+    # Reset schedule history each NBA season. Off-season gaps are not
+    # in-season rest and must not create a fatigue adjustment on opening night.
+    for (team, season), group in out.groupby(["team_name", "season"], sort=False):
         valid_dates = pd.to_datetime(group["game_date"], errors="coerce").dropna()
         unique_dates = sorted(pd.Timestamp(value).normalize() for value in valid_dates.unique())
         prior_dates: list[pd.Timestamp] = []
         for current_date in unique_dates:
             if prior_dates:
                 days_since_last = int((current_date - prior_dates[-1]).days)
-                rest_days = float(min(max(days_since_last - 1, 0), 7))
+                rest_days = float(min(max(days_since_last - 1, 0), MAX_SCHEDULE_REST_DAYS))
                 back_to_back = float(days_since_last == 1)
             else:
                 rest_days = 2.0
@@ -427,6 +430,7 @@ def _add_historical_schedule_features(team_logs: pd.DataFrame) -> pd.DataFrame:
             three_in_four = float(recent_prior_games >= 2)
             mask = (
                 out["team_name"].eq(team)
+                & out["season"].eq(season)
                 & pd.to_datetime(out["game_date"], errors="coerce").dt.normalize().eq(current_date)
             )
             out.loc[mask, "rest_days"] = rest_days
@@ -454,8 +458,17 @@ def calculate_all_team_schedule_states(
     history = prior_logs[["team_name", "game_date"]].copy()
     history["team_name"] = history["team_name"].astype(str).map(normalize_team_name)
     history["game_date"] = pd.to_datetime(history["game_date"], errors="coerce").dt.normalize()
+    if "season" in prior_logs.columns:
+        history["season"] = pd.to_numeric(prior_logs["season"], errors="coerce")
+    else:
+        history["season"] = history["game_date"].map(
+            lambda value: _season_from_date(value) if pd.notna(value) else np.nan
+        )
+    target_season = _season_from_date(target)
     history = history.loc[
-        history["game_date"].notna() & (history["game_date"] < target)
+        history["game_date"].notna()
+        & (history["game_date"] < target)
+        & history["season"].eq(target_season)
     ]
     states: dict[str, dict[str, float]] = {}
     for team, group in history.groupby("team_name", sort=False):
@@ -467,7 +480,7 @@ def calculate_all_team_schedule_states(
             1 for date in dates if 0 < (target - date).days <= 3
         )
         states[team] = {
-            "rest_days": float(min(max(days_since_last - 1, 0), 7)),
+            "rest_days": float(min(max(days_since_last - 1, 0), MAX_SCHEDULE_REST_DAYS)),
             "back_to_back": float(days_since_last == 1),
             "three_in_four": float(recent_prior_games >= 2),
         }
