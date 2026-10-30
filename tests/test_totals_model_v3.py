@@ -170,3 +170,38 @@ def test_walk_forward_backtest_produces_chronological_records():
     assert summary["test_games"] == len(results)
     assert (results["absolute_error"] >= 0).all()
     assert (pd.to_datetime(results["game_date"]) > pd.Timestamp("2020-10-20")).all()
+
+
+def test_repository_wide_game_csv_schema_builds_both_team_rows_and_possessions():
+    raw = pd.DataFrame([{
+        "game_id": "wide-1",
+        "game_date": "2025-11-01",
+        "season_id": "22025",
+        "season_type": "Regular Season",
+        "team_name_home": "Boston Celtics",
+        "team_name_away": "New York Knicks",
+        "pts_home": 118,
+        "pts_away": 110,
+        "fga_home": 88,
+        "fta_home": 22,
+        "oreb_home": 10,
+        "tov_home": 11,
+        "fg3a_home": 40,
+        "fga_away": 84,
+        "fta_away": 18,
+        "oreb_away": 8,
+        "tov_away": 13,
+        "fg3a_away": 34,
+    }])
+
+    logs = prepare_team_game_logs(raw)
+    home = logs.loc[logs["team_name"] == "Boston Celtics"].iloc[0]
+    away = logs.loc[logs["team_name"] == "New York Knicks"].iloc[0]
+
+    assert len(logs) == 2
+    assert abs(home["possessions"] - (88 + 0.44 * 22 - 10 + 11)) < 1e-9
+    assert abs(away["possessions"] - (84 + 0.44 * 18 - 8 + 13)) < 1e-9
+    assert home["opponent_name"] == "New York Knicks"
+    assert away["opponent_name"] == "Boston Celtics"
+    assert bool(home["is_home"]) is True
+    assert bool(away["is_home"]) is False
