@@ -173,7 +173,10 @@ def build_point_in_time(raw: pd.DataFrame):
                     home, away = rows[0], rows[1]
                 h_id, a_id = str(home["team_id"]), str(away["team_id"])
                 h_hist, a_hist = team_history.get(h_id, pd.DataFrame()), team_history.get(a_id, pd.DataFrame())
-                h_n, a_n = len(h_hist), len(a_hist)
+                # Use full current-season game counts for the season blend; the
+                # feature windows themselves remain capped at the latest 25 games.
+                h_n = int((history.team_id.astype(str) == h_id).sum()) if not history.empty else 0
+                a_n = int((history.team_id.astype(str) == a_id).sum()) if not history.empty else 0
                 if min(h_n, a_n) < 5:
                     continue
 
