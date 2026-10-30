@@ -70,3 +70,15 @@ def test_merge_rejects_conflicting_prices_at_same_timestamp():
     changed["total_line"] = "999.5"
     with pytest.raises(ValueError, match="Conflicting odds values"):
         merge_snapshot_rows(rows, [changed])
+
+
+def test_skips_a_scheduled_game_when_no_bookmaker_table_is_posted():
+    html = FIXTURE.replace(
+        "</body>",
+        '<h2>Portland Trail Blazers at Utah Jazz</h2><p>Sat, Oct 31, 9:00 PM ET</p></body>',
+    )
+    rows, diagnostics = parse_odds_page(html, retrieved_at=RETRIEVED)
+    assert len(rows) == 3
+    assert diagnostics["games_seen"] == 3
+    assert diagnostics["games_without_odds_table"] == 1
+
