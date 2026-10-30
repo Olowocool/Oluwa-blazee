@@ -847,7 +847,7 @@ def main():
         status_eval.predicted_appearance_probability - status_eval.played
     ) ** 2
     status_eval.to_csv(OUT / "v4_phase2_status_predictions.csv", index=False)
-    status_summary = status_eval.groupby("status").agg(
+    status_summary = status_eval.groupby(["season", "status"]).agg(
         rows=("played", "size"),
         appeared=("played", "sum"),
         observed_appearance_rate=("played", "mean"),
