@@ -250,3 +250,30 @@ def test_ridge_defence_rating_rewards_opponents_it_suppresses():
 
     assert team_ratings["Team A"]["def_rating"] < team_ratings["Team C"]["def_rating"]
     assert team_ratings["Team B"]["def_rating"] > team_ratings["Team C"]["def_rating"]
+
+
+def test_wide_game_csv_excludes_playoffs_and_preseason():
+    base = {
+        "season_id": "22025",
+        "team_name_home": "Boston Celtics",
+        "team_name_away": "New York Knicks",
+        "pts_home": 118,
+        "pts_away": 110,
+        "fga_home": 88,
+        "fta_home": 22,
+        "oreb_home": 10,
+        "tov_home": 11,
+        "fga_away": 84,
+        "fta_away": 18,
+        "oreb_away": 8,
+        "tov_away": 13,
+    }
+    regular = {**base, "game_id": "reg", "game_date": "2025-11-01",
+               "season_type": "Regular Season"}
+    playoff = {**base, "game_id": "playoff", "game_date": "2026-04-20",
+               "season_type": "Playoffs"}
+
+    logs = prepare_team_game_logs(pd.DataFrame([regular, playoff]))
+
+    assert set(logs["game_id"]) == {"reg"}
+    assert len(logs) == 2
