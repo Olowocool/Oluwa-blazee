@@ -55,7 +55,7 @@ jobs:
           python totals_model_v3.py \
             --input data/game.csv \
             --output outputs/research/totals_v3 \
-            --max-games 500 \
+            --max-games 1500 \
             --min-prior-team-rows 500 \
             --skip-v2-benchmark
 
