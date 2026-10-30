@@ -205,3 +205,48 @@ def test_repository_wide_game_csv_schema_builds_both_team_rows_and_possessions()
     assert away["opponent_name"] == "Boston Celtics"
     assert bool(home["is_home"]) is True
     assert bool(away["is_home"]) is False
+
+
+def test_ridge_defence_rating_rewards_opponents_it_suppresses():
+    teams = ["Team A", "Team B", "Team C", "Team D"]
+    defensive_effect = {"Team A": -8.0, "Team B": 8.0, "Team C": 0.0, "Team D": 0.0}
+    rows = []
+    game_number = 0
+    for round_number in range(5):
+        for home_index in range(len(teams)):
+            for away_index in range(home_index + 1, len(teams)):
+                home = teams[home_index]
+                away = teams[away_index]
+                game_id = f"rating-{game_number}"
+                date = pd.Timestamp("2021-10-20") + pd.Timedelta(days=2 * game_number)
+                rows.extend([
+                    {
+                        "game_id": game_id,
+                        "game_date": date,
+                        "season": 2021,
+                        "team_name": home,
+                        "opponent_name": away,
+                        "points": 110 + defensive_effect[away],
+                        "possessions": 100.0,
+                        "is_home": True,
+                    },
+                    {
+                        "game_id": game_id,
+                        "game_date": date,
+                        "season": 2021,
+                        "team_name": away,
+                        "opponent_name": home,
+                        "points": 110 + defensive_effect[home],
+                        "possessions": 100.0,
+                        "is_home": False,
+                    },
+                ])
+                game_number += 1
+
+    ratings = estimate_pregame_ratings(
+        pd.DataFrame(rows), "2021-12-30"
+    )
+    team_ratings = ratings["teams"]
+
+    assert team_ratings["Team A"]["def_rating"] < team_ratings["Team C"]["def_rating"]
+    assert team_ratings["Team B"]["def_rating"] > team_ratings["Team C"]["def_rating"]
