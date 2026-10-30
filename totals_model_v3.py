@@ -31,6 +31,7 @@ RIDGE_ALPHA = 18.0
 CURRENT_HALF_LIFE_DAYS = 55.0
 PRIOR_SEASON_HALF_LIFE_DAYS = 180.0
 LEAGUE_HALF_LIFE_DAYS = 1095.0
+CURRENT_LEAGUE_HALF_LIFE_DAYS = 60.0
 
 NORMALIZED_COLUMNS = {
     "game_id", "game_date", "season", "team_name", "opponent_name",
@@ -446,11 +447,11 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
     if history.empty:
         raise ValueError("No prior games exist in the selected eight-season window.")
 
-    league_efficiency = _weighted_average(
+    league_efficiency_long = _weighted_average(
         history["points_per_100"], history["game_date"], target,
         LEAGUE_HALF_LIFE_DAYS, default=114.0
     )
-    league_pace = _weighted_average(
+    league_pace_long = _weighted_average(
         history["game_pace"], history["game_date"], target,
         LEAGUE_HALF_LIFE_DAYS, default=99.0
     )
@@ -458,17 +459,52 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
     current = history.loc[history["season"] == target_season].copy()
     previous_season = target_season - 1
     previous = history.loc[history["season"] == previous_season].copy()
+    current_games_series = (
+        current.groupby("team_name")["game_id"].nunique()
+        if not current.empty else pd.Series(dtype=float)
+    )
+    average_current_team_games = (
+        float(current_games_series.mean()) if not current_games_series.empty else 0.0
+    )
+    league_season_blend_weight = min(
+        max(average_current_team_games / CURRENT_SEASON_BLEND_GAMES, 0.0), 1.0
+    )
 
+    # The eight-season baseline protects against early-season noise. As the
+    # current season accumulates games, a 60-day rolling league average takes
+    # over so the model adapts to the scoring environment of this season.
+    league_efficiency_current = _weighted_average(
+        current["points_per_100"], current["game_date"], target,
+        CURRENT_LEAGUE_HALF_LIFE_DAYS, default=league_efficiency_long
+    )
+    league_pace_current = _weighted_average(
+        current["game_pace"], current["game_date"], target,
+        CURRENT_LEAGUE_HALF_LIFE_DAYS, default=league_pace_long
+    )
+    league_efficiency = (
+        league_season_blend_weight * league_efficiency_current
+        + (1.0 - league_season_blend_weight) * league_efficiency_long
+    )
+    league_pace = (
+        league_season_blend_weight * league_pace_current
+        + (1.0 - league_season_blend_weight) * league_pace_long
+    )
+
+    previous_season_league_efficiency = _weighted_average(
+        previous["points_per_100"], previous["game_date"], target,
+        PRIOR_SEASON_HALF_LIFE_DAYS, default=league_efficiency_long
+    )
     current_sample = _recent_team_sample(current, RECENT_TEAM_GAMES)
     prior_ratings = _fit_ridge_ratings(
-        previous, league_efficiency, target, PRIOR_SEASON_HALF_LIFE_DAYS
+        previous, previous_season_league_efficiency, target,
+        PRIOR_SEASON_HALF_LIFE_DAYS
     )
     current_ratings = _fit_ridge_ratings(
         current_sample, league_efficiency, target, CURRENT_HALF_LIFE_DAYS
     )
 
     teams = sorted(set(history["team_name"]) | set(history["opponent_name"]))
-    current_games = current.groupby("team_name")["game_id"].nunique().to_dict()
+    current_games = current_games_series.to_dict()
     prior_pace = (
         previous.groupby("team_name")["game_pace"].mean().to_dict()
         if not previous.empty else {}
@@ -482,6 +518,11 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
     ratings: dict[str, Any] = {
         "league_efficiency": float(league_efficiency),
         "league_pace": float(league_pace),
+        "league_efficiency_long": float(league_efficiency_long),
+        "league_efficiency_current": float(league_efficiency_current),
+        "league_pace_long": float(league_pace_long),
+        "league_pace_current": float(league_pace_current),
+        "league_season_blend_weight": float(league_season_blend_weight),
         "home_advantage": _blend_value(
             current_ratings["home_advantage"],
             prior_ratings["home_advantage"],
@@ -567,6 +608,11 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
         "home_pace": round(home_pace, 2),
         "away_pace": round(away_pace, 2),
         "league_efficiency": round(float(league_eff), 2),
+        "league_efficiency_long": round(float(ratings["league_efficiency_long"]), 2),
+        "league_efficiency_current": round(float(ratings["league_efficiency_current"]), 2),
+        "league_pace_long": round(float(ratings["league_pace_long"]), 2),
+        "league_pace_current": round(float(ratings["league_pace_current"]), 2),
+        "league_season_blend_weight": round(float(ratings["league_season_blend_weight"]), 3),
         "home_off_rating": round(home_off, 2),
         "away_off_rating": round(away_off, 2),
         "home_def_rating": round(home_def, 2),
