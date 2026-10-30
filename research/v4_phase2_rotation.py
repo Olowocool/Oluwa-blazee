@@ -778,6 +778,8 @@ def main():
             "away_questionable_minutes": afeat["questionable_minutes"],
             "home_reported_players_without_prior_team_history": hfeat["reported_players_without_prior_team_history"],
             "away_reported_players_without_prior_team_history": afeat["reported_players_without_prior_team_history"],
+            "home_players_excluded_by_opposing_report": hfeat["players_excluded_by_opposing_report"],
+            "away_players_excluded_by_opposing_report": afeat["players_excluded_by_opposing_report"],
         })
         for team_side, frame in (("home", hmins), ("away", amins)):
             frame = frame.copy()
@@ -915,6 +917,17 @@ def main():
             "archive_timestamp_gap_dates": int((report_manifest.status == "archive_timestamp_gap").sum()),
         },
         "lineup_reconstruction_audit": segment_audit,
+        "trade_rotation_diagnostics": {
+            "reported_players_without_prior_team_history": int(
+                features["home_reported_players_without_prior_team_history"].sum()
+                + features["away_reported_players_without_prior_team_history"].sum()
+            ),
+            "players_excluded_by_opposing_report": int(
+                features["home_players_excluded_by_opposing_report"].sum()
+                + features["away_players_excluded_by_opposing_report"].sum()
+            ),
+            "duplicate_player_game_assignments": int(minutes.duplicated(["game_id", "player_id"]).sum()),
+        },
         "forward_metrics": metric_rows,
         "status_calibration": status_summary.to_dict("records"),
         "projected_minutes_metrics": minute_summary.to_dict("records"),
