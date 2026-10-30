@@ -622,6 +622,11 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
     for game_date, day_games in selected_logs.groupby("game_date", sort=True):
         prior = logs.loc[logs["game_date"] < game_date].copy()
         prior_scores = score_history.loc[score_history["game_date"] < game_date].copy()
+        # Tell the legacy V2 cutoff guard this per-date benchmark history has
+        # already been date-filtered and team-normalized. The guard still checks
+        # the maximum date before accepting the fast path.
+        prior_scores.attrs["_strict_history_cutoff_date"] = pd.Timestamp(game_date).date().isoformat()
+        prior_scores.attrs["_team_names_normalized"] = True
         if len(prior) < min_prior_team_rows:
             continue
         for game_id, game in day_games.groupby("game_id", sort=False):
