@@ -2340,6 +2340,20 @@ if st.button("Auto Grade Totals Bets"):
         st.success(
             f"Updated {result['updated_rows']} totals bets."
         )
+        if result.get("pending_rows", 0):
+            st.info(
+                f"{result['pending_rows']} pick(s) are still waiting for final scores."
+            )
+        if result.get("shared_api_unavailable", 0):
+            st.caption(
+                "The shared score API was unavailable; the research app used "
+                f"its local fallback for {result.get('local_fallback_calls', 0)} lookup(s)."
+            )
+        if result.get("not_found_rows", 0) or result.get("score_lookup_errors", 0):
+            st.warning(
+                f"Score lookups not resolved — not found: {result.get('not_found_rows', 0)}; "
+                f"errors: {result.get('score_lookup_errors', 0)}."
+            )
     else:
         st.error(
             result["message"]
