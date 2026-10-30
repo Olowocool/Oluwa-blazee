@@ -562,14 +562,74 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
         previous["points_per_100"], previous["game_date"], target,
         PRIOR_SEASON_HALF_LIFE_DAYS, default=league_efficiency_long
     )
+    # Four pregame shot-profile baselines: team 3PA rate, team FTr, and the
+    # corresponding opponent rates. These are volume/rate inputs, not shooting
+    # percentages; no hot-shooting percentage is extrapolated.
+    shot_defaults = {
+        "three_pa_rate": 0.40,
+        "free_throw_rate": 0.25,
+        "opponent_three_pa_rate": 0.40,
+        "opponent_free_throw_rate": 0.25,
+    }
+    league_shot_profile_long = {
+        column: _weighted_average(
+            history[column], history["game_date"], target,
+            LEAGUE_HALF_LIFE_DAYS, shot_defaults[column]
+        )
+        for column in SHOT_PROFILE_COLUMNS
+    }
+    league_shot_profile_current = {
+        column: _weighted_average(
+            current[column], current["game_date"], target,
+            CURRENT_LEAGUE_HALF_LIFE_DAYS, league_shot_profile_long[column]
+        )
+        for column in SHOT_PROFILE_COLUMNS
+    }
+    league_shot_profile = {
+        column: (
+            league_season_blend_weight * league_shot_profile_current[column]
+            + (1.0 - league_season_blend_weight) * league_shot_profile_long[column]
+        )
+        for column in SHOT_PROFILE_COLUMNS
+    }
+    previous_season_shot_profile = {
+        column: _weighted_average(
+            previous[column], previous["game_date"], target,
+            PRIOR_SEASON_HALF_LIFE_DAYS, league_shot_profile_long[column]
+        )
+        for column in SHOT_PROFILE_COLUMNS
+    }
+
     current_sample = _recent_team_sample(current, RECENT_TEAM_GAMES)
     prior_ratings = _fit_ridge_ratings(
         previous, previous_season_league_efficiency, target,
-        PRIOR_SEASON_HALF_LIFE_DAYS
+        PRIOR_SEASON_HALF_LIFE_DAYS, previous_season_shot_profile
     )
     current_ratings = _fit_ridge_ratings(
-        current_sample, league_efficiency, target, CURRENT_HALF_LIFE_DAYS
+        current_sample, league_efficiency, target, CURRENT_HALF_LIFE_DAYS,
+        league_shot_profile
     )
+
+    current_team_shot = (
+        current_sample.groupby("team_name")[["three_pa_rate", "free_throw_rate"]]
+        .mean(numeric_only=True).to_dict(orient="index")
+        if not current_sample.empty else {}
+    )
+    prior_team_shot = (
+        previous.groupby("team_name")[["three_pa_rate", "free_throw_rate"]]
+        .mean(numeric_only=True).to_dict(orient="index")
+        if not previous.empty else {}
+    )
+    shot_betas = {
+        column: _blend_value(
+            current_ratings["shot_betas"].get(column),
+            prior_ratings["shot_betas"].get(column),
+            int(sum(current_games_series.values) / max(len(current_games_series), 1)),
+            CURRENT_SEASON_BLEND_GAMES,
+            0.0,
+        )
+        for column in SHOT_PROFILE_COLUMNS
+    }
 
     teams = sorted(set(history["team_name"]) | set(history["opponent_name"]))
     current_games = current_games_series.to_dict()
@@ -591,6 +651,8 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
         "league_pace_long": float(league_pace_long),
         "league_pace_current": float(league_pace_current),
         "league_season_blend_weight": float(league_season_blend_weight),
+        "league_shot_profile": league_shot_profile,
+        "shot_betas": shot_betas,
         "home_advantage": _blend_value(
             current_ratings["home_advantage"],
             prior_ratings["home_advantage"],
@@ -622,6 +684,15 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
                 prior_pace.get(team),
                 n_current, PACE_TEAM_GAMES, league_pace
             ),
+            "shot_profile": {
+                column: _blend_value(
+                    current_team_shot.get(team, {}).get(column),
+                    prior_team_shot.get(team, {}).get(column),
+                    n_current, CURRENT_SEASON_BLEND_GAMES,
+                    league_shot_profile[column],
+                )
+                for column in ("three_pa_rate", "free_throw_rate")
+            },
             "current_season_games": n_current,
         }
     return ratings
@@ -655,8 +726,44 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
     ) / 2.0
 
     home_court_adjustment = 0.0 if neutral_site else ratings["home_advantage"]
-    home_efficiency = home_off + away_def - league_eff + home_court_adjustment
-    away_efficiency = away_off + home_def - league_eff
+
+    league_shots = ratings["league_shot_profile"]
+    shot_betas = ratings["shot_betas"]
+    home_shots = home_stats.get("shot_profile", {})
+    away_shots = away_stats.get("shot_profile", {})
+
+    def shot_profile_adjustment(
+        offense_profile: dict[str, float],
+        opponent_profile: dict[str, float],
+    ) -> float:
+        return float(
+            shot_betas["three_pa_rate"] * (
+                offense_profile.get("three_pa_rate", league_shots["three_pa_rate"])
+                - league_shots["three_pa_rate"]
+            )
+            + shot_betas["free_throw_rate"] * (
+                offense_profile.get("free_throw_rate", league_shots["free_throw_rate"])
+                - league_shots["free_throw_rate"]
+            )
+            + shot_betas["opponent_three_pa_rate"] * (
+                opponent_profile.get("three_pa_rate", league_shots["opponent_three_pa_rate"])
+                - league_shots["opponent_three_pa_rate"]
+            )
+            + shot_betas["opponent_free_throw_rate"] * (
+                opponent_profile.get("free_throw_rate", league_shots["opponent_free_throw_rate"])
+                - league_shots["opponent_free_throw_rate"]
+            )
+        )
+
+    home_shot_adjustment = shot_profile_adjustment(home_shots, away_shots)
+    away_shot_adjustment = shot_profile_adjustment(away_shots, home_shots)
+    home_efficiency = (
+        home_off + away_def - league_eff
+        + home_court_adjustment + home_shot_adjustment
+    )
+    away_efficiency = (
+        away_off + home_def - league_eff + away_shot_adjustment
+    )
     home_points = expected_pace * home_efficiency / 100.0
     away_points = expected_pace * away_efficiency / 100.0
     projected_total = home_points + away_points
@@ -687,6 +794,16 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
         "away_def_rating": round(away_def, 2),
         "home_expected_efficiency": round(float(home_efficiency), 2),
         "away_expected_efficiency": round(float(away_efficiency), 2),
+        "home_shot_profile_adjustment": round(float(home_shot_adjustment), 3),
+        "away_shot_profile_adjustment": round(float(away_shot_adjustment), 3),
+        "home_three_pa_rate": round(float(home_shots.get("three_pa_rate", league_shots["three_pa_rate"])), 4),
+        "away_three_pa_rate": round(float(away_shots.get("three_pa_rate", league_shots["three_pa_rate"])), 4),
+        "home_free_throw_rate": round(float(home_shots.get("free_throw_rate", league_shots["free_throw_rate"])), 4),
+        "away_free_throw_rate": round(float(away_shots.get("free_throw_rate", league_shots["free_throw_rate"])), 4),
+        "shot_profile_betas": {
+            column: round(float(value), 4)
+            for column, value in shot_betas.items()
+        },
         "home_current_season_games": int(home_stats.get("current_season_games", 0)),
         "away_current_season_games": int(away_stats.get("current_season_games", 0)),
         "history_rows_used": ratings["history_rows_used"],
