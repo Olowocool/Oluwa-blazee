@@ -556,6 +556,8 @@ def test_schedule_features_reset_at_season_boundary_and_cap_extended_rest():
     after_long_break = make_raw_games(
         start_date="2025-10-30", count=1, season_id="22025"
     )
+    season_opener["GAME_ID"] = "season-opener"
+    after_long_break["GAME_ID"] = "after-long-break"
     logs = prepare_team_game_logs(
         pd.concat([prior_season, season_opener, after_long_break], ignore_index=True)
     )
