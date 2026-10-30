@@ -9,7 +9,7 @@ from totals_tracker import (
     load_totals_history
 )
 from totals_forward_paper_trading import evaluate_forward_paper_trading
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from prediction_history_logger import log_prediction
 from best_bet_selector_v2 import select_best_bet_v2
 from betting_guard import BETTING_VALIDATION_COMPLETE, actionable_bet_allowed, betting_gate_message
@@ -123,6 +123,14 @@ def canonical_team_name(name):
     return lookup.get(name.lower(), name)
 
 
+WAT_TIMEZONE = timezone(timedelta(hours=1))
+
+
+def wat_today():
+    """Return today's date in Nigeria's fixed West Africa Time (UTC+1)."""
+    return datetime.now(WAT_TIMEZONE).date()
+
+
 def parse_game_date(date_text):
     try:
         return datetime.strptime(date_text, "%m/%d/%Y").date()
@@ -134,7 +142,7 @@ def should_fetch_live_odds(date_text):
     game_date = parse_game_date(date_text)
     if game_date is None:
         return True
-    return game_date >= date.today()
+    return game_date >= wat_today()
 
 
 @st.cache_data(ttl=300)
@@ -877,7 +885,7 @@ st.title("NBA Games")
 
 date_input = st.text_input(
     "Game Date (MM/DD/YYYY)",
-    value="05/21/2026"
+    value=wat_today().strftime("%m/%d/%Y")
 )
 
 # Clear previously loaded games when the date changes.
