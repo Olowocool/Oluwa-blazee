@@ -933,6 +933,8 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                 "expected_points_per_100": round(expected_points_per_100, 3),
                 "actual_points_per_100": round(actual_points_per_100, 3),
                 "efficiency_error": round(efficiency_error, 3),
+                "home_shot_profile_adjustment": prediction["home_shot_profile_adjustment"],
+                "away_shot_profile_adjustment": prediction["away_shot_profile_adjustment"],
                 "history_rows_used": prediction["history_rows_used"],
                 "seasons_used": ",".join(map(str, prediction["seasons_used"])),
             })
@@ -988,6 +990,15 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
         "mean_actual_points_per_100": round(float(results["actual_points_per_100"].mean()), 4),
         "mean_expected_points_per_100": round(float(results["expected_points_per_100"].mean()), 4),
         "mean_efficiency_error": round(float(results["efficiency_error"].mean()), 4),
+        "mean_absolute_shot_profile_adjustment": round(
+            float(
+                (
+                    results["home_shot_profile_adjustment"].abs()
+                    + results["away_shot_profile_adjustment"].abs()
+                ).mean()
+            ),
+            4,
+        ),
         "min_prior_team_rows": int(min_prior_team_rows),
         "max_games_requested": int(max_games),
         "note": (
