@@ -156,6 +156,25 @@ them to points using expected game pace. This is an offline feature experiment;
 its value must be demonstrated on the same 1,500 chronological games before it
 is considered further.
 
+## V3.2 shot-profile result
+
+The 1,500-game V3.2 run used the same 2022-03-06 through 2023-04-09
+walk-forward dates as V3.1.
+
+| Metric | V3.1 | V3.2 |
+|---|---:|---:|
+| MAE | 14.6032 | 14.5993 |
+| RMSE | 18.6616 | 18.6572 |
+| Mean error bias | -0.3660 | -0.3642 |
+| Within 5 points | 23.47% | 23.53% |
+| Within 10 points | 42.93% | 43.00% |
+
+All 19 V3.2 tests passed. The average combined absolute home/away shot-profile
+adjustment was 0.1989 points per 100 possessions per game. The 0.0039-point
+MAE improvement is negligible and should not be treated as meaningful evidence
+that shot-profile features improve accuracy. Keep these features as a research
+candidate only; they are not approved for the production model.
+
 ## Not yet included
 
 - Market opening/closing totals and market-residual calibration. Historical
