@@ -245,6 +245,41 @@ jobs:
           """)
           bounds.to_csv(OUT / "advanced_stat_range_checks.csv", index=False)
 
+          outlier_rows = query("""
+              SELECT
+                  t.season, t.game_date, t.game_id, g.game_type, g.neutral_site,
+                  t.team_id, ts.full_name AS team_name, t.opp_team_id,
+                  ots.full_name AS opponent_name, t.home, t.pts,
+                  t.poss, t.pace, t.off_rating, t.def_rating
+              FROM nba.team_game_logs t
+              LEFT JOIN nba.games g USING (season, game_id)
+              LEFT JOIN nba.team_seasons ts
+                ON ts.season = t.season AND ts.team_id = t.team_id
+              LEFT JOIN nba.team_seasons ots
+                ON ots.season = t.season AND ots.team_id = t.opp_team_id
+              WHERE
+                  (t.poss IS NOT NULL AND (t.poss < 50 OR t.poss > 150))
+                  OR (t.pace IS NOT NULL AND (t.pace < 70 OR t.pace > 130))
+                  OR (t.off_rating IS NOT NULL AND (t.off_rating < 70 OR t.off_rating > 160))
+                  OR (t.def_rating IS NOT NULL AND (t.def_rating < 70 OR t.def_rating > 160))
+              ORDER BY t.season, t.game_date, t.game_id, t.team_id
+          """)
+          outlier_rows.to_csv(OUT / "advanced_stat_outlier_rows.csv", index=False)
+
+          market_window_by_type = query("""
+              SELECT
+                  game_type,
+                  COUNT(DISTINCT game_id) AS games,
+                  MIN(game_date) AS first_game_date,
+                  MAX(game_date) AS last_game_date
+              FROM nba.games
+              WHERE season = 2026
+                AND game_date BETWEEN DATE '2025-11-26' AND DATE '2025-12-23'
+              GROUP BY game_type
+              ORDER BY game_type
+          """)
+          market_window_by_type.to_csv(OUT / "market_archive_window_by_game_type.csv", index=False)
+
           market_window = query("""
               SELECT
                   COUNT(DISTINCT game_id) AS regular_season_games_in_market_archive_window,
@@ -329,7 +364,15 @@ jobs:
               "",
               md_table(bounds),
               "",
-              "## DraftKings archive date window (2025-11-26 to 2025-12-23)",
+              "## Advanced-stat outlier rows requiring interpretation",
+              "",
+              md_table(outlier_rows),
+              "",
+              "## Market archive window by game type",
+              "",
+              md_table(market_window_by_type),
+              "",
+              "## DraftKings archive date window (regular-season games only)",
               "",
               md_table(market_window),
               "",
