@@ -54,12 +54,7 @@ jobs:
             --output outputs/research/totals_v3_current_source
 
       - name: Compare V3 forecasts with archived DraftKings market
-        run: |
-          python research/evaluate_v3_market_archive.py \\
-            --predictions outputs/research/totals_v3_current_source/totals_v3_current_source_walk_forward.csv \
-            --market research/data/dunkapi_recovered_2025-11-26_to_2025-12-23.csv \
-            --output outputs/research/totals_v3_current_source/market_archive
-
+        run: python research/evaluate_v3_market_archive.py --predictions outputs/research/totals_v3_current_source/totals_v3_current_source_walk_forward.csv --market research/data/dunkapi_recovered_2025-11-26_to_2025-12-23.csv --output outputs/research/totals_v3_current_source/market_archive
       - name: Upload current-source V3 results
         uses: actions/upload-artifact@v4
         with:
