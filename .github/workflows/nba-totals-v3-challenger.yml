@@ -56,7 +56,8 @@ jobs:
             --input data/game.csv \
             --output outputs/research/totals_v3 \
             --max-games 500 \
-            --min-prior-team-rows 500
+            --min-prior-team-rows 500 \
+            --skip-v2-benchmark
 
       - name: Upload V3 walk-forward results
         uses: actions/upload-artifact@v4
