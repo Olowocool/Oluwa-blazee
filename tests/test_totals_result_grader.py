@@ -106,14 +106,17 @@ class TotalsResultGraderTests(unittest.TestCase):
             "away_team": "New York Knicks",
         }
         diagnostics = {}
-        with patch("totals_result_grader.requests.get", return_value=RateLimitedResponse()), \\
-             patch("totals_result_grader._local_score_result", return_value=completed) as fallback:
-            result = fetch_final_score(
-                "10/30/2026",
-                "Boston Celtics",
-                "New York Knicks",
-                diagnostics=diagnostics,
-            )
+        with patch("totals_result_grader.requests.get", return_value=RateLimitedResponse()):
+            with patch(
+                "totals_result_grader._local_score_result",
+                return_value=completed,
+            ) as fallback:
+                result = fetch_final_score(
+                    "10/30/2026",
+                    "Boston Celtics",
+                    "New York Knicks",
+                    diagnostics=diagnostics,
+                )
 
         fallback.assert_called_once()
         self.assertEqual(result["home_score"], 112.0)
