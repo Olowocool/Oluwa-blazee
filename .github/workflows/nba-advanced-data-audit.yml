@@ -1,0 +1,304 @@
+name: NBA advanced historical data audit
+
+on:
+  push:
+    branches:
+      - "research/nba-advanced-data-audit"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install audit dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install duckdb pandas
+
+      - name: Audit public NBA advanced game data
+        run: |
+          mkdir -p outputs/research/nba_advanced_data_audit
+          python - <<'PY'
+          from pathlib import Path
+          from datetime import datetime, timezone
+          import json
+          import duckdb
+          import pandas as pd
+
+          OUT = Path("outputs/research/nba_advanced_data_audit")
+          OUT.mkdir(parents=True, exist_ok=True)
+          CATALOG = "https://basketball-data.billmill.org/nba/nba.duckdb"
+
+          con = duckdb.connect()
+          con.execute("INSTALL httpfs")
+          con.execute("LOAD httpfs")
+          con.execute(f"ATTACH '{CATALOG}' AS nba")
+
+          def query(sql):
+              return con.execute(sql).fetchdf()
+
+          metadata = query("""
+              SELECT dataset, source, first_season, last_season, seasons, updated
+              FROM nba.metadata
+              WHERE dataset IN ('team_game_logs', 'games', 'team_seasons')
+              ORDER BY dataset
+          """)
+          metadata.to_csv(OUT / "dataset_metadata.csv", index=False)
+
+          coverage = query("""
+              SELECT
+                  t.season,
+                  COUNT(*) AS team_game_rows,
+                  COUNT(DISTINCT t.game_id) AS games,
+                  COUNT(DISTINCT t.team_id) AS teams,
+                  COUNT(DISTINCT (t.game_id, t.team_id)) AS unique_team_game_keys,
+                  COUNT(*) - COUNT(DISTINCT (t.game_id, t.team_id)) AS duplicate_key_excess,
+                  COUNT(*) FILTER (WHERE t.poss IS NOT NULL) AS rows_with_possessions,
+                  COUNT(*) FILTER (WHERE t.pace IS NOT NULL) AS rows_with_pace,
+                  COUNT(*) FILTER (WHERE t.off_rating IS NOT NULL) AS rows_with_off_rating,
+                  COUNT(*) FILTER (WHERE t.def_rating IS NOT NULL) AS rows_with_def_rating,
+                  COUNT(*) FILTER (WHERE t.team_oreb IS NOT NULL) AS rows_with_team_oreb,
+                  ROUND(AVG(t.poss), 3) AS avg_possessions,
+                  ROUND(AVG(t.pace), 3) AS avg_pace,
+                  ROUND(AVG(t.off_rating), 3) AS avg_off_rating,
+                  ROUND(AVG(t.def_rating), 3) AS avg_def_rating,
+                  MIN(t.game_date) AS first_game_date,
+                  MAX(t.game_date) AS last_game_date
+              FROM nba.team_game_logs t
+              GROUP BY t.season
+              ORDER BY t.season
+          """)
+          coverage.to_csv(OUT / "season_coverage.csv", index=False)
+
+          regular = query("""
+              SELECT
+                  t.season,
+                  COUNT(*) AS regular_season_team_game_rows,
+                  COUNT(DISTINCT t.game_id) AS regular_season_games,
+                  COUNT(*) FILTER (WHERE t.poss IS NOT NULL) AS rows_with_possessions,
+                  COUNT(*) FILTER (WHERE t.pace IS NOT NULL) AS rows_with_pace,
+                  COUNT(*) FILTER (WHERE t.off_rating IS NOT NULL) AS rows_with_off_rating,
+                  COUNT(*) FILTER (WHERE t.def_rating IS NOT NULL) AS rows_with_def_rating,
+                  ROUND(AVG(t.poss), 3) AS avg_possessions,
+                  ROUND(AVG(t.pace), 3) AS avg_pace,
+                  ROUND(AVG(t.off_rating), 3) AS avg_off_rating,
+                  ROUND(AVG(t.def_rating), 3) AS avg_def_rating
+              FROM nba.team_game_logs t
+              JOIN nba.games g USING (season, game_id)
+              WHERE g.game_type = 'regular_season'
+              GROUP BY t.season
+              ORDER BY t.season
+          """)
+          regular.to_csv(OUT / "regular_season_coverage.csv", index=False)
+
+          game_types = query("""
+              SELECT season, game_type, COUNT(*) AS games,
+                     MIN(game_date) AS first_game_date,
+                     MAX(game_date) AS last_game_date
+              FROM nba.games
+              GROUP BY season, game_type
+              ORDER BY season, game_type
+          """)
+          game_types.to_csv(OUT / "game_type_coverage.csv", index=False)
+
+          paired = query("""
+              WITH per_game AS (
+                  SELECT season, game_id, COUNT(*) AS team_rows,
+                         COUNT(*) FILTER (WHERE home IS TRUE) AS home_yes,
+                         COUNT(*) FILTER (WHERE home IS FALSE) AS home_no,
+                         COUNT(*) FILTER (WHERE home IS NULL) AS home_null
+                  FROM nba.team_game_logs
+                  GROUP BY season, game_id
+              )
+              SELECT
+                  p.season,
+                  COUNT(*) AS game_groups,
+                  COUNT(*) FILTER (WHERE p.team_rows = 2) AS games_with_two_team_rows,
+                  COUNT(*) FILTER (WHERE p.team_rows <> 2) AS games_not_with_two_team_rows,
+                  COUNT(*) FILTER (
+                      WHERE g.neutral_site IS TRUE AND p.home_null = p.team_rows
+                  ) AS neutral_games_with_expected_null_home,
+                  COUNT(*) FILTER (
+                      WHERE g.neutral_site IS TRUE AND p.home_null <> p.team_rows
+                  ) AS neutral_games_with_home_flag_issue,
+                  COUNT(*) FILTER (
+                      WHERE g.neutral_site IS NOT TRUE AND (p.home_yes <> 1 OR p.home_no <> 1)
+                  ) AS non_neutral_games_with_home_flag_issue
+              FROM per_game p
+              LEFT JOIN nba.games g USING (season, game_id)
+              GROUP BY p.season
+              ORDER BY p.season
+          """)
+          paired.to_csv(OUT / "game_pairing_and_venue_checks.csv", index=False)
+
+          duplicate_groups = query("""
+              SELECT season, COUNT(*) AS duplicate_key_groups
+              FROM (
+                  SELECT season, game_id, team_id
+                  FROM nba.team_game_logs
+                  GROUP BY season, game_id, team_id
+                  HAVING COUNT(*) > 1
+              )
+              GROUP BY season
+              ORDER BY season
+          """)
+          duplicate_groups.to_csv(OUT / "duplicate_key_checks.csv", index=False)
+
+          opponent_issues = query("""
+              SELECT t.season, COUNT(*) AS rows_with_missing_opponent_record
+              FROM nba.team_game_logs t
+              LEFT JOIN nba.team_game_logs o
+                ON o.season = t.season
+               AND o.game_id = t.game_id
+               AND o.team_id = t.opp_team_id
+              WHERE t.opp_team_id IS NULL OR o.team_id IS NULL
+              GROUP BY t.season
+              ORDER BY t.season
+          """)
+          opponent_issues.to_csv(OUT / "opponent_link_checks.csv", index=False)
+
+          team_lookup_issues = query("""
+              SELECT t.season, COUNT(*) AS rows_without_team_season_lookup
+              FROM nba.team_game_logs t
+              LEFT JOIN nba.team_seasons s
+                ON s.season = t.season AND s.team_id = t.team_id
+              WHERE s.team_id IS NULL
+              GROUP BY t.season
+              ORDER BY t.season
+          """)
+          team_lookup_issues.to_csv(OUT / "team_lookup_checks.csv", index=False)
+
+          bounds = query("""
+              SELECT
+                  season,
+                  COUNT(*) FILTER (WHERE poss IS NOT NULL AND (poss < 50 OR poss > 150)) AS unusual_possessions,
+                  COUNT(*) FILTER (WHERE pace IS NOT NULL AND (pace < 70 OR pace > 130)) AS unusual_pace,
+                  COUNT(*) FILTER (WHERE off_rating IS NOT NULL AND (off_rating < 70 OR off_rating > 160)) AS unusual_off_rating,
+                  COUNT(*) FILTER (WHERE def_rating IS NOT NULL AND (def_rating < 70 OR def_rating > 160)) AS unusual_def_rating,
+                  MIN(poss) AS min_possessions, MAX(poss) AS max_possessions,
+                  MIN(pace) AS min_pace, MAX(pace) AS max_pace,
+                  MIN(off_rating) AS min_off_rating, MAX(off_rating) AS max_off_rating,
+                  MIN(def_rating) AS min_def_rating, MAX(def_rating) AS max_def_rating
+              FROM nba.team_game_logs
+              GROUP BY season
+              ORDER BY season
+          """)
+          bounds.to_csv(OUT / "advanced_stat_range_checks.csv", index=False)
+
+          market_window = query("""
+              SELECT
+                  COUNT(DISTINCT game_id) AS regular_season_games_in_market_archive_window,
+                  MIN(game_date) AS first_game_date,
+                  MAX(game_date) AS last_game_date
+              FROM nba.games
+              WHERE season = 2026
+                AND game_type = 'regular_season'
+                AND game_date BETWEEN DATE '2025-11-26' AND DATE '2025-12-23'
+          """)
+          market_window.to_csv(OUT / "market_archive_date_window.csv", index=False)
+
+          summary = {
+              "audit_created_utc": datetime.now(timezone.utc).isoformat(),
+              "catalog": CATALOG,
+              "metadata": metadata.to_dict(orient="records"),
+              "seasons_in_team_game_logs": int(len(coverage)),
+              "first_season": int(coverage.season.min()) if not coverage.empty else None,
+              "last_season": int(coverage.season.max()) if not coverage.empty else None,
+              "total_team_game_rows": int(coverage.team_game_rows.sum()) if not coverage.empty else 0,
+              "total_distinct_games": int(coverage.games.sum()) if not coverage.empty else 0,
+              "total_rows_missing_possessions": int((coverage.team_game_rows - coverage.rows_with_possessions).sum()) if not coverage.empty else 0,
+              "total_rows_missing_pace": int((coverage.team_game_rows - coverage.rows_with_pace).sum()) if not coverage.empty else 0,
+              "total_rows_missing_off_rating": int((coverage.team_game_rows - coverage.rows_with_off_rating).sum()) if not coverage.empty else 0,
+              "total_rows_missing_def_rating": int((coverage.team_game_rows - coverage.rows_with_def_rating).sum()) if not coverage.empty else 0,
+              "note": "Dataset integrity audit only. This does not train a model or establish betting profitability."
+          }
+          (OUT / "audit_summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
+
+          def md_table(frame):
+              if frame.empty:
+                  return "_No rows returned._"
+              return frame.to_markdown(index=False)
+
+          report = [
+              "# NBA advanced historical data audit",
+              "",
+              f"Audit time (UTC): {summary['audit_created_utc']}",
+              f"Catalog: {CATALOG}",
+              "",
+              "## Overall coverage",
+              "",
+              f"- Seasons present: {summary['seasons_in_team_game_logs']}",
+              f"- First season end-year: {summary['first_season']}",
+              f"- Last season end-year: {summary['last_season']}",
+              f"- Team-game rows: {summary['total_team_game_rows']:,}",
+              f"- Sum of distinct games by season: {summary['total_distinct_games']:,}",
+              f"- Rows missing possessions: {summary['total_rows_missing_possessions']:,}",
+              f"- Rows missing pace: {summary['total_rows_missing_pace']:,}",
+              f"- Rows missing offensive rating: {summary['total_rows_missing_off_rating']:,}",
+              f"- Rows missing defensive rating: {summary['total_rows_missing_def_rating']:,}",
+              "",
+              "## Dataset metadata",
+              "",
+              md_table(metadata),
+              "",
+              "## Season-level advanced-stat coverage",
+              "",
+              md_table(coverage),
+              "",
+              "## Regular-season coverage",
+              "",
+              md_table(regular),
+              "",
+              "## Game pairing and neutral-site checks",
+              "",
+              md_table(paired),
+              "",
+              "## Duplicate keys",
+              "",
+              md_table(duplicate_groups),
+              "",
+              "## Opponent links",
+              "",
+              md_table(opponent_issues),
+              "",
+              "## Team lookup links",
+              "",
+              md_table(team_lookup_issues),
+              "",
+              "## Advanced-stat range checks",
+              "",
+              md_table(bounds),
+              "",
+              "## DraftKings archive date window (2025-11-26 to 2025-12-23)",
+              "",
+              md_table(market_window),
+              "",
+              "## Interpretation",
+              "",
+              "This is a source-data quality audit only. It does not modify production code, train a model, calculate betting ROI, or establish profitability. Missing historical inputs must remain missing; do not silently replace them with current values or generic averages.",
+              ""
+          ]
+          (OUT / "audit_report.md").write_text("\n".join(report), encoding="utf-8")
+          print((OUT / "audit_report.md").read_text(encoding="utf-8"))
+          print("\nAudit files written to", OUT)
+          PY
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v4
+        with:
+          name: nba-advanced-data-audit
+          path: outputs/research/nba_advanced_data_audit/
+          if-no-files-found: error
+          retention-days: 14
