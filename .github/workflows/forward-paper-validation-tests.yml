@@ -6,6 +6,9 @@ on:
       - "research/nba-advanced-data-audit"
     paths:
       - "totals_result_grader.py"
+      - "frontend.py"
+      - "totals_tracker.py"
+      - "tests/test_totals_tracker_idempotency.py"
       - "totals_forward_paper_trading.py"
       - "live_totals_market_snapshots.py"
       - "durable_totals_storage.py"
@@ -41,13 +44,20 @@ jobs:
       - name: Compile paper-trading modules and tests
         run: |
           python -m py_compile \
+            frontend.py \
+            totals_tracker.py \
             totals_result_grader.py \
             totals_forward_paper_trading.py \
             live_totals_market_snapshots.py \
             durable_totals_storage.py \
+            tests/test_totals_tracker_idempotency.py \
             tests/test_totals_result_grader.py \
             tests/test_totals_forward_paper_trading.py \
             tests/test_live_totals_market_snapshots.py
+
+
+      - name: Test first-signal idempotency
+        run: python -m unittest discover -s tests -p "test_totals_tracker_idempotency.py" -v
 
       - name: Test settlement and captured-price accounting
         run: python -m unittest discover -s tests -p "test_totals_result_grader.py" -v
