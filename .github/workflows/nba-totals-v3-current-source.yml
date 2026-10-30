@@ -1,0 +1,59 @@
+name: NBA totals V3 current-source challenger
+
+on:
+  push:
+    branches:
+      - "research/nba-advanced-data-audit"
+    paths:
+      - "totals_model_v3.py"
+      - "research/run_totals_v3_current_source.py"
+      - ".github/workflows/nba-totals-v3-current-source.yml"
+      - "tests/test_totals_model_v3.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nba-totals-v3-current-source-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  current-source-challenger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install challenger dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy pandas pytest duckdb
+
+      - name: Compile challenger and current-source loader
+        run: |
+          python -m py_compile totals_model_v3.py research/run_totals_v3_current_source.py
+
+      - name: Run possession, schedule and leakage tests
+        run: python -m pytest tests/test_totals_model_v3.py -q
+
+      - name: Run current-source chronological challenger
+        run: |
+          python research/run_totals_v3_current_source.py \
+            --max-games 1500 \
+            --min-prior-team-rows 500 \
+            --output outputs/research/totals_v3_current_source
+
+      - name: Upload current-source V3 results
+        uses: actions/upload-artifact@v4
+        with:
+          name: nba-totals-v3-current-source
+          path: outputs/research/totals_v3_current_source/
+          if-no-files-found: error
+          retention-days: 30
