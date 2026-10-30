@@ -134,7 +134,7 @@ def load_sources():
     events["team_id"] = events.team_id.astype(str)
     events["pts"] = pd.to_numeric(events.pts, errors="coerce").fillna(0).astype(int)
     events["time"] = pd.to_numeric(events.time, errors="coerce")
-    events = events[(events.pts > 0) & events.game_id.isin(set(games.game_id))].copy()
+    events = events[(events.pts > 0) & events.time.notna() & events.game_id.isin(set(games.game_id))].copy()
 
     return games, team_logs, player_logs, player_names, team_names, rotations, events
 
@@ -149,10 +149,10 @@ def build_lineup_segments(games, team_logs, rotations, events):
             if pd.notna(r.poss) and float(r.poss) > 0
         }
         score_map[str(gid)] = {str(r.team_id): int(r.pts) for r in group.itertuples()}
-    event_groups = {}
-    for (gid, period), group in events.groupby(["game_id", "period"], sort=False):
-        group = group.sort_values("time")
-        event_groups[(str(gid), int(period))] = group
+    event_groups = {
+        str(gid): group.sort_values("time")
+        for gid, group in events.groupby("game_id", sort=False)
+    }
 
     segments = []
     audit = {
@@ -184,63 +184,58 @@ def build_lineup_segments(games, team_logs, rotations, events):
         if not np.isfinite(total_seconds) or total_seconds <= 0:
             audit["games_skipped_lineup_or_event_gap"] += 1
             continue
+        ev = event_groups.get(gid)
+        if ev is None or ev.empty or ev.time.isna().any():
+            audit["games_skipped_lineup_or_event_gap"] += 1
+            continue
+        ev_times = ev.time.to_numpy(dtype=float)
+        ev_team = ev.team_id.astype(str).to_numpy()
+        ev_pts = ev.pts.to_numpy(dtype=int)
+        ev_home = np.cumsum(np.where(ev_team == home_id, ev_pts, 0))
+        ev_away = np.cumsum(np.where(ev_team == away_id, ev_pts, 0))
 
         game_segments = []
         pm_accum = defaultdict(int)
         score_sums = {home_id: 0, away_id: 0}
-        for period, period_rows in rgame.groupby("period", sort=True):
-            period_rows = period_rows.copy()
-            boundaries = sorted(set(period_rows.in_time.astype(float)) | set(period_rows.out_time.astype(float)))
-            ev = event_groups.get((gid, int(period)))
-            if ev is None:
-                ev_times = np.array([], dtype=float)
-                ev_home = np.array([], dtype=int)
-                ev_away = np.array([], dtype=int)
-            else:
-                ev_times = ev.time.to_numpy(dtype=float)
-                ev_team = ev.team_id.astype(str).to_numpy()
-                ev_pts = ev.pts.to_numpy(dtype=int)
-                ev_home = np.where(ev_team == home_id, ev_pts, 0)
-                ev_away = np.where(ev_team == away_id, ev_pts, 0)
-                ev_home = np.cumsum(ev_home)
-                ev_away = np.cumsum(ev_away)
-
-            for start, end in zip(boundaries[:-1], boundaries[1:]):
-                duration = float(end - start)
-                if duration <= 0.5:
-                    continue
-                active = period_rows[
-                    (period_rows.in_time.astype(float) <= float(start) + 1e-6)
-                    & (period_rows.out_time.astype(float) >= float(end) - 1e-6)
-                ]
-                home_rows = active[active.team_id.astype(str) == home_id]
-                away_rows = active[active.team_id.astype(str) == away_id]
-                if home_rows.player_id.nunique() != 5 or away_rows.player_id.nunique() != 5:
-                    continue
-                if len(home_rows) != 5 or len(away_rows) != 5:
-                    continue
-                left = int(np.searchsorted(ev_times, float(start), side="right"))
-                right = int(np.searchsorted(ev_times, float(end), side="right"))
-                hp = int((ev_home[right - 1] if right else 0) - (ev_home[left - 1] if left else 0))
-                ap = int((ev_away[right - 1] if right else 0) - (ev_away[left - 1] if left else 0))
-                poss = avg_poss * duration / total_seconds
-                if poss < 0.10:
-                    continue
-                hline = tuple(sorted(home_rows.player_id.astype(str)))
-                aline = tuple(sorted(away_rows.player_id.astype(str)))
-                margin = hp - ap
-                for row in active.itertuples():
-                    key = (int(row.period), str(row.team_id), str(row.player_id), float(row.in_time), float(row.out_time))
-                    pm_accum[key] += margin if str(row.team_id) == home_id else -margin
-                game_segments.append({
-                    "season": int(info["season"]), "game_id": gid, "game_date": info["game_date"],
-                    "home_team_id": home_id, "away_team_id": away_id,
-                    "home_lineup": hline, "away_lineup": aline,
-                    "home_pts": hp, "away_pts": ap, "poss": float(poss),
-                    "home_flag": 0 if bool(info.get("neutral_site", False)) else 1,
-                })
-                score_sums[home_id] += hp
-                score_sums[away_id] += ap
+        # Stints are global elapsed-game intervals and can cross period breaks.
+        # Do not group them by the period in which each stint started.
+        boundaries = sorted(set(rgame.in_time.astype(float)) | set(rgame.out_time.astype(float)))
+        for start, end in zip(boundaries[:-1], boundaries[1:]):
+            duration = float(end - start)
+            if duration <= 0.5:
+                continue
+            active = rgame[
+                (rgame.in_time.astype(float) <= float(start) + 1e-6)
+                & (rgame.out_time.astype(float) >= float(end) - 1e-6)
+            ]
+            home_rows = active[active.team_id.astype(str) == home_id]
+            away_rows = active[active.team_id.astype(str) == away_id]
+            if home_rows.player_id.nunique() != 5 or away_rows.player_id.nunique() != 5:
+                continue
+            if len(home_rows) != 5 or len(away_rows) != 5:
+                continue
+            left = int(np.searchsorted(ev_times, float(start), side="right"))
+            right = int(np.searchsorted(ev_times, float(end), side="right"))
+            hp = int((ev_home[right - 1] if right else 0) - (ev_home[left - 1] if left else 0))
+            ap = int((ev_away[right - 1] if right else 0) - (ev_away[left - 1] if left else 0))
+            poss = avg_poss * duration / total_seconds
+            if poss < 0.10:
+                continue
+            hline = tuple(sorted(home_rows.player_id.astype(str)))
+            aline = tuple(sorted(away_rows.player_id.astype(str)))
+            margin = hp - ap
+            for row in active.itertuples():
+                key = (int(row.period), str(row.team_id), str(row.player_id), float(row.in_time), float(row.out_time))
+                pm_accum[key] += margin if str(row.team_id) == home_id else -margin
+            game_segments.append({
+                "season": int(info["season"]), "game_id": gid, "game_date": info["game_date"],
+                "home_team_id": home_id, "away_team_id": away_id,
+                "home_lineup": hline, "away_lineup": aline,
+                "home_pts": hp, "away_pts": ap, "poss": float(poss),
+                "home_flag": 0 if bool(info.get("neutral_site", False)) else 1,
+            })
+            score_sums[home_id] += hp
+            score_sums[away_id] += ap
 
         expected_scores = score_map.get(gid, {})
         if not game_segments:
