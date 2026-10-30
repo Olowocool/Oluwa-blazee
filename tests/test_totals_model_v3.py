@@ -113,6 +113,30 @@ def test_pregame_ratings_exclude_target_day_and_future_games():
     assert from_full["teams"] == from_strict["teams"]
 
 
+def test_prepared_log_fast_path_matches_full_preparation():
+    prior_season = make_raw_games(
+        start_date="2020-10-20", count=24, season_id="22020"
+    )
+    current_season = make_raw_games(
+        start_date="2021-10-20", count=18, season_id="22021"
+    )
+    raw = pd.concat([prior_season, current_season], ignore_index=True)
+    prepared = prepare_team_game_logs(raw)
+    target_date = "2021-12-15"
+
+    normal = estimate_pregame_ratings(prepared, target_date)
+    fast = estimate_pregame_ratings(
+        prepared, target_date, prepared_logs=True
+    )
+
+    assert normal["history_rows_used"] == fast["history_rows_used"]
+    assert normal["teams"] == fast["teams"]
+    assert normal["league_efficiency"] == fast["league_efficiency"]
+    assert normal["league_pace"] == fast["league_pace"]
+    assert normal["shot_betas"] == fast["shot_betas"]
+    assert normal["schedule_betas"] == fast["schedule_betas"]
+
+
 def test_v3_prediction_is_finite_and_team_points_sum_to_total():
     prior_season = make_raw_games(
         start_date="2020-10-20", count=24, season_id="22020"
