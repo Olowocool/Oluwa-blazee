@@ -282,3 +282,21 @@ def test_wide_game_csv_excludes_playoffs_and_preseason():
 
     assert set(logs["game_id"]) == {"reg"}
     assert len(logs) == 2
+
+
+def test_v3_diagnostics_can_skip_duplicate_v2_benchmark():
+    raw = make_raw_games(
+        start_date="2020-10-20", count=38, season_id="22020"
+    )
+    results, summary = run_walk_forward_backtest(
+        raw,
+        max_games=12,
+        min_prior_team_rows=20,
+        include_v2_benchmark=False,
+    )
+
+    assert summary["v2_benchmark_included"] is False
+    assert summary["v2_mean_absolute_error_same_games"] is None
+    assert results["v2_projected_total"].isna().all()
+    assert "pace_error" in results.columns
+    assert "efficiency_error" in results.columns
