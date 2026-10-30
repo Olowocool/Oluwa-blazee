@@ -50,11 +50,12 @@ league-efficiency level before being blended with current-season ratings.
 
 Run locally or in CI:
 
-`python totals_model_v3.py --input data/game.csv --output outputs/research/totals_v3 --max-games 500 --min-prior-team-rows 500`
+`python totals_model_v3.py --input data/game.csv --output outputs/research/totals_v3 --max-games 1500 --min-prior-team-rows 500 --skip-v2-benchmark`
 
-The walk-forward script compares V3 with the existing Points Engine V2 on the
-same target games. It reports MAE, RMSE, bias and the proportion of forecasts
-within 5 and 10 points. It is a score-prediction test, not a betting ROI test.
+The walk-forward script reports MAE, RMSE, bias, within-5/within-10 accuracy,
+and pace/efficiency diagnostics. When enabled, it can compare V3 with the
+existing Points Engine V2 on exactly the same target games. It is a
+score-prediction test, not a betting ROI test.
 
 ## First same-game comparison against V2
 
@@ -141,14 +142,25 @@ There is no same-window 1,500-game V2 benchmark in this run, so these figures
 must not be presented as a 1,500-game improvement over V2. The same-game V2
 comparison remains the 500-game result above.
 
+## V3.2 shot-profile experiment
+
+V3.2 adds four pregame, possession-adjusted shot-volume features to the Ridge
+efficiency fit: the team's 3PA/FGA rate, its FTA/FGA rate, and the opponent
+attempt rates allowed by that team's defence. Team rates use the recent
+25-game sample and prior-season shrinkage. League rates use the same
+eight-season/current-season baseline blend as V3.1.
+
+No three-point percentage, field-goal percentage, or free-throw percentage is
+used. The model estimates effects on points per 100 possessions and converts
+them to points using expected game pace. This is an offline feature experiment;
+its value must be demonstrated on the same 1,500 chronological games before it
+is considered further.
+
 ## Not yet included
 
 - Market opening/closing totals and market-residual calibration. Historical
   timestamped market coverage is not yet sufficient for this full sample.
 - Player availability, expected lineups, minutes, on/off, RAPM or EPM.
-- Three-point attempt and free-throw rates as predictive features. The raw
-  columns are retained by the importer for the next feature-development stage,
-  but are not yet used to alter the V3 projection.
 - Back-to-backs, 3-in-4, travel, altitude, spread/blowout risk, and referee crews.
 
 Do not use the V3 projection for betting or replace the live V2 model until
