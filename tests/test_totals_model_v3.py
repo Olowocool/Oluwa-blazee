@@ -168,6 +168,8 @@ def test_walk_forward_backtest_produces_chronological_records():
 
     assert len(results) > 0
     assert summary["test_games"] == len(results)
+    assert "v2_projected_total" in results.columns
+    assert "v2_mean_absolute_error_same_games" in summary
     assert (results["absolute_error"] >= 0).all()
     assert (pd.to_datetime(results["game_date"]) > pd.Timestamp("2020-10-20")).all()
 
