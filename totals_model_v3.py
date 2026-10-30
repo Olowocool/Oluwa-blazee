@@ -363,6 +363,12 @@ def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
         out["fta"] / out["fga"].where(out["fga"] > 0)
     ).where(lambda values: values.between(0.0, 1.5))
 
+    # Rebuilding already-normalized team logs is supported; remove any
+    # previously derived opponent columns before joining them again.
+    out = out.drop(
+        columns=["opponent_three_pa_rate", "opponent_free_throw_rate"],
+        errors="ignore",
+    )
     opponent_profile = out[
         ["game_id", "team_name", "three_pa_rate", "free_throw_rate"]
     ].rename(columns={
