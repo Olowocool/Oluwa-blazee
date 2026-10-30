@@ -633,6 +633,7 @@ def _blend_value(current: float | None, prior: float | None, current_games: int,
 def estimate_pregame_ratings(
     prior_logs: pd.DataFrame, target_date: Any,
     include_schedule_features: bool = True,
+    prepared_logs: bool = False,
 ) -> dict[str, Any]:
     """Estimate opponent-adjusted ratings using only games before target_date."""
     target = pd.to_datetime(target_date, errors="coerce")
@@ -640,7 +641,28 @@ def estimate_pregame_ratings(
         raise ValueError(f"Invalid target date: {target_date!r}")
     target = target.normalize()
 
-    history = prepare_team_game_logs(prior_logs)
+    if prepared_logs:
+        required_prepared = (
+            NORMALIZED_COLUMNS
+            | {"points_per_100", "game_pace"}
+            | set(SHOT_PROFILE_COLUMNS)
+            | set(SCHEDULE_FEATURE_COLUMNS)
+        )
+        if not required_prepared.issubset(set(prior_logs.columns)):
+            missing = sorted(required_prepared.difference(set(prior_logs.columns)))
+            raise ValueError(
+                "prepared_logs=True requires fully prepared team-game logs; "
+                f"missing columns: {missing}"
+            )
+        # The walk-forward runner already prepared these logs once. In
+        # particular, schedule features were built from strictly prior dates.
+        # Reusing them avoids rebuilding opponent links and schedule history
+        # for every test date without changing the information available.
+        history = prior_logs.copy()
+        history["game_date"] = pd.to_datetime(history["game_date"], errors="coerce")
+        history["season"] = pd.to_numeric(history["season"], errors="coerce")
+    else:
+        history = prepare_team_game_logs(prior_logs)
     history = history.loc[history["game_date"] < target].copy()
     if history.empty:
         raise ValueError("No games exist strictly before the target date.")
@@ -1068,10 +1090,12 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
         # All games on a calendar date share the same pregame information.
         # Fit the team ratings once per date, not once per matchup.
         date_ratings = estimate_pregame_ratings(
-            prior, game_date, include_schedule_features=True
+            prior, game_date, include_schedule_features=True, prepared_logs=True
         )
         date_ratings_v3_2 = (
-            estimate_pregame_ratings(prior, game_date, include_schedule_features=False)
+            estimate_pregame_ratings(
+                prior, game_date, include_schedule_features=False, prepared_logs=True
+            )
             if include_v3_2_ablation else None
         )
         prior_scores = score_history.loc[score_history["game_date"] < game_date].copy()
