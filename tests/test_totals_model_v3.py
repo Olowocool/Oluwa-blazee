@@ -152,7 +152,7 @@ def test_v3_prediction_is_finite_and_team_points_sum_to_total():
         logs, "Team A", "Team B", "2021-12-15"
     )
 
-    assert prediction["model_version"] == "totals-v3.3-possession-ridge-shot-schedule"
+    assert prediction["model_version"] == "totals-v3.3.1-possession-ridge-shot-schedule-reset"
     assert pd.notna(prediction["home_shot_profile_adjustment"])
     assert pd.notna(prediction["away_shot_profile_adjustment"])
     assert set(prediction["shot_profile_betas"]) == {
@@ -546,6 +546,47 @@ def test_schedule_feature_preparation_is_idempotent():
         )
 
 
+def test_schedule_features_reset_at_season_boundary_and_cap_extended_rest():
+    prior_season = make_raw_games(
+        start_date="2025-04-10", count=1, season_id="22024"
+    )
+    season_opener = make_raw_games(
+        start_date="2025-10-21", count=1, season_id="22025"
+    )
+    after_long_break = make_raw_games(
+        start_date="2025-10-30", count=1, season_id="22025"
+    )
+    logs = prepare_team_game_logs(
+        pd.concat([prior_season, season_opener, after_long_break], ignore_index=True)
+    )
+
+    opener_rows = logs.loc[logs["game_date"] == pd.Timestamp("2025-10-21")]
+    assert set(opener_rows["rest_days"]) == {2.0}
+    assert set(opener_rows["back_to_back"]) == {0.0}
+    assert set(opener_rows["three_in_four"]) == {0.0}
+
+    long_break_rows = logs.loc[logs["game_date"] == pd.Timestamp("2025-10-30")]
+    assert set(long_break_rows["rest_days"]) == {3.0}
+    assert set(long_break_rows["back_to_back"]) == {0.0}
+    assert set(long_break_rows["three_in_four"]) == {0.0}
+
+    old_season_only = logs.loc[logs["game_date"] < pd.Timestamp("2025-10-21")]
+    opener_state = calculate_team_schedule_state(
+        old_season_only, "Team A", "2025-10-21"
+    )
+    assert opener_state == {
+        "rest_days": 2.0, "back_to_back": 0.0, "three_in_four": 0.0
+    }
+
+    prior_to_long_break = logs.loc[logs["game_date"] < pd.Timestamp("2025-10-30")]
+    long_break_state = calculate_team_schedule_state(
+        prior_to_long_break, "Team A", "2025-10-30"
+    )
+    assert long_break_state == {
+        "rest_days": 3.0, "back_to_back": 0.0, "three_in_four": 0.0
+    }
+
+
 def test_v3_2_ablation_removes_only_schedule_adjustment():
     prior_season = make_raw_games(
         start_date="2020-10-20", count=24, season_id="22020"
@@ -565,5 +606,5 @@ def test_v3_2_ablation_removes_only_schedule_adjustment():
     assert v3_2["model_version"] == "totals-v3.2-possession-ridge-shot-profile"
     assert v3_2["home_schedule_adjustment"] == 0.0
     assert v3_2["away_schedule_adjustment"] == 0.0
-    assert v3_3["model_version"] == "totals-v3.3-possession-ridge-shot-schedule"
+    assert v3_3["model_version"] == "totals-v3.3.1-possession-ridge-shot-schedule-reset"
     assert v3_3["expected_possessions"] == v3_2["expected_possessions"]
