@@ -586,7 +586,11 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, team_hist, playe
         if tid == team_id and first < game_date
     }
     team_reports = report_rows[report_rows.team_id == team_id]
-    candidate_ids.update(team_reports.player_id.astype(str).tolist())
+    reported_ids = set(team_reports.player_id.astype(str).tolist())
+    reported_without_team_history = sum(
+        1 for pid in reported_ids if not team_hist.get((team_id, pid), [])
+    )
+    candidate_ids.update(reported_ids)
     estimates = {}
     for pid in list(candidate_ids):
         all_hist = player_hist.get(pid, [])
@@ -641,6 +645,7 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, team_hist, playe
         "minutes_changed": float(np.abs(d.expected_minutes - d.baseline_minutes).sum() / 2.0),
         "reported_out_minutes": float(d.loc[d.status == "OUT", "baseline_minutes"].sum()),
         "questionable_minutes": float(d.loc[d.status.isin(["QUESTIONABLE", "DOUBTFUL"]), "baseline_minutes"].sum()),
+        "reported_players_without_prior_team_history": int(reported_without_team_history),
     }
     actual = d.actual_minutes.to_numpy(dtype=float)
     # Normalize actual minutes using the entire team's recorded minutes (including
@@ -765,6 +770,8 @@ def main():
             "away_reported_out_minutes": afeat["reported_out_minutes"],
             "home_questionable_minutes": hfeat["questionable_minutes"],
             "away_questionable_minutes": afeat["questionable_minutes"],
+            "home_reported_players_without_prior_team_history": hfeat["reported_players_without_prior_team_history"],
+            "away_reported_players_without_prior_team_history": afeat["reported_players_without_prior_team_history"],
         })
         for team_side, frame in (("home", hmins), ("away", amins)):
             frame = frame.copy()
@@ -908,6 +915,7 @@ def main():
         "notes": [
             "OpenRAPM's currently published historical ratings are rebuilt as a single current version across seasons; they were not used as historical pregame features.",
             "Player ratings here are recomputed from lineup stints and scoring events using only prior-season and current-season-to-date games.",
+            "Players reported for a new team without prior team-specific rotation history are excluded from projected rotations rather than carrying former-team minutes across a trade; exclusion counts are retained in game features.",
             "Each injury snapshot is captured at or before 10:00 a.m. ET on the game date; incomplete reports are excluded, never treated as all players available.",
             "The official injury report status is converted to an appearance probability using only earlier report-to-game outcomes; unreported players are assumed available.",
             "Projected minutes are recent player-team rotation minutes, shrunk for short histories, then rescaled to 240 regulation minutes; actual candidate minutes are normalized against all team players so omitted-player minutes remain visible in coverage diagnostics.",
