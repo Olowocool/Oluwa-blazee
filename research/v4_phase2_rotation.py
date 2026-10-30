@@ -525,7 +525,7 @@ def map_injury_rows(raw_reports, games, player_names, team_names):
                 if len(ids) == 1:
                     player_id = ids[0]
         if player_id is None:
-            unmatched.append({"game_date": str(gd.date()), "team": str(row.Team), "player": raw_name, "reason": "player_unmatched"})
+            unmatched.append({"game_date": str(gd.date()), "team": team_name, "player": raw_name, "reason": "player_unmatched"})
             continue
         status = status_value.strip().upper()
         if status not in STATUS_PRIORS:
