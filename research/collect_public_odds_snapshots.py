@@ -131,7 +131,7 @@ def table_for_heading(heading):
             break
         if node.name == "table":
             return node
-    raise ValueError(f"No odds table found after game heading {heading.get_text(' ', strip=True)!r}.")
+    return None
 
 
 def start_label_for_heading(heading) -> str:
@@ -169,6 +169,7 @@ def parse_odds_page(
     rows: list[dict[str, str]] = []
     skipped = 0
     games_seen = 0
+    games_without_odds_table = 0
     for heading in soup.find_all(["h2", "h3"]):
         matchup = " ".join(heading.stripped_strings)
         if " at " not in matchup:
@@ -178,7 +179,11 @@ def parse_odds_page(
             raise ValueError(f"Invalid matchup heading: {matchup!r}")
         commence = parse_game_start(start_label_for_heading(heading), asof)
         game_date = commence.astimezone(EASTERN).date().isoformat()
+        games_seen += 1
         table = table_for_heading(heading)
+        if table is None:
+            games_without_odds_table += 1
+            continue
         table_rows = table.find_all("tr")
         if len(table_rows) < 2:
             continue
@@ -193,7 +198,6 @@ def parse_odds_page(
         home_abbrev = normalized[spread_idx].split()[0]
         home_ml_idx = next((i for i in ml_indices if normalized[i].split()[0] == home_abbrev), ml_indices[-1])
         away_ml_idx = next(i for i in ml_indices if i != home_ml_idx)
-        games_seen += 1
 
         for tr in table_rows[1:]:
             cells = [" ".join(c.stripped_strings).strip() for c in tr.find_all(["td", "th"])]
@@ -239,6 +243,7 @@ def parse_odds_page(
         "observed_at_utc": utc_iso(now),
         "page_age_minutes": round(age, 2),
         "games_seen": games_seen,
+        "games_without_odds_table": games_without_odds_table,
         "bookmaker_rows_parsed": len(rows),
         "bookmaker_rows_skipped_incomplete": skipped,
         "unique_games": len({r["game_key"] for r in rows}),
