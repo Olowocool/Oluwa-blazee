@@ -81,6 +81,102 @@ def _season_number(value: Any, game_date: pd.Timestamp) -> int:
     return _season_from_date(game_date)
 
 
+
+def _prepare_home_away_game_csv(df: pd.DataFrame) -> pd.DataFrame:
+    """Expand the repository's one-row-per-game, home/away box-score layout."""
+    game_id_col = _first_column(df, ("game_id", "GAME_ID"))
+    date_col = _first_column(df, ("game_date", "GAME_DATE", "date"))
+    season_col = _first_column(df, ("season_id", "SEASON_ID", "season"))
+    home_team_col = _first_column(df, ("team_name_home", "home_team"))
+    away_team_col = _first_column(df, ("team_name_away", "away_team"))
+    season_type_col = _first_column(df, ("season_type", "game_type"))
+    if not all((game_id_col, date_col, home_team_col, away_team_col)):
+        raise ValueError("Wide game logs are missing game/date/home-team/away-team columns.")
+
+    work = pd.DataFrame({
+        "game_id": df[game_id_col].astype(str).str.strip(),
+        "game_date": pd.to_datetime(df[date_col], errors="coerce"),
+        "home_team": df[home_team_col].astype(str).str.strip().map(normalize_team_name),
+        "away_team": df[away_team_col].astype(str).str.strip().map(normalize_team_name),
+    })
+    if season_col:
+        season_values = df[season_col].reset_index(drop=True)
+        work["season"] = [
+            _season_number(value, game_date) if pd.notna(game_date) else np.nan
+            for value, game_date in zip(season_values, work["game_date"])
+        ]
+    else:
+        work["season"] = work["game_date"].map(
+            lambda value: _season_from_date(value) if pd.notna(value) else np.nan
+        )
+
+    if season_type_col:
+        season_type = df[season_type_col].astype(str).str.casefold()
+        regular = season_type.str.contains(
+            r"regular|^reg$|regular_season", regex=True, na=False
+        )
+        # Do not discard unfamiliar but non-empty season labels without checking.
+        if regular.any():
+            work = work.loc[regular].copy()
+            df = df.loc[regular].copy()
+    elif season_col:
+        season_ids = df[season_col].astype(str).str.strip()
+        regular = season_ids.str.startswith("2")
+        work = work.loc[regular].copy()
+        df = df.loc[regular].copy()
+
+    expanded = []
+    for side, other_side, is_home in (
+        ("home", "away", True),
+        ("away", "home", False),
+    ):
+        def field(base: str) -> pd.Series:
+            col = _first_column(df, (f"{base}_{side}",))
+            if col is None:
+                return pd.Series(np.nan, index=df.index)
+            return _numeric(df[col]).reset_index(drop=True)
+
+        fga = field("fga")
+        fta = field("fta")
+        oreb = field("oreb")
+        tov = field("tov")
+        formula = fga + 0.44 * fta - oreb + tov
+        formula_valid = (
+            fga.notna() & fta.notna() & oreb.notna() & tov.notna()
+            & formula.between(50, 150)
+        )
+        poss_col = _first_column(df, (f"poss_{side}",))
+        supplied_poss = (
+            _numeric(df[poss_col]).reset_index(drop=True)
+            if poss_col else pd.Series(np.nan, index=work.index)
+        )
+        points_col = _first_column(df, (f"pts_{side}", f"points_{side}"))
+        if points_col is None:
+            raise ValueError(f"Wide game logs are missing points_{side}.")
+        points = _numeric(df[points_col]).reset_index(drop=True)
+        row = pd.DataFrame({
+            "game_id": work["game_id"].reset_index(drop=True),
+            "game_date": work["game_date"].reset_index(drop=True),
+            "season": work["season"].reset_index(drop=True),
+            "team_name": work[f"{side}_team"].reset_index(drop=True),
+            "opponent_name": work[f"{other_side}_team"].reset_index(drop=True),
+            "points": points,
+            "possessions": np.where(
+                formula_valid.to_numpy(), formula.to_numpy(), supplied_poss.to_numpy()
+            ),
+            "is_home": is_home,
+            "possessions_source": np.where(
+                formula_valid.to_numpy(), "box_score_formula", "source_poss_fallback"
+            ),
+            "fga": fga.to_numpy(),
+            "fta": fta.to_numpy(),
+            "oreb": oreb.to_numpy(),
+            "tov": tov.to_numpy(),
+            "fg3a": field("fg3a").to_numpy(),
+        })
+        expanded.append(row)
+    return pd.concat(expanded, ignore_index=True)
+
 def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
     """Convert raw NBA team-game box scores into one row per team per game.
 
@@ -94,6 +190,11 @@ def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
     df = raw_df.copy()
     if NORMALIZED_COLUMNS.issubset(set(df.columns)):
         out = df.copy()
+    elif (
+        _first_column(df, ("team_name_home", "home_team"))
+        and _first_column(df, ("team_name_away", "away_team"))
+    ):
+        out = _prepare_home_away_game_csv(df)
         out["game_date"] = pd.to_datetime(out["game_date"], errors="coerce")
         out["season"] = pd.to_numeric(out["season"], errors="coerce")
         out["points"] = _numeric(out["points"])
