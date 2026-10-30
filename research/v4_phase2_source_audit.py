@@ -61,7 +61,7 @@ def main():
             ).fetchdf()
             cols = schema[["column_name", "column_type"]].to_dict("records")
             item = {"columns": cols, "season_range_requested": [first, last], "metadata": meta}
-            if table in {"player_game_logs", "player_season_stats", "openrapm"}:
+            if table in {"player_game_logs", "player_season_stats", "openrapm", "game_rotations"}:
                 item["coverage"] = con.execute(
                     f"SELECT min(season) AS first_season, max(season) AS last_season, "
                     f"count(*) AS rows, count(DISTINCT player_id) AS players "
@@ -72,6 +72,20 @@ def main():
                     f"SELECT * FROM read_parquet({array}, hive_partitioning=true, "
                     "hive_types={'season': INTEGER}, union_by_name=true) LIMIT 3"
                 ).fetchdf().to_dict("records")
+                if table == "game_rotations":
+                    item["stint_group_audit"] = con.execute(
+                        f"WITH r AS (SELECT * FROM read_parquet({array}, hive_partitioning=true, "
+                        "hive_types={'season': INTEGER}, union_by_name=true)), "
+                        "s AS (SELECT season, game_id, period, in_time, out_time, "
+                        "count(*) AS player_rows, count(DISTINCT team_id) AS teams, "
+                        "count(DISTINCT player_id) AS players, "
+                        "bool_and(matches_box_score) AS all_match "
+                        "FROM r GROUP BY ALL) "
+                        "SELECT count(*) AS stint_groups, count(DISTINCT game_id) AS games, "
+                        "sum(CASE WHEN player_rows=10 AND teams=2 AND players=10 THEN 1 ELSE 0 END) AS exact_10_player_groups, "
+                        "sum(CASE WHEN all_match THEN 1 ELSE 0 END) AS all_boxscore_matched_groups "
+                        "FROM s"
+                    ).fetchdf().to_dict("records")[0]
             result["tables"][table] = item
         except Exception as exc:
             result["tables"][table] = {"error": f"{type(exc).__name__}: {exc}", "metadata": meta}
