@@ -22,7 +22,7 @@ import pandas as pd
 from team_name_utils import normalize_team_name
 from points_engine import calculate_matchup_points
 
-MODEL_VERSION = "totals-v3-possession-ridge"
+MODEL_VERSION = "totals-v3.1-possession-ridge-season-baseline"
 SEASONS_TO_KEEP = 8
 RECENT_TEAM_GAMES = 25
 PACE_TEAM_GAMES = 20
