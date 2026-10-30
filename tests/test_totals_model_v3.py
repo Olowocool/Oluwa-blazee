@@ -99,7 +99,7 @@ def test_pregame_ratings_exclude_target_day_and_future_games():
         start_date="2021-10-20", count=16, season_id="22021"
     )
     raw = pd.concat([prior_season, current_season], ignore_index=True)
-    target_date = pd.Timestamp("2021-11-14")
+    target_date = pd.Timestamp("2021-11-13")
 
     full_logs = prepare_team_game_logs(raw)
     strict_logs = full_logs.loc[full_logs["game_date"] < target_date].copy()
