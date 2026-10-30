@@ -11,6 +11,9 @@ on:
       - "tests/test_totals_tracker_idempotency.py"
       - "totals_forward_paper_trading.py"
       - "live_totals_market_snapshots.py"
+      - "live_totals_market_collector.py"
+      - "requirements-collector.txt"
+      - "tests/test_live_totals_market_collector.py"
       - "durable_totals_storage.py"
       - "tests/test_totals_result_grader.py"
       - "tests/test_totals_forward_paper_trading.py"
@@ -49,6 +52,8 @@ jobs:
             totals_result_grader.py \
             totals_forward_paper_trading.py \
             live_totals_market_snapshots.py \
+            live_totals_market_collector.py \
+            tests/test_live_totals_market_collector.py \
             durable_totals_storage.py \
             tests/test_totals_tracker_idempotency.py \
             tests/test_totals_result_grader.py \
@@ -67,3 +72,6 @@ jobs:
 
       - name: Test append-only live market snapshots
         run: python -m unittest discover -s tests -p "test_live_totals_market_snapshots.py" -v
+
+      - name: Test scheduled market collector
+        run: python -m unittest discover -s tests -p "test_live_totals_market_collector.py" -v
