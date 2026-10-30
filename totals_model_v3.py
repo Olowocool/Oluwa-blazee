@@ -115,10 +115,14 @@ def _prepare_home_away_game_csv(df: pd.DataFrame) -> pd.DataFrame:
         regular = season_type.str.contains(
             r"regular|^reg$|regular_season", regex=True, na=False
         )
-        # Do not discard unfamiliar but non-empty season labels without checking.
-        if regular.any():
-            work = work.loc[regular].copy()
-            df = df.loc[regular].copy()
+        if not regular.any():
+            labels = sorted(season_type.dropna().unique().tolist())
+            raise ValueError(
+                "Could not identify regular-season rows from season_type; "
+                f"observed labels: {labels[:12]}"
+            )
+        work = work.loc[regular].copy()
+        df = df.loc[regular].copy()
     elif season_col:
         season_ids = df[season_col].astype(str).str.strip()
         regular = season_ids.str.startswith("2")
