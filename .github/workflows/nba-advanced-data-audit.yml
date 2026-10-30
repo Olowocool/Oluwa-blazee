@@ -39,12 +39,60 @@ jobs:
 
           OUT = Path("outputs/research/nba_advanced_data_audit")
           OUT.mkdir(parents=True, exist_ok=True)
-          CATALOG = "https://basketball-data.billmill.org/nba/nba.duckdb"
+          BASE = "https://basketball-data.billmill.org"
+          CATALOG = BASE + "/nba/metadata.json"
 
           con = duckdb.connect()
           con.execute("INSTALL httpfs")
           con.execute("LOAD httpfs")
-          con.execute(f"ATTACH '{CATALOG}' AS nba")
+
+          # Read the published metadata and season-partitioned Parquet files
+          # directly. The hosted DuckDB catalog has a WAL object that denies
+          # public reads, while the data files themselves are public.
+          from urllib.request import urlopen
+          metadata_doc = json.loads(urlopen(CATALOG, timeout=60).read().decode("utf-8"))
+          dataset_meta = metadata_doc["datasets"]
+          required_datasets = ("team_game_logs", "games", "team_seasons")
+          metadata_rows = []
+
+          con.execute("CREATE SCHEMA nba")
+          for dataset in required_datasets:
+              if dataset not in dataset_meta:
+                  raise RuntimeError(f"Dataset missing from metadata.json: {dataset}")
+              info = dataset_meta[dataset]
+              first = int(info["first_season"])
+              last = int(info["last_season"])
+              count = int(info["seasons"])
+              seasons = list(range(first, last + 1))
+              if len(seasons) != count:
+                  raise RuntimeError(
+                      f"{dataset}: metadata reports {count} seasons but {first}-{last} "
+                      f"implies {len(seasons)}; refusing to guess missing seasons."
+                  )
+              urls = [
+                  f"{BASE}/nba/stats/{dataset}/season={season}/data.parquet"
+                  for season in seasons
+              ]
+              url_list = ", ".join("'" + u + "'" for u in urls)
+              con.execute(
+                  f"CREATE VIEW nba.{dataset} AS "
+                  f"SELECT * FROM read_parquet([{url_list}], "
+                  "hive_partitioning=true, "
+                  "hive_types={'season': INTEGER}, "
+                  "union_by_name=true)"
+              )
+              metadata_rows.append({
+                  "dataset": dataset,
+                  "source": info.get("source"),
+                  "first_season": first,
+                  "last_season": last,
+                  "seasons": count,
+                  "updated": info.get("updated"),
+              })
+
+          metadata_source = pd.DataFrame(metadata_rows)
+          con.register("metadata_source", metadata_source)
+          con.execute("CREATE TABLE nba.metadata AS SELECT * FROM metadata_source")
 
           def query(sql):
               return con.execute(sql).fetchdf()
