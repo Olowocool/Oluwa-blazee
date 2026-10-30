@@ -322,3 +322,26 @@ def test_precomputed_pregame_ratings_match_direct_prediction():
 
     assert direct["projected_total"] == reused["projected_total"]
     assert direct["expected_possessions"] == reused["expected_possessions"]
+
+
+def test_league_baseline_blends_from_eight_seasons_to_current_season():
+    prior = make_raw_games(
+        start_date="2020-10-20", count=24, season_id="22020"
+    )
+    current = make_raw_games(
+        start_date="2021-10-20", count=20, season_id="22021"
+    )
+    current["PTS"] = current["PTS"] + 12
+    logs = prepare_team_game_logs(
+        pd.concat([prior, current], ignore_index=True)
+    )
+
+    early = estimate_pregame_ratings(logs, "2021-10-24")
+    mature = estimate_pregame_ratings(logs, "2021-12-01")
+
+    assert abs(early["league_season_blend_weight"] - 0.10) < 1e-9
+    assert mature["league_season_blend_weight"] == 1.0
+    assert abs(
+        mature["league_efficiency"] - mature["league_efficiency_current"]
+    ) < 1e-9
+    assert mature["league_efficiency"] > early["league_efficiency"]
