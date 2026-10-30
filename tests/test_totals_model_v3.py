@@ -1,6 +1,7 @@
 import pandas as pd
 
 from totals_model_v3 import (
+    calculate_team_schedule_state,
     estimate_pregame_ratings,
     predict_game_total_v3,
     prepare_team_game_logs,
@@ -127,7 +128,7 @@ def test_v3_prediction_is_finite_and_team_points_sum_to_total():
         logs, "Team A", "Team B", "2021-12-15"
     )
 
-    assert prediction["model_version"] == "totals-v3.2-possession-ridge-shot-profile"
+    assert prediction["model_version"] == "totals-v3.3-possession-ridge-shot-schedule"
     assert pd.notna(prediction["home_shot_profile_adjustment"])
     assert pd.notna(prediction["away_shot_profile_adjustment"])
     assert set(prediction["shot_profile_betas"]) == {
@@ -177,6 +178,9 @@ def test_walk_forward_backtest_produces_chronological_records():
     assert len(results) > 0
     assert summary["test_games"] == len(results)
     assert "v2_projected_total" in results.columns
+    assert "v3_2_projected_total" in results.columns
+    assert "v3_2_mean_absolute_error_same_games" in summary
+    assert "home_schedule_adjustment" in results.columns
     assert "v2_mean_absolute_error_same_games" in summary
     assert "pace_error" in results.columns
     assert "efficiency_error" in results.columns
@@ -434,3 +438,108 @@ def test_preparing_team_logs_twice_preserves_shot_profile_columns():
             twice[column].reset_index(drop=True),
             check_names=False,
         )
+
+
+
+def make_compressed_schedule_games():
+    rows = []
+    for index, game_date in enumerate(("2021-10-01", "2021-10-02", "2021-10-04")):
+        rows.extend([
+            {
+                "GAME_ID": f"schedule-{index}",
+                "GAME_DATE": game_date,
+                "SEASON_ID": "22021",
+                "TEAM_NAME": "Team A",
+                "MATCHUP": "Team A vs. Team B",
+                "PTS": 110 + index,
+                "FGA": 88,
+                "FTA": 20,
+                "OREB": 10,
+                "TOV": 12,
+                "FG3A": 35,
+            },
+            {
+                "GAME_ID": f"schedule-{index}",
+                "GAME_DATE": game_date,
+                "SEASON_ID": "22021",
+                "TEAM_NAME": "Team B",
+                "MATCHUP": "Team B @ Team A",
+                "PTS": 105 + index,
+                "FGA": 86,
+                "FTA": 18,
+                "OREB": 9,
+                "TOV": 13,
+                "FG3A": 33,
+            },
+        ])
+    return pd.DataFrame(rows)
+
+
+def test_schedule_features_capture_rest_back_to_back_and_three_in_four():
+    logs = prepare_team_game_logs(make_compressed_schedule_games())
+    team_a = logs.loc[logs["team_name"] == "Team A"].sort_values("game_date")
+
+    second_game = team_a.iloc[1]
+    third_game = team_a.iloc[2]
+    assert second_game["rest_days"] == 0
+    assert second_game["back_to_back"] == 1
+    assert second_game["three_in_four"] == 0
+    assert third_game["rest_days"] == 1
+    assert third_game["back_to_back"] == 0
+    assert third_game["three_in_four"] == 1
+
+
+def test_target_schedule_state_uses_only_prior_dates():
+    logs = prepare_team_game_logs(make_compressed_schedule_games())
+    state = calculate_team_schedule_state(logs, "Team A", "2021-10-05")
+    assert state == {"rest_days": 0.0, "back_to_back": 1.0, "three_in_four": 1.0}
+
+    target_day_row = make_raw_games(
+        start_date="2021-10-05", count=1, season_id="22021"
+    )
+    with_target = pd.concat([make_compressed_schedule_games(), target_day_row], ignore_index=True)
+    with_future = pd.concat([
+        with_target,
+        make_raw_games(start_date="2021-10-07", count=1, season_id="22021"),
+    ], ignore_index=True)
+    from_target = calculate_team_schedule_state(
+        prepare_team_game_logs(with_target), "Team A", "2021-10-05"
+    )
+    from_future = calculate_team_schedule_state(
+        prepare_team_game_logs(with_future), "Team A", "2021-10-05"
+    )
+    assert from_target == from_future == state
+
+
+def test_schedule_feature_preparation_is_idempotent():
+    once = prepare_team_game_logs(make_compressed_schedule_games())
+    twice = prepare_team_game_logs(once)
+    for column in ("rest_days", "back_to_back", "three_in_four"):
+        pd.testing.assert_series_equal(
+            once[column].reset_index(drop=True),
+            twice[column].reset_index(drop=True),
+            check_names=False,
+        )
+
+
+def test_v3_2_ablation_removes_only_schedule_adjustment():
+    prior_season = make_raw_games(
+        start_date="2020-10-20", count=24, season_id="22020"
+    )
+    current_season = make_raw_games(
+        start_date="2021-10-20", count=18, season_id="22021"
+    )
+    logs = prepare_team_game_logs(
+        pd.concat([prior_season, current_season], ignore_index=True)
+    )
+    v3_3 = predict_game_total_v3(logs, "Team A", "Team B", "2021-12-15")
+    v3_2 = predict_game_total_v3(
+        logs, "Team A", "Team B", "2021-12-15",
+        include_schedule_features=False,
+    )
+
+    assert v3_2["model_version"] == "totals-v3.2-possession-ridge-shot-profile"
+    assert v3_2["home_schedule_adjustment"] == 0.0
+    assert v3_2["away_schedule_adjustment"] == 0.0
+    assert v3_3["model_version"] == "totals-v3.3-possession-ridge-shot-schedule"
+    assert v3_3["expected_possessions"] == v3_2["expected_possessions"]
