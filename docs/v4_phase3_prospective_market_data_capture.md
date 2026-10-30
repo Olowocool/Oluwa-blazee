@@ -83,3 +83,32 @@ Historical final scores and the existing Points Engine features must be strictly
 ## Phase status
 
 This commit establishes the data-capture layer only. It does not yet establish profitability, CLV, or that a residual model beats the market. Those findings require actual collected snapshots and a sufficiently large chronological out-of-sample sample. No production app, betting ledger, or live picks are changed by this collector.
+
+## Walk-forward market-residual evaluator
+
+After the local private archive contains observations with final scores available in `data/historical_nba_scores.csv`, run:
+
+```powershell
+py -3 -m pip install numpy pandas scikit-learn
+py -3 research/v4_phase3_market_residual.py
+```
+
+Defaults are fixed before evaluation:
+
+- Bookmaker: DraftKings only; no best-price selection across books.
+- Entry: latest locally observed row at or before 120 minutes before scheduled start.
+- Maximum acceptable entry observation age: 240 minutes.
+- Market residual target: `actual_total - entry_total`.
+- Candidate: standardized Ridge residual model, alpha 25.0, minimum 150 earlier training games.
+- Features: Points Engine edge, entry total, home spread and spread price, movement from the first locally observed total, entry Over/Under prices and no-vig Over probability/market overround.
+- Development: prequential by game date; no same-day games train each other.
+- Holdout: final 20% of chronological games by date; one frozen model trained only on development rows.
+- Betting simulation: existing fixed Strong/Lean thresholds; settle at selected entry total and that same entry's Over/Under price.
+
+Outputs are written locally under `outputs/research/v4_phase3_market_residual/` and ignored by Git. The report includes entry-market, Points Engine and residual-model MAE/RMSE/bias, bet counts, win rate, unit-stake ROI, and comparison with the latest locally observed pregame market observation.
+
+The model's betting summary compares Points Engine and residual model on the exact same games for which the residual model produced a prediction. The paired bootstrap interval is for residual-model MAE minus entry-market MAE on the reserved holdout; negative favours the model.
+
+**Interpretation safeguards:** the first locally observed total is not called the sportsbook's true opening line. The last locally observed pregame observation is not called the official close. Line and probability CLV are explicitly measured against that last locally observed observation, not a verified bookmaker close. No result is reported until real snapshots and their score joins exist. No profitability claim is valid on a warmup/development sample alone; retain the chronological holdout untouched.
+
+The backtest does not call DunkAPI or spend provider credits. It reads only the local ignored archive. It must not be run against fabricated/synthetic snapshots or with closing prices copied into earlier timestamps.
