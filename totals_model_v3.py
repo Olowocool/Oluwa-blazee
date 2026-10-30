@@ -437,36 +437,51 @@ def _add_historical_schedule_features(team_logs: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def calculate_team_schedule_state(
-    prior_logs: pd.DataFrame, team_name: str, target_date: Any
-) -> dict[str, float]:
-    """Calculate schedule context for a target game using only prior game dates."""
+def calculate_all_team_schedule_states(
+    prior_logs: pd.DataFrame, target_date: Any
+) -> dict[str, dict[str, float]]:
+    """Calculate pregame schedule state for all teams in one grouped pass."""
     target = pd.to_datetime(target_date, errors="coerce")
     if pd.isna(target):
         raise ValueError(f"Invalid target date: {target_date!r}")
     target = target.normalize()
-    if prior_logs is None or prior_logs.empty:
-        return {"rest_days": 2.0, "back_to_back": 0.0, "three_in_four": 0.0}
+    if (
+        prior_logs is None or prior_logs.empty
+        or not {"game_date", "team_name"}.issubset(prior_logs.columns)
+    ):
+        return {}
 
+    history = prior_logs[["team_name", "game_date"]].copy()
+    history["team_name"] = history["team_name"].astype(str).map(normalize_team_name)
+    history["game_date"] = pd.to_datetime(history["game_date"], errors="coerce").dt.normalize()
+    history = history.loc[
+        history["game_date"].notna() & (history["game_date"] < target)
+    ]
+    states: dict[str, dict[str, float]] = {}
+    for team, group in history.groupby("team_name", sort=False):
+        dates = sorted(pd.Timestamp(value) for value in group["game_date"].unique())
+        if not dates:
+            continue
+        days_since_last = int((target - dates[-1]).days)
+        recent_prior_games = sum(
+            1 for date in dates if 0 < (target - date).days <= 3
+        )
+        states[team] = {
+            "rest_days": float(min(max(days_since_last - 1, 0), 7)),
+            "back_to_back": float(days_since_last == 1),
+            "three_in_four": float(recent_prior_games >= 2),
+        }
+    return states
+
+
+def calculate_team_schedule_state(
+    prior_logs: pd.DataFrame, team_name: str, target_date: Any
+) -> dict[str, float]:
+    """Calculate one team's schedule context from strictly prior game dates."""
     team = normalize_team_name(team_name)
-    history = prior_logs.copy()
-    if "game_date" not in history.columns or "team_name" not in history.columns:
-        return {"rest_days": 2.0, "back_to_back": 0.0, "three_in_four": 0.0}
-    dates = pd.to_datetime(history.loc[
-        history["team_name"].astype(str).map(normalize_team_name).eq(team),
-        "game_date"
-    ], errors="coerce").dropna().dt.normalize()
-    dates = sorted(pd.Timestamp(value) for value in dates.unique() if pd.Timestamp(value) < target)
-    if not dates:
-        return {"rest_days": 2.0, "back_to_back": 0.0, "three_in_four": 0.0}
-
-    days_since_last = int((target - dates[-1]).days)
-    recent_prior_games = sum(1 for date in dates if 0 < (target - date).days <= 3)
-    return {
-        "rest_days": float(min(max(days_since_last - 1, 0), 7)),
-        "back_to_back": float(days_since_last == 1),
-        "three_in_four": float(recent_prior_games >= 2),
-    }
+    return calculate_all_team_schedule_states(prior_logs, target_date).get(
+        team, {"rest_days": 2.0, "back_to_back": 0.0, "three_in_four": 0.0}
+    )
 
 
 def _weighted_average(values: pd.Series, dates: pd.Series, target: pd.Timestamp,
@@ -776,6 +791,7 @@ def estimate_pregame_ratings(
     }
 
     teams = sorted(set(history["team_name"]) | set(history["opponent_name"]))
+    team_schedule_states = calculate_all_team_schedule_states(history, target)
     current_games = current_games_series.to_dict()
     prior_pace = (
         previous.groupby("team_name")["game_pace"].mean().to_dict()
@@ -840,7 +856,9 @@ def estimate_pregame_ratings(
                 )
                 for column in SHOT_PROFILE_COLUMNS
             },
-            **calculate_team_schedule_state(history, team, target),
+            **team_schedule_states.get(
+                team, {"rest_days": 2.0, "back_to_back": 0.0, "three_in_four": 0.0}
+            ),
             "current_season_games": n_current,
         }
     return ratings
