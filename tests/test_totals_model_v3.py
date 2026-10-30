@@ -1,0 +1,172 @@
+import pandas as pd
+
+from totals_model_v3 import (
+    estimate_pregame_ratings,
+    predict_game_total_v3,
+    prepare_team_game_logs,
+    run_walk_forward_backtest,
+)
+
+
+def make_raw_games(start_date="2021-10-20", count=32, season_id="22021"):
+    rows = []
+    start = pd.Timestamp(start_date)
+    for index in range(count):
+        game_date = start + pd.Timedelta(days=2 * index)
+        game_id = f"{season_id}-{index:04d}"
+        home_points = 108 + (index % 7)
+        away_points = 103 + (index % 5)
+        rows.extend([
+            {
+                "GAME_ID": game_id,
+                "GAME_DATE": game_date.strftime("%Y-%m-%d"),
+                "SEASON_ID": season_id,
+                "TEAM_NAME": "Team A",
+                "MATCHUP": "Team A vs. Team B",
+                "PTS": home_points,
+                "FGA": 88 + (index % 3),
+                "FTA": 21 + (index % 4),
+                "OREB": 10 + (index % 2),
+                "TOV": 12 + (index % 3),
+                "FG3A": 35 + (index % 5),
+            },
+            {
+                "GAME_ID": game_id,
+                "GAME_DATE": game_date.strftime("%Y-%m-%d"),
+                "SEASON_ID": season_id,
+                "TEAM_NAME": "Team B",
+                "MATCHUP": "Team B @ Team A",
+                "PTS": away_points,
+                "FGA": 86 + (index % 4),
+                "FTA": 19 + (index % 3),
+                "OREB": 9 + (index % 2),
+                "TOV": 13 + (index % 2),
+                "FG3A": 33 + (index % 6),
+            },
+        ])
+    return pd.DataFrame(rows)
+
+
+def test_true_possessions_use_box_score_formula():
+    raw = make_raw_games(count=1)
+    raw.loc[raw["TEAM_NAME"] == "Team A", ["FGA", "FTA", "OREB", "TOV"]] = [85, 20, 10, 12]
+
+    logs = prepare_team_game_logs(raw)
+    home = logs.loc[logs["team_name"] == "Team A"].iloc[0]
+
+    assert abs(home["possessions"] - 95.8) < 1e-9
+    assert home["possessions_source"] == "box_score_formula"
+
+
+def test_source_possessions_are_fallback_when_formula_columns_are_missing():
+    raw = make_raw_games(count=1).drop(columns=["FGA", "FTA", "OREB", "TOV"])
+    raw["POSS"] = [101.2, 99.8]
+
+    logs = prepare_team_game_logs(raw)
+
+    assert sorted(logs["possessions"].round(1).tolist()) == [99.8, 101.2]
+    assert set(logs["possessions_source"]) == {"source_poss_fallback"}
+
+
+def test_opponent_link_and_home_away_are_built_from_matchup():
+    logs = prepare_team_game_logs(make_raw_games(count=1))
+
+    home = logs.loc[logs["team_name"] == "Team A"].iloc[0]
+    away = logs.loc[logs["team_name"] == "Team B"].iloc[0]
+
+    assert home["opponent_name"] == "Team B"
+    assert away["opponent_name"] == "Team A"
+    assert bool(home["is_home"]) is True
+    assert bool(away["is_home"]) is False
+
+
+def test_playoff_season_id_is_not_mixed_into_regular_season_training():
+    raw = make_raw_games(count=2, season_id="22021")
+    playoff = make_raw_games(
+        start_date="2022-04-20", count=1, season_id="42021"
+    )
+    logs = prepare_team_game_logs(pd.concat([raw, playoff], ignore_index=True))
+
+    assert len(logs) == 4
+    assert set(logs["season"]) == {2021}
+
+
+def test_pregame_ratings_exclude_target_day_and_future_games():
+    prior_season = make_raw_games(
+        start_date="2020-10-20", count=12, season_id="22020"
+    )
+    current_season = make_raw_games(
+        start_date="2021-10-20", count=16, season_id="22021"
+    )
+    raw = pd.concat([prior_season, current_season], ignore_index=True)
+    target_date = pd.Timestamp("2021-11-14")
+
+    full_logs = prepare_team_game_logs(raw)
+    strict_logs = full_logs.loc[full_logs["game_date"] < target_date].copy()
+
+    from_full = estimate_pregame_ratings(full_logs, target_date)
+    from_strict = estimate_pregame_ratings(strict_logs, target_date)
+
+    assert from_full["history_rows_used"] == len(strict_logs)
+    assert from_full["history_rows_used"] == from_strict["history_rows_used"]
+    assert from_full["teams"] == from_strict["teams"]
+
+
+def test_v3_prediction_is_finite_and_team_points_sum_to_total():
+    prior_season = make_raw_games(
+        start_date="2020-10-20", count=24, season_id="22020"
+    )
+    current_season = make_raw_games(
+        start_date="2021-10-20", count=18, season_id="22021"
+    )
+    logs = prepare_team_game_logs(
+        pd.concat([prior_season, current_season], ignore_index=True)
+    )
+
+    prediction = predict_game_total_v3(
+        logs, "Team A", "Team B", "2021-12-15"
+    )
+
+    assert prediction["model_version"] == "totals-v3-possession-ridge"
+    assert 80 <= prediction["expected_possessions"] <= 120
+    assert prediction["projected_total"] > 0
+    assert abs(
+        prediction["projected_home_points"]
+        + prediction["projected_away_points"]
+        - prediction["projected_total"]
+    ) < 0.02
+    assert prediction["home_current_season_games"] > 0
+
+
+def test_neutral_site_prediction_does_not_apply_home_advantage():
+    prior_season = make_raw_games(
+        start_date="2020-10-20", count=24, season_id="22020"
+    )
+    current_season = make_raw_games(
+        start_date="2021-10-20", count=18, season_id="22021"
+    )
+    logs = prepare_team_game_logs(
+        pd.concat([prior_season, current_season], ignore_index=True)
+    )
+
+    normal = predict_game_total_v3(logs, "Team A", "Team B", "2021-12-15")
+    neutral = predict_game_total_v3(
+        logs, "Team A", "Team B", "2021-12-15", neutral_site=True
+    )
+
+    assert neutral["home_court_adjustment"] == 0.0
+    assert normal["expected_possessions"] == neutral["expected_possessions"]
+
+
+def test_walk_forward_backtest_produces_chronological_records():
+    raw = make_raw_games(
+        start_date="2020-10-20", count=38, season_id="22020"
+    )
+    results, summary = run_walk_forward_backtest(
+        raw, max_games=12, min_prior_team_rows=20
+    )
+
+    assert len(results) > 0
+    assert summary["test_games"] == len(results)
+    assert (results["absolute_error"] >= 0).all()
+    assert (pd.to_datetime(results["game_date"]) > pd.Timestamp("2020-10-20")).all()
