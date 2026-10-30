@@ -587,24 +587,25 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, team_hist, playe
     }
     team_reports = report_rows[report_rows.team_id == team_id]
     reported_ids = set(team_reports.player_id.astype(str).tolist())
-    reported_without_team_history = sum(
-        1 for pid in reported_ids if not team_hist.get((team_id, pid), [])
-    )
     candidate_ids.update(reported_ids)
     estimates = {}
+    reported_without_team_history = 0
     for pid in list(candidate_ids):
         all_hist = player_hist.get(pid, [])
         all_dates = [x[0] for x in all_hist]
         last_idx = bisect_left(all_dates, game_date) - 1
-        if last_idx >= 0 and all_hist[last_idx][2] != team_id and pid not in set(team_reports.player_id.astype(str)):
+        # The most recent prior team assignment must agree with this game.
+        # A current injury-report row does not justify importing a former
+        # team's rotation role before the player has appeared for this team.
+        if last_idx < 0 or all_hist[last_idx][2] != team_id:
+            if pid in reported_ids:
+                reported_without_team_history += 1
             candidate_ids.discard(pid)
             continue
         hist = team_hist.get((team_id, pid), [])
-        # Do not carry a traded player's former-team minutes into a new-team
-        # rotation. Without a prior appearance for this team, the new role is
-        # not identifiable from pregame data, so this player is excluded until
-        # team-specific history exists.
         if not hist:
+            if pid in reported_ids:
+                reported_without_team_history += 1
             continue
         m = recent_minutes(hist, game_date)
         if m > MIN_ROTATION_MINUTES:
@@ -786,6 +787,9 @@ def main():
     print(f"Built injury/rotation features for {len(features)} games and {len(minutes)} player-game rotations", flush=True)
     if features.empty:
         raise RuntimeError("No injury-adjusted game features were generated")
+    if minutes.duplicated(["game_id", "player_id"]).any():
+        dup = minutes.loc[minutes.duplicated(["game_id", "player_id"], keep=False), ["game_id", "player_id", "side"]]
+        raise RuntimeError(f"Player assigned to both teams in one game; duplicate assignments: {dup.head(10).to_dict('records')}")
     features.to_csv(OUT / "v4_phase2_game_features.csv", index=False)
     minutes.to_csv(OUT / "v4_phase2_projected_minutes.csv", index=False)
 
