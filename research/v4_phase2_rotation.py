@@ -393,7 +393,7 @@ def fetch_injury_reports(game_dates):
     session.headers.update({"User-Agent": "Mozilla/5.0"})
     for game_date in sorted(pd.Timestamp(x).normalize() for x in game_dates):
         # The official archive changed from hourly names to 15-minute names in Dec 2025.
-        if pd.Timestamp("2025-12-19 15:30") < game_date < pd.Timestamp("2025-12-22 09:00"):
+        if game_date.date() in {date(2025, 12, 20), date(2025, 12, 21)}:
             manifest.append({"game_date": str(game_date.date()), "status": "archive_timestamp_gap"})
             continue
         candidates = [time(10, 0), time(9, 0), time(8, 0)]
@@ -472,26 +472,27 @@ def map_injury_rows(raw_reports, games, player_names, team_names):
             m[normalize_name(row.full_name)] = str(row.team_id)
         teams_by_season[int(season)] = m
 
-    for row in raw_reports.itertuples():
-        gd = pd.Timestamp(row.game_date).normalize()
+    for row in raw_reports.itertuples(index=False, name=None):
+        gd = pd.Timestamp(row[7]).normalize()
         season = season_for_date(gd)
+        team_name = str(row[3])
+        raw_name = str(row[4])
+        status_value = str(row[5])
+        snapshot_value = str(row[8])
         tmap = teams_by_season.get(season, {})
-        tnorm = normalize_name(row.Team)
+        tnorm = normalize_name(team_name)
         team_id = tmap.get(tnorm)
         if team_id is None and tmap:
             hit = process.extractOne(tnorm, list(tmap.keys()), scorer=fuzz.ratio)
             if hit and hit[1] >= 95:
                 team_id = tmap[hit[0]]
         if team_id is None:
-            unmatched.append({"game_date": str(gd.date()), "team": str(row.Team), "player": str(row._asdict().get("Player Name","")), "reason": "team_unmatched"})
+            unmatched.append({"game_date": str(gd.date()), "team": team_name, "player": raw_name, "reason": "team_unmatched"})
             continue
         gid = game_lookup.get((season, gd, team_id))
         if gid is None:
             unmatched.append({"game_date": str(gd.date()), "team": str(row.Team), "player": str(row._asdict().get("Player Name","")), "reason": "team_game_unmatched"})
             continue
-        pname = str(getattr(row, "_5", "")) if False else None
-        # Namedtuple fields with spaces are positional; use original column labels below.
-        raw_name = str(row[4]) if hasattr(row, "__getitem__") else ""
         pnorm = normalize_name(raw_name)
         pmap = names_by_season.get(season, {})
         candidates = pmap.get(pnorm, [])
@@ -506,13 +507,13 @@ def map_injury_rows(raw_reports, games, player_names, team_names):
         if player_id is None:
             unmatched.append({"game_date": str(gd.date()), "team": str(row.Team), "player": raw_name, "reason": "player_unmatched"})
             continue
-        status = str(row[5]).strip().upper()
+        status = status_value.strip().upper()
         if status not in STATUS_PRIORS:
             status = "UNKNOWN"
         mapped.append({
             "season": season, "game_date": gd, "game_id": gid, "team_id": team_id,
             "player_id": player_id, "status": status,
-            "snapshot_time": str(row.snapshot_time),
+            "snapshot_time": snapshot_value,
         })
     mapped_df = pd.DataFrame(mapped)
     unmatched_df = pd.DataFrame(unmatched)
@@ -524,7 +525,7 @@ def map_injury_rows(raw_reports, games, player_names, team_names):
 def build_player_history(player_logs):
     team_hist, player_hist, first_seen = defaultdict(list), defaultdict(list), {}
     for row in player_logs.sort_values("game_date").itertuples():
-        item = (pd.Timestamp(row.game_date), str(row.game_id), float(row.min))
+        item = (pd.Timestamp(row.game_date), str(row.game_id), str(row.team_id), float(row.min))
         team_hist[(str(row.team_id), str(row.player_id))].append(item)
         player_hist[str(row.player_id)].append(item)
         key = (str(row.team_id), str(row.player_id))
@@ -540,7 +541,7 @@ def recent_minutes(hist, game_date):
         return 0.0
     prior = list(reversed(prior))
     weights = np.array([math.exp(-math.log(2.0) * i / PLAYER_MINUTES_HALF_LIFE) for i in range(len(prior))])
-    mins = np.array([x[2] for x in prior], dtype=float)
+    mins = np.array([x[3] for x in prior], dtype=float)
     wsum = float(weights.sum())
     mean = float(np.average(mins, weights=weights))
     n = len(prior)
@@ -569,10 +570,16 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, team_hist, playe
     team_reports = report_rows[report_rows.team_id == team_id]
     candidate_ids.update(team_reports.player_id.astype(str).tolist())
     estimates = {}
-    for pid in candidate_ids:
+    for pid in list(candidate_ids):
+        all_hist = player_hist.get(pid, [])
+        all_dates = [x[0] for x in all_hist]
+        last_idx = bisect_left(all_dates, game_date) - 1
+        if last_idx >= 0 and all_hist[last_idx][2] != team_id and pid not in set(team_reports.player_id.astype(str)):
+            candidate_ids.discard(pid)
+            continue
         hist = team_hist.get((team_id, pid), [])
         if not hist:
-            hist = player_hist.get(pid, [])
+            hist = all_hist
         m = recent_minutes(hist, game_date)
         if m > MIN_ROTATION_MINUTES:
             estimates[pid] = m
