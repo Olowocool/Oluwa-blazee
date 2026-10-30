@@ -28,7 +28,7 @@ jobs:
       - name: Inspect source schemas and coverage
         run: python research/v4_phase2_source_audit.py
       - name: Upload source audit
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nba-totals-v4-phase2-source-audit
           path: outputs/research/v4_phase2_source_audit/
