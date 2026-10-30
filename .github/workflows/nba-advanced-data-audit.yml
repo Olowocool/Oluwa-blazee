@@ -25,7 +25,7 @@ jobs:
       - name: Install audit dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install duckdb pandas tabulate
+          python -m pip install duckdb pandas tabulate numpy scikit-learn
 
       - name: Audit public NBA advanced game data
         run: |
@@ -385,6 +385,19 @@ jobs:
           print((OUT / "audit_report.md").read_text(encoding="utf-8"))
           print("\nAudit files written to", OUT)
           PY
+
+      - name: Compile and run V4 Phase 1 core model
+        run: |
+          python -m py_compile research/v4_phase1_core.py
+          python research/v4_phase1_core.py
+
+      - name: Upload V4 Phase 1 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nba-totals-v4-phase1
+          path: outputs/research/v4_phase1/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload audit results
         uses: actions/upload-artifact@v4
