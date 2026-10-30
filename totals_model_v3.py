@@ -22,7 +22,7 @@ import pandas as pd
 from team_name_utils import normalize_team_name
 from points_engine import calculate_matchup_points
 
-MODEL_VERSION = "totals-v3.1-possession-ridge-season-baseline"
+MODEL_VERSION = "totals-v3.2-possession-ridge-shot-profile"
 SEASONS_TO_KEEP = 8
 RECENT_TEAM_GAMES = 25
 PACE_TEAM_GAMES = 20
@@ -32,6 +32,12 @@ CURRENT_HALF_LIFE_DAYS = 55.0
 PRIOR_SEASON_HALF_LIFE_DAYS = 180.0
 LEAGUE_HALF_LIFE_DAYS = 1095.0
 CURRENT_LEAGUE_HALF_LIFE_DAYS = 60.0
+SHOT_PROFILE_COLUMNS = (
+    "three_pa_rate",
+    "free_throw_rate",
+    "opponent_three_pa_rate",
+    "opponent_free_throw_rate",
+)
 
 NORMALIZED_COLUMNS = {
     "game_id", "game_date", "season", "team_name", "opponent_name",
@@ -223,6 +229,7 @@ def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
         fta_col = _first_column(df, ("FTA", "team_fta"))
         oreb_col = _first_column(df, ("OREB", "team_oreb"))
         tov_col = _first_column(df, ("TOV", "team_tov"))
+        fg3a_col = _first_column(df, ("FG3A", "team_fg3a"))
         poss_col = _first_column(df, ("POSS", "poss", "possessions"))
         season_col = _first_column(df, ("SEASON_ID", "season"))
         game_type_col = _first_column(df, ("GAME_TYPE", "game_type", "season_type"))
@@ -296,6 +303,18 @@ def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
         work["possessions_source"] = np.where(
             formula_valid.to_numpy(), "box_score_formula", "source_poss_fallback"
         )
+        work["fga"] = (
+            _numeric(df[fga_col]).reset_index(drop=True)
+            if fga_col else np.nan
+        )
+        work["fta"] = (
+            _numeric(df[fta_col]).reset_index(drop=True)
+            if fta_col else np.nan
+        )
+        work["fg3a"] = (
+            _numeric(df[fg3a_col]).reset_index(drop=True)
+            if fg3a_col else np.nan
+        )
 
         # Link the opponent using the two team rows belonging to the same game.
         opponent_by_row: dict[int, str] = {}
@@ -321,6 +340,10 @@ def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
     out["opponent_name"] = out["opponent_name"].astype(str).str.strip().map(normalize_team_name)
     out["game_id"] = out["game_id"].astype(str).str.strip()
     out["is_home"] = out["is_home"].map(_parse_bool)
+    for column in ("fga", "fta", "fg3a"):
+        if column not in out:
+            out[column] = np.nan
+        out[column] = _numeric(out[column])
     out = out.dropna(
         subset=["game_date", "season", "points", "possessions"]
     )
@@ -333,6 +356,26 @@ def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
     ].copy()
     out["season"] = out["season"].astype(int)
     out["points_per_100"] = 100.0 * out["points"] / out["possessions"]
+    out["three_pa_rate"] = (
+        out["fg3a"] / out["fga"].where(out["fga"] > 0)
+    ).where(lambda values: values.between(0.0, 1.0))
+    out["free_throw_rate"] = (
+        out["fta"] / out["fga"].where(out["fga"] > 0)
+    ).where(lambda values: values.between(0.0, 1.5))
+
+    opponent_profile = out[
+        ["game_id", "team_name", "three_pa_rate", "free_throw_rate"]
+    ].rename(columns={
+        "team_name": "opponent_name",
+        "three_pa_rate": "opponent_three_pa_rate",
+        "free_throw_rate": "opponent_free_throw_rate",
+    })
+    out = out.merge(
+        opponent_profile,
+        on=["game_id", "opponent_name"],
+        how="left",
+        validate="one_to_one",
+    )
 
     game_pace = out.groupby("game_id")["possessions"].mean()
     out["game_pace"] = out["game_id"].map(game_pace)
