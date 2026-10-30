@@ -40,6 +40,7 @@ def main():
         "games": "stats",
         "team_seasons": "stats",
         "game_rotations": "stats",
+        "game_events": "stats",
     }
     for table, source in datasets.items():
         meta = metadata.get(table, {})
@@ -61,7 +62,7 @@ def main():
             ).fetchdf()
             cols = schema[["column_name", "column_type"]].to_dict("records")
             item = {"columns": cols, "season_range_requested": [first, last], "metadata": meta}
-            if table in {"player_game_logs", "player_season_stats", "openrapm", "game_rotations"}:
+            if table in {"player_game_logs", "player_season_stats", "openrapm", "game_rotations", "game_events"}:
                 item["coverage"] = con.execute(
                     f"SELECT min(season) AS first_season, max(season) AS last_season, "
                     f"count(*) AS rows, count(DISTINCT player_id) AS players "
