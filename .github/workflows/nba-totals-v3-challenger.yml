@@ -32,6 +32,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy pandas pytest
 
+      - name: Inspect raw historical columns
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          frame = pd.read_csv("data/game.csv", nrows=0)
+          print("Raw game.csv columns:", frame.columns.tolist())
+          PY
+
       - name: Compile V3 module
         run: python -m py_compile totals_model_v3.py
 
