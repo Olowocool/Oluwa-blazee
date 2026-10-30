@@ -46,7 +46,8 @@ def load_project_game_csv() -> pd.DataFrame:
             "game_id": "string",
             "team_id_home": "string",
             "team_id_away": "string",
-            "season_type": "string",\n            "season_id": "string",
+            "season_type": "string",
+            "season_id": "string",
         },
         low_memory=False,
     )
