@@ -286,7 +286,10 @@ def fit_player_rapm(history: pd.DataFrame, snapshot_date: pd.Timestamp):
     for i, seg in enumerate(h.itertuples()):
         poss = float(seg.poss)
         age_days = max(0.0, float((snapshot_date - seg.game_date).days))
-        if int(seg.season) == int(snapshot_date.year if snapshot_date.month >= 7 else snapshot_date.year + 1):
+        # NBA season end-year is calendar year + 1 from July onward.
+        # October 2023 therefore belongs to season 2024, not season 2023.
+        current_season_end_year = season_for_date(snapshot_date)
+        if int(seg.season) == current_season_end_year:
             recency = math.exp(-math.log(2.0) * age_days / RATING_HALF_LIFE_DAYS)
         else:
             recency = 0.25
