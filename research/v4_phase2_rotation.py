@@ -580,7 +580,7 @@ def status_probability(status, history, game_date):
     return float((played + STATUS_PRIOR_STRENGTH * prior) / (n + STATUS_PRIOR_STRENGTH))
 
 
-def rotation_for_team(game_id, team_id, game_date, report_rows, team_hist, player_hist, first_seen, actual_lookup, rapm):
+def rotation_for_team(game_id, team_id, game_date, report_rows, team_hist, player_hist, first_seen, actual_lookup, rapm, team_actual_totals):
     candidate_ids = {
         pid for (tid, pid), first in first_seen.items()
         if tid == team_id and first < game_date
@@ -639,8 +639,12 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, team_hist, playe
         "questionable_minutes": float(d.loc[d.status.isin(["QUESTIONABLE", "DOUBTFUL"]), "baseline_minutes"].sum()),
     }
     actual = d.actual_minutes.to_numpy(dtype=float)
-    if actual.sum() > 0:
-        d["actual_minutes_240"] = actual * (240.0 / actual.sum())
+    # Normalize actual minutes using the entire team's recorded minutes (including
+    # players outside the projected top-15), not just the selected candidates.
+    # This preserves omitted-player minutes as forecast-coverage error.
+    team_total = float(team_actual_totals.get((str(game_id), str(team_id)), 0.0))
+    if team_total > 0:
+        d["actual_minutes_240"] = actual * (240.0 / team_total)
     else:
         d["actual_minutes_240"] = 0.0
     return features, d
@@ -673,20 +677,23 @@ def main():
     print(f"Mapped {len(mapped_reports)} injury rows; unmatched {len(unmatched_reports)}", flush=True)
     unmatched_reports.to_csv(OUT / "v4_phase2_unmatched_injury_rows.csv", index=False)
 
-    actual_played = set(zip(player_logs.game_id.astype(str), player_logs.player_id.astype(str)))
-    mapped_reports["played"] = [
-        1 if (str(g), str(p)) in actual_played else 0
+    # A player-game row can exist for a DNP. Define appearance from positive minutes,
+    # not mere presence in the box-score table.
+    actual_lookup = {
+        (str(r.game_id), str(r.player_id)): float(r.min)
+        for r in player_logs.itertuples()
+    }
+    mapped_reports["actual_minutes"] = [
+        actual_lookup.get((str(g), str(p)), 0.0)
         for g, p in zip(mapped_reports.game_id, mapped_reports.player_id)
     ]
+    mapped_reports["played"] = (mapped_reports["actual_minutes"] > 0).astype(int)
     mapped_reports = mapped_reports.sort_values(["game_date", "game_id", "player_id"])
     mapped_reports.to_csv(OUT / "v4_phase2_mapped_injury_status.csv", index=False)
 
     # Player minutes history and actual-minute lookup.
     team_hist, player_hist, first_seen = build_player_history(player_logs)
-    actual_lookup = {
-        (str(r.game_id), str(r.player_id)): float(r.min)
-        for r in player_logs.itertuples()
-    }
+    team_actual_totals = player_logs.groupby(["game_id", "team_id"])["min"].sum().to_dict()
     game_reports = {
         gid: group.copy()
         for gid, group in mapped_reports.groupby("game_id")
@@ -729,7 +736,7 @@ def main():
         away_report = report[report.team_id == str(g.away_team_id)] if not report.empty else report
         hfeat, hmins = rotation_for_team(
             gid, str(g.home_team_id), gd, home_report, team_hist, player_hist,
-            first_seen, actual_lookup, rapm
+            first_seen, actual_lookup, rapm, team_actual_totals
         )
         afeat, amins = rotation_for_team(
             gid, str(g.away_team_id), gd, away_report, team_hist, player_hist,
@@ -818,19 +825,49 @@ def main():
     metrics_df = pd.DataFrame(metric_rows)
     metrics_df.to_csv(OUT / "v4_phase2_metrics.csv", index=False)
 
-    # Independent diagnostics: status calibration and projected minutes.
+    # Independent prequential status calibration. Each probability uses only
+    # report outcomes strictly earlier than that report's game date.
     status_eval = mapped_reports[mapped_reports.season.isin(TARGET_SEASONS)].copy()
+    status_eval["predicted_appearance_probability"] = [
+        status_probability(str(r.status), STATUS_HISTORY, pd.Timestamp(r.game_date))
+        for r in status_eval.itertuples()
+    ]
+    status_eval["brier_component"] = (
+        status_eval.predicted_appearance_probability - status_eval.played
+    ) ** 2
+    status_eval.to_csv(OUT / "v4_phase2_status_predictions.csv", index=False)
     status_summary = status_eval.groupby("status").agg(
-        rows=("played", "size"), appeared=("played", "sum"), empirical_appearance_rate=("played", "mean")
+        rows=("played", "size"),
+        appeared=("played", "sum"),
+        observed_appearance_rate=("played", "mean"),
+        mean_predicted_probability=("predicted_appearance_probability", "mean"),
+        brier_score=("brier_component", "mean"),
     ).reset_index()
+
     minute_error = minutes.copy()
     minute_error["absolute_minutes_error"] = np.abs(minute_error.expected_minutes - minute_error.actual_minutes_240)
+    team_minute_eval = minute_error.groupby(["season", "game_id", "side"]).agg(
+        projected_candidate_minutes=("expected_minutes", "sum"),
+        actual_candidate_minutes_240=("actual_minutes_240", "sum"),
+    ).reset_index()
+    team_minute_eval["candidate_actual_minute_coverage_pct"] = (
+        team_minute_eval.actual_candidate_minutes_240 / 240.0 * 100.0
+    )
     minute_summary = minute_error.groupby("season").agg(
         player_game_rows=("player_id", "size"),
-        minute_mae=("absolute_minutes_error", "mean"),
-        mean_projected_team_minutes=("expected_minutes", "mean"),
-        mean_actual_team_minutes_240=("actual_minutes_240", "mean"),
+        projected_player_minutes_mae=("absolute_minutes_error", "mean"),
+        mean_projected_candidate_team_minutes=("expected_minutes", "sum"),
+        mean_actual_candidate_team_minutes_240=("actual_minutes_240", "sum"),
     ).reset_index()
+    coverage_summary = team_minute_eval.groupby("season").agg(
+        team_sides=("game_id", "size"),
+        mean_candidate_actual_minute_coverage_pct=("candidate_actual_minute_coverage_pct", "mean"),
+        mean_projected_candidate_team_minutes=("projected_candidate_minutes", "mean"),
+        mean_actual_candidate_team_minutes_240=("actual_candidate_minutes_240", "mean"),
+    ).reset_index()
+    minute_summary = minute_summary.drop(columns=[
+        "mean_projected_candidate_team_minutes", "mean_actual_candidate_team_minutes_240"
+    ]).merge(coverage_summary, on="season", how="left")
     status_summary.to_csv(OUT / "v4_phase2_status_calibration.csv", index=False)
     minute_summary.to_csv(OUT / "v4_phase2_minutes_metrics.csv", index=False)
 
@@ -850,7 +887,7 @@ def main():
         },
         "injury_reports": {
             "snapshot_policy": "latest complete official report at or before 10:00 a.m. ET on game day; earlier 9:00/8:00 a.m. fallback; dates with NOT YET SUBMITTED rows excluded",
-            "status_probabilities": "empirical status-to-appearance rates from earlier report dates, shrunk toward conservative status priors",
+            "status_probabilities": "prequential status-to-positive-minutes probabilities from strictly earlier report dates, shrunk toward conservative status priors",
             "unmatched_rows": int(len(unmatched_reports)),
             "mapped_rows": int(len(mapped_reports)),
             "complete_report_dates": int((report_manifest.status == "complete").sum()),
@@ -869,7 +906,7 @@ def main():
             "Player ratings here are recomputed from lineup stints and scoring events using only prior-season and current-season-to-date games.",
             "Each injury snapshot is captured at or before 10:00 a.m. ET on the game date; incomplete reports are excluded, never treated as all players available.",
             "The official injury report status is converted to an appearance probability using only earlier report-to-game outcomes; unreported players are assumed available.",
-            "Projected minutes are recent player-team rotation minutes, shrunk for short histories, then rescaled to 240 regulation minutes.",
+            "Projected minutes are recent player-team rotation minutes, shrunk for short histories, then rescaled to 240 regulation minutes; actual candidate minutes are normalized against all team players so omitted-player minutes remain visible in coverage diagnostics.",
             "RAPM values are team-adjusted player on-court effects, not proprietary EPM/DARKO ratings.",
             "Only 2024-25 and 2025-26 are held out for forward injury-model evaluation; 2023-24 is the initial training season.",
             "This phase evaluates total-score MAE/RMSE, not betting ROI or profitability."
