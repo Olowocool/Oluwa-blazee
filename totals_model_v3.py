@@ -611,12 +611,16 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
     )
 
     current_team_shot = (
-        current_sample.groupby("team_name")[["three_pa_rate", "free_throw_rate"]]
+        current_sample.groupby("team_name")[["three_pa_rate", "free_throw_rate",
+                                             "opponent_three_pa_rate",
+                                             "opponent_free_throw_rate"]]
         .mean(numeric_only=True).to_dict(orient="index")
         if not current_sample.empty else {}
     )
     prior_team_shot = (
-        previous.groupby("team_name")[["three_pa_rate", "free_throw_rate"]]
+        previous.groupby("team_name")[["three_pa_rate", "free_throw_rate",
+                                        "opponent_three_pa_rate",
+                                        "opponent_free_throw_rate"]]
         .mean(numeric_only=True).to_dict(orient="index")
         if not previous.empty else {}
     )
@@ -691,7 +695,7 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
                     n_current, CURRENT_SEASON_BLEND_GAMES,
                     league_shot_profile[column],
                 )
-                for column in ("three_pa_rate", "free_throw_rate")
+                for column in SHOT_PROFILE_COLUMNS
             },
             "current_season_games": n_current,
         }
@@ -734,7 +738,7 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
 
     def shot_profile_adjustment(
         offense_profile: dict[str, float],
-        opponent_profile: dict[str, float],
+        defense_profile: dict[str, float],
     ) -> float:
         return float(
             shot_betas["three_pa_rate"] * (
@@ -746,11 +750,11 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
                 - league_shots["free_throw_rate"]
             )
             + shot_betas["opponent_three_pa_rate"] * (
-                opponent_profile.get("three_pa_rate", league_shots["opponent_three_pa_rate"])
+                defense_profile.get("opponent_three_pa_rate", league_shots["opponent_three_pa_rate"])
                 - league_shots["opponent_three_pa_rate"]
             )
             + shot_betas["opponent_free_throw_rate"] * (
-                opponent_profile.get("free_throw_rate", league_shots["opponent_free_throw_rate"])
+                defense_profile.get("opponent_free_throw_rate", league_shots["opponent_free_throw_rate"])
                 - league_shots["opponent_free_throw_rate"]
             )
         )
