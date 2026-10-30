@@ -394,7 +394,7 @@ def _fit_ridge_ratings(logs: pd.DataFrame, league_efficiency: float,
         "off": {team: float(league_efficiency + offence[team_index[team]]) for team in teams},
         # Lower defensive rating means fewer points allowed per 100 possessions.
         "def": {
-            team: float(league_efficiency - defence_suppression[team_index[team]])
+            team: float(league_efficiency + defence_suppression[team_index[team]])
             for team in teams
         },
         "home_advantage": float(beta[-1]),
