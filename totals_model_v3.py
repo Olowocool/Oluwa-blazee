@@ -22,7 +22,8 @@ import pandas as pd
 from team_name_utils import normalize_team_name
 from points_engine import calculate_matchup_points
 
-MODEL_VERSION = "totals-v3.2-possession-ridge-shot-profile"
+MODEL_VERSION = "totals-v3.3-possession-ridge-shot-schedule"
+BASELINE_MODEL_VERSION = "totals-v3.2-possession-ridge-shot-profile"
 SEASONS_TO_KEEP = 8
 RECENT_TEAM_GAMES = 25
 PACE_TEAM_GAMES = 20
@@ -38,6 +39,7 @@ SHOT_PROFILE_COLUMNS = (
     "opponent_three_pa_rate",
     "opponent_free_throw_rate",
 )
+SCHEDULE_FEATURE_COLUMNS = ("rest_days", "back_to_back", "three_in_four")
 
 NORMALIZED_COLUMNS = {
     "game_id", "game_date", "season", "team_name", "opponent_name",
@@ -389,7 +391,82 @@ def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
     out = out.sort_values(["game_date", "game_id", "team_name"]).reset_index(drop=True)
     if out.empty:
         raise ValueError("No valid paired team-game rows remained after data validation.")
+    out = _add_historical_schedule_features(out)
     return out
+
+
+def _add_historical_schedule_features(team_logs: pd.DataFrame) -> pd.DataFrame:
+    """Attach each team's rest and compressed-schedule state before each game.
+
+    The features for a game are calculated only from strictly earlier game
+    dates. Same-day games are treated as a single date to avoid intra-day leaks.
+    """
+    out = team_logs.copy()
+    out = out.drop(columns=list(SCHEDULE_FEATURE_COLUMNS), errors="ignore")
+    out["game_date"] = pd.to_datetime(out["game_date"], errors="coerce")
+    out["rest_days"] = 2.0
+    out["back_to_back"] = 0.0
+    out["three_in_four"] = 0.0
+
+    for team, group in out.groupby("team_name", sort=False):
+        valid_dates = pd.to_datetime(group["game_date"], errors="coerce").dropna()
+        unique_dates = sorted(pd.Timestamp(value).normalize() for value in valid_dates.unique())
+        prior_dates: list[pd.Timestamp] = []
+        for current_date in unique_dates:
+            if prior_dates:
+                days_since_last = int((current_date - prior_dates[-1]).days)
+                rest_days = float(min(max(days_since_last - 1, 0), 7))
+                back_to_back = float(days_since_last == 1)
+            else:
+                rest_days = 2.0
+                back_to_back = 0.0
+            recent_prior_games = sum(
+                1 for prior_date in prior_dates
+                if 0 < (current_date - prior_date).days <= 3
+            )
+            three_in_four = float(recent_prior_games >= 2)
+            mask = (
+                out["team_name"].eq(team)
+                & pd.to_datetime(out["game_date"], errors="coerce").dt.normalize().eq(current_date)
+            )
+            out.loc[mask, "rest_days"] = rest_days
+            out.loc[mask, "back_to_back"] = back_to_back
+            out.loc[mask, "three_in_four"] = three_in_four
+            prior_dates.append(current_date)
+
+    return out
+
+
+def calculate_team_schedule_state(
+    prior_logs: pd.DataFrame, team_name: str, target_date: Any
+) -> dict[str, float]:
+    """Calculate schedule context for a target game using only prior game dates."""
+    target = pd.to_datetime(target_date, errors="coerce")
+    if pd.isna(target):
+        raise ValueError(f"Invalid target date: {target_date!r}")
+    target = target.normalize()
+    if prior_logs is None or prior_logs.empty:
+        return {"rest_days": 2.0, "back_to_back": 0.0, "three_in_four": 0.0}
+
+    team = normalize_team_name(team_name)
+    history = prior_logs.copy()
+    if "game_date" not in history.columns or "team_name" not in history.columns:
+        return {"rest_days": 2.0, "back_to_back": 0.0, "three_in_four": 0.0}
+    dates = pd.to_datetime(history.loc[
+        history["team_name"].astype(str).map(normalize_team_name).eq(team),
+        "game_date"
+    ], errors="coerce").dropna().dt.normalize()
+    dates = sorted(pd.Timestamp(value) for value in dates.unique() if pd.Timestamp(value) < target)
+    if not dates:
+        return {"rest_days": 2.0, "back_to_back": 0.0, "three_in_four": 0.0}
+
+    days_since_last = int((target - dates[-1]).days)
+    recent_prior_games = sum(1 for date in dates if 0 < (target - date).days <= 3)
+    return {
+        "rest_days": float(min(max(days_since_last - 1, 0), 7)),
+        "back_to_back": float(days_since_last == 1),
+        "three_in_four": float(recent_prior_games >= 2),
+    }
 
 
 def _weighted_average(values: pd.Series, dates: pd.Series, target: pd.Timestamp,
@@ -411,20 +488,32 @@ def _fit_ridge_ratings(
     target_date: pd.Timestamp,
     half_life_days: float,
     league_shot_profile: dict[str, float],
+    schedule_rest_baseline: float = 1.5,
+    include_schedule_features: bool = True,
 ) -> dict[str, Any]:
     zero_betas = {column: 0.0 for column in SHOT_PROFILE_COLUMNS}
+    zero_schedule_betas = {column: 0.0 for column in SCHEDULE_FEATURE_COLUMNS}
     if logs.empty:
-        return {"off": {}, "def": {}, "home_advantage": 0.0, "shot_betas": zero_betas}
+        return {
+            "off": {}, "def": {}, "home_advantage": 0.0,
+            "shot_betas": zero_betas, "schedule_betas": zero_schedule_betas
+        }
 
     teams = sorted(set(logs["team_name"]) | set(logs["opponent_name"]))
     team_index = {team: index for index, team in enumerate(teams)}
     n_teams = len(teams)
     if len(logs) < 12:
-        return {"off": {}, "def": {}, "home_advantage": 0.0, "shot_betas": zero_betas}
+        return {
+            "off": {}, "def": {}, "home_advantage": 0.0,
+            "shot_betas": zero_betas, "schedule_betas": zero_schedule_betas
+        }
 
     home_index = 2 * n_teams
     shot_start = home_index + 1
-    x = np.zeros((len(logs), shot_start + len(SHOT_PROFILE_COLUMNS)), dtype=float)
+    schedule_start = shot_start + len(SHOT_PROFILE_COLUMNS)
+    x = np.zeros(
+        (len(logs), schedule_start + len(SCHEDULE_FEATURE_COLUMNS)), dtype=float
+    )
     rows = np.arange(len(logs))
     team_ids = logs["team_name"].map(team_index).to_numpy(dtype=int)
     opp_ids = logs["opponent_name"].map(team_index).to_numpy(dtype=int)
@@ -444,6 +533,23 @@ def _fit_ridge_ratings(
         else:
             values = pd.Series(baseline, index=logs.index, dtype=float)
         x[:, shot_start + offset] = values.to_numpy(dtype=float) - baseline
+
+    if include_schedule_features:
+        rest_values = (
+            pd.to_numeric(logs.get("rest_days", schedule_rest_baseline), errors="coerce")
+            if "rest_days" in logs else pd.Series(schedule_rest_baseline, index=logs.index)
+        )
+        b2b_values = (
+            pd.to_numeric(logs.get("back_to_back", 0.0), errors="coerce")
+            if "back_to_back" in logs else pd.Series(0.0, index=logs.index)
+        )
+        three_in_four_values = (
+            pd.to_numeric(logs.get("three_in_four", 0.0), errors="coerce")
+            if "three_in_four" in logs else pd.Series(0.0, index=logs.index)
+        )
+        x[:, schedule_start] = rest_values.fillna(schedule_rest_baseline).to_numpy(dtype=float) - float(schedule_rest_baseline)
+        x[:, schedule_start + 1] = b2b_values.fillna(0.0).to_numpy(dtype=float)
+        x[:, schedule_start + 2] = three_in_four_values.fillna(0.0).to_numpy(dtype=float)
 
     y = logs["points_per_100"].to_numpy(dtype=float) - league_efficiency
     age_days = (
@@ -479,6 +585,13 @@ def _fit_ridge_ratings(
             column: float(beta[shot_start + offset])
             for offset, column in enumerate(SHOT_PROFILE_COLUMNS)
         },
+        "schedule_betas": (
+            {
+                column: float(beta[schedule_start + offset])
+                for offset, column in enumerate(SCHEDULE_FEATURE_COLUMNS)
+            }
+            if include_schedule_features else zero_schedule_betas
+        ),
     }
 
 def _recent_team_sample(logs: pd.DataFrame, n_games: int) -> pd.DataFrame:
@@ -502,7 +615,10 @@ def _blend_value(current: float | None, prior: float | None, current_games: int,
     return float(weight * current + (1.0 - weight) * prior)
 
 
-def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict[str, Any]:
+def estimate_pregame_ratings(
+    prior_logs: pd.DataFrame, target_date: Any,
+    include_schedule_features: bool = True,
+) -> dict[str, Any]:
     """Estimate opponent-adjusted ratings using only games before target_date."""
     target = pd.to_datetime(target_date, errors="coerce")
     if pd.isna(target):
@@ -528,6 +644,10 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
     league_pace_long = _weighted_average(
         history["game_pace"], history["game_date"], target,
         LEAGUE_HALF_LIFE_DAYS, default=99.0
+    )
+    schedule_rest_baseline = _weighted_average(
+        history["rest_days"], history["game_date"], target,
+        LEAGUE_HALF_LIFE_DAYS, default=1.5
     )
 
     current = history.loc[history["season"] == target_season].copy()
@@ -609,11 +729,15 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
     current_sample = _recent_team_sample(current, RECENT_TEAM_GAMES)
     prior_ratings = _fit_ridge_ratings(
         previous, previous_season_league_efficiency, target,
-        PRIOR_SEASON_HALF_LIFE_DAYS, previous_season_shot_profile
+        PRIOR_SEASON_HALF_LIFE_DAYS, previous_season_shot_profile,
+        schedule_rest_baseline=schedule_rest_baseline,
+        include_schedule_features=include_schedule_features,
     )
     current_ratings = _fit_ridge_ratings(
         current_sample, league_efficiency, target, CURRENT_HALF_LIFE_DAYS,
-        league_shot_profile
+        league_shot_profile,
+        schedule_rest_baseline=schedule_rest_baseline,
+        include_schedule_features=include_schedule_features,
     )
 
     current_team_shot = (
@@ -640,6 +764,16 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
         )
         for column in SHOT_PROFILE_COLUMNS
     }
+    schedule_betas = {
+        column: _blend_value(
+            current_ratings["schedule_betas"].get(column),
+            prior_ratings["schedule_betas"].get(column),
+            int(sum(current_games_series.values) / max(len(current_games_series), 1)),
+            CURRENT_SEASON_BLEND_GAMES,
+            0.0,
+        ) if include_schedule_features else 0.0
+        for column in SCHEDULE_FEATURE_COLUMNS
+    }
 
     teams = sorted(set(history["team_name"]) | set(history["opponent_name"]))
     current_games = current_games_series.to_dict()
@@ -663,6 +797,9 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
         "league_season_blend_weight": float(league_season_blend_weight),
         "league_shot_profile": league_shot_profile,
         "shot_betas": shot_betas,
+        "schedule_betas": schedule_betas,
+        "schedule_rest_baseline": float(schedule_rest_baseline),
+        "schedule_features_enabled": bool(include_schedule_features),
         "home_advantage": _blend_value(
             current_ratings["home_advantage"],
             prior_ratings["home_advantage"],
@@ -703,6 +840,7 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
                 )
                 for column in SHOT_PROFILE_COLUMNS
             },
+            **calculate_team_schedule_state(history, team, target),
             "current_season_games": n_current,
         }
     return ratings
@@ -710,12 +848,15 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
 
 def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: str,
                           game_date: Any, neutral_site: bool = False,
-                          pregame_ratings: dict[str, Any] | None = None) -> dict[str, Any]:
+                          pregame_ratings: dict[str, Any] | None = None,
+                          include_schedule_features: bool = True) -> dict[str, Any]:
     """Predict a game total with possession pace and opponent-adjusted efficiency."""
     ratings = (
         pregame_ratings
         if pregame_ratings is not None
-        else estimate_pregame_ratings(prior_logs, game_date)
+        else estimate_pregame_ratings(
+            prior_logs, game_date, include_schedule_features=include_schedule_features
+        )
     )
     home = normalize_team_name(home_team)
     away = normalize_team_name(away_team)
@@ -767,19 +908,43 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
 
     home_shot_adjustment = shot_profile_adjustment(home_shots, away_shots)
     away_shot_adjustment = shot_profile_adjustment(away_shots, home_shots)
+    schedule_betas = ratings["schedule_betas"]
+    schedule_rest_baseline = float(ratings["schedule_rest_baseline"])
+
+    def schedule_adjustment(team_stats: dict[str, Any]) -> float:
+        return float(
+            schedule_betas["rest_days"] * (
+                float(team_stats.get("rest_days", schedule_rest_baseline))
+                - schedule_rest_baseline
+            )
+            + schedule_betas["back_to_back"] * float(team_stats.get("back_to_back", 0.0))
+            + schedule_betas["three_in_four"] * float(team_stats.get("three_in_four", 0.0))
+        )
+
+    home_schedule_adjustment = (
+        schedule_adjustment(home_stats) if ratings["schedule_features_enabled"] else 0.0
+    )
+    away_schedule_adjustment = (
+        schedule_adjustment(away_stats) if ratings["schedule_features_enabled"] else 0.0
+    )
     home_efficiency = (
         home_off + away_def - league_eff
         + home_court_adjustment + home_shot_adjustment
+        + home_schedule_adjustment
     )
     away_efficiency = (
         away_off + home_def - league_eff + away_shot_adjustment
+        + away_schedule_adjustment
     )
     home_points = expected_pace * home_efficiency / 100.0
     away_points = expected_pace * away_efficiency / 100.0
     projected_total = home_points + away_points
 
     return {
-        "model_version": MODEL_VERSION,
+        "model_version": (
+            MODEL_VERSION if ratings["schedule_features_enabled"]
+            else BASELINE_MODEL_VERSION
+        ),
         "game_date": pd.Timestamp(game_date).date().isoformat(),
         "neutral_site": bool(neutral_site),
         "home_court_adjustment": round(float(home_court_adjustment), 3),
@@ -806,6 +971,19 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
         "away_expected_efficiency": round(float(away_efficiency), 2),
         "home_shot_profile_adjustment": round(float(home_shot_adjustment), 3),
         "away_shot_profile_adjustment": round(float(away_shot_adjustment), 3),
+        "home_schedule_adjustment": round(float(home_schedule_adjustment), 3),
+        "away_schedule_adjustment": round(float(away_schedule_adjustment), 3),
+        "schedule_rest_baseline": round(schedule_rest_baseline, 3),
+        "schedule_betas": {
+            column: round(float(value), 4)
+            for column, value in schedule_betas.items()
+        },
+        "home_rest_days": float(home_stats.get("rest_days", 2.0)),
+        "away_rest_days": float(away_stats.get("rest_days", 2.0)),
+        "home_back_to_back": int(home_stats.get("back_to_back", 0.0)),
+        "away_back_to_back": int(away_stats.get("back_to_back", 0.0)),
+        "home_three_in_four": int(home_stats.get("three_in_four", 0.0)),
+        "away_three_in_four": int(away_stats.get("three_in_four", 0.0)),
         "home_three_pa_rate": round(float(home_shots.get("three_pa_rate", league_shots["three_pa_rate"])), 4),
         "away_three_pa_rate": round(float(away_shots.get("three_pa_rate", league_shots["three_pa_rate"])), 4),
         "home_free_throw_rate": round(float(home_shots.get("free_throw_rate", league_shots["free_throw_rate"])), 4),
@@ -850,7 +1028,8 @@ def _build_game_score_history(team_logs: pd.DataFrame) -> pd.DataFrame:
 
 def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                               min_prior_team_rows: int = 500,
-                              include_v2_benchmark: bool = True) -> tuple[pd.DataFrame, dict[str, Any]]:
+                              include_v2_benchmark: bool = True,
+                              include_v3_2_ablation: bool = True) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Chronological game-level backtest; every forecast sees strictly prior dates."""
     logs = prepare_team_game_logs(raw_logs)
     game_meta = (
@@ -870,7 +1049,13 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
         prior = logs.loc[logs["game_date"] < game_date].copy()
         # All games on a calendar date share the same pregame information.
         # Fit the team ratings once per date, not once per matchup.
-        date_ratings = estimate_pregame_ratings(prior, game_date)
+        date_ratings = estimate_pregame_ratings(
+            prior, game_date, include_schedule_features=True
+        )
+        date_ratings_v3_2 = (
+            estimate_pregame_ratings(prior, game_date, include_schedule_features=False)
+            if include_v3_2_ablation else None
+        )
         prior_scores = score_history.loc[score_history["game_date"] < game_date].copy()
         # Tell the legacy V2 cutoff guard this per-date benchmark history has
         # already been date-filtered and team-normalized. The guard still checks
@@ -898,6 +1083,15 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                 prior, home_row["team_name"], away_row["team_name"],
                 game_date, neutral_site=neutral_site,
                 pregame_ratings=date_ratings
+            )
+            prediction_v3_2 = (
+                predict_game_total_v3(
+                    prior, home_row["team_name"], away_row["team_name"],
+                    game_date, neutral_site=neutral_site,
+                    pregame_ratings=date_ratings_v3_2,
+                    include_schedule_features=False,
+                )
+                if date_ratings_v3_2 is not None else None
             )
             actual_total = float(home_row["points"] + away_row["points"])
             actual_possessions = float(
@@ -934,6 +1128,26 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                 "projected_total": predicted_total,
                 "error": predicted_total - actual_total,
                 "absolute_error": abs(predicted_total - actual_total),
+                "v3_2_projected_total": (
+                    float(prediction_v3_2["projected_total"])
+                    if prediction_v3_2 is not None else float("nan")
+                ),
+                "v3_2_error": (
+                    float(prediction_v3_2["projected_total"]) - actual_total
+                    if prediction_v3_2 is not None else float("nan")
+                ),
+                "v3_2_absolute_error": (
+                    abs(float(prediction_v3_2["projected_total"]) - actual_total)
+                    if prediction_v3_2 is not None else float("nan")
+                ),
+                "home_schedule_adjustment": prediction["home_schedule_adjustment"],
+                "away_schedule_adjustment": prediction["away_schedule_adjustment"],
+                "home_rest_days": prediction["home_rest_days"],
+                "away_rest_days": prediction["away_rest_days"],
+                "home_back_to_back": prediction["home_back_to_back"],
+                "away_back_to_back": prediction["away_back_to_back"],
+                "home_three_in_four": prediction["home_three_in_four"],
+                "away_three_in_four": prediction["away_three_in_four"],
                 "v2_projected_total": baseline_total,
                 "v2_error": baseline_total - actual_total,
                 "v2_absolute_error": abs(baseline_total - actual_total),
@@ -957,7 +1171,10 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
         )
     errors = results["error"].astype(float)
     baseline_errors = results["v2_error"].astype(float)
+    v3_2_errors = results["v3_2_error"].dropna().astype(float)
+    v3_2_abs_errors = results["v3_2_absolute_error"].dropna().astype(float)
     v3_mae = float(results["absolute_error"].mean())
+    v3_2_mae = float(v3_2_abs_errors.mean()) if not v3_2_abs_errors.empty else None
     v2_mae = (
         float(results["v2_absolute_error"].mean())
         if include_v2_benchmark else None
@@ -974,6 +1191,19 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
         "v3_mean_error_bias": round(float(errors.mean()), 4),
         "v3_within_5_points_pct": round(float((results["absolute_error"] <= 5).mean() * 100), 2),
         "v3_within_10_points_pct": round(float((results["absolute_error"] <= 10).mean() * 100), 2),
+        "v3_2_ablation_included": bool(include_v3_2_ablation),
+        "v3_2_mean_absolute_error_same_games": round(v3_2_mae, 4) if v3_2_mae is not None else None,
+        "v3_2_root_mean_squared_error_same_games": (
+            round(float(np.sqrt(np.mean(v3_2_errors ** 2))), 4)
+            if not v3_2_errors.empty else None
+        ),
+        "v3_2_mae_improvement_from_schedule": (
+            round(v3_2_mae - v3_mae, 4) if v3_2_mae is not None else None
+        ),
+        "mean_absolute_schedule_adjustment": round(
+            float((results["home_schedule_adjustment"].abs()
+                   + results["away_schedule_adjustment"].abs()).mean()), 4
+        ),
         "v2_benchmark_included": bool(include_v2_benchmark),
         "v2_mean_absolute_error_same_games": round(v2_mae, 4) if v2_mae is not None else None,
         "v2_root_mean_squared_error_same_games": (
@@ -1013,8 +1243,8 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
         "max_games_requested": int(max_games),
         "note": (
             "Score-prediction research only; no sportsbook market residual, "
-            "injury, player-minute, referee, spread, travel, or betting ROI model "
-            "is included in this first V3 challenger."
+            "injury, player-minute, referee, spread, travel-distance, altitude, "
+            "market-residual, or betting ROI model is included in this V3 challenger."
         ),
     }
     return results, summary
