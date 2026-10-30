@@ -213,6 +213,7 @@ def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
     out["team_name"] = out["team_name"].astype(str).str.strip().map(normalize_team_name)
     out["opponent_name"] = out["opponent_name"].astype(str).str.strip().map(normalize_team_name)
     out["game_id"] = out["game_id"].astype(str).str.strip()
+    out["is_home"] = out["is_home"].map(_parse_bool)
     out = out.dropna(
         subset=["game_date", "season", "points", "possessions"]
     )
