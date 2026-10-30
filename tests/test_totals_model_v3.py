@@ -300,3 +300,25 @@ def test_v3_diagnostics_can_skip_duplicate_v2_benchmark():
     assert results["v2_projected_total"].isna().all()
     assert "pace_error" in results.columns
     assert "efficiency_error" in results.columns
+
+
+def test_precomputed_pregame_ratings_match_direct_prediction():
+    prior_season = make_raw_games(
+        start_date="2020-10-20", count=24, season_id="22020"
+    )
+    current_season = make_raw_games(
+        start_date="2021-10-20", count=18, season_id="22021"
+    )
+    logs = prepare_team_game_logs(
+        pd.concat([prior_season, current_season], ignore_index=True)
+    )
+    target_date = "2021-12-15"
+    ratings = estimate_pregame_ratings(logs, target_date)
+
+    direct = predict_game_total_v3(logs, "Team A", "Team B", target_date)
+    reused = predict_game_total_v3(
+        logs, "Team A", "Team B", target_date, pregame_ratings=ratings
+    )
+
+    assert direct["projected_total"] == reused["projected_total"]
+    assert direct["expected_possessions"] == reused["expected_possessions"]
