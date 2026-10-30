@@ -519,9 +519,14 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
 
 
 def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: str,
-                          game_date: Any, neutral_site: bool = False) -> dict[str, Any]:
+                          game_date: Any, neutral_site: bool = False,
+                          pregame_ratings: dict[str, Any] | None = None) -> dict[str, Any]:
     """Predict a game total with possession pace and opponent-adjusted efficiency."""
-    ratings = estimate_pregame_ratings(prior_logs, game_date)
+    ratings = (
+        pregame_ratings
+        if pregame_ratings is not None
+        else estimate_pregame_ratings(prior_logs, game_date)
+    )
     home = normalize_team_name(home_team)
     away = normalize_team_name(away_team)
     league_eff = ratings["league_efficiency"]
@@ -622,6 +627,9 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
 
     for game_date, day_games in selected_logs.groupby("game_date", sort=True):
         prior = logs.loc[logs["game_date"] < game_date].copy()
+        # All games on a calendar date share the same pregame information.
+        # Fit the team ratings once per date, not once per matchup.
+        date_ratings = estimate_pregame_ratings(prior, game_date)
         prior_scores = score_history.loc[score_history["game_date"] < game_date].copy()
         # Tell the legacy V2 cutoff guard this per-date benchmark history has
         # already been date-filtered and team-normalized. The guard still checks
@@ -647,7 +655,8 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
 
             prediction = predict_game_total_v3(
                 prior, home_row["team_name"], away_row["team_name"],
-                game_date, neutral_site=neutral_site
+                game_date, neutral_site=neutral_site,
+                pregame_ratings=date_ratings
             )
             actual_total = float(home_row["points"] + away_row["points"])
             actual_possessions = float(
