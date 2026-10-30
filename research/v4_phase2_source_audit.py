@@ -39,6 +39,7 @@ def main():
         "openrapm": "openrapm",
         "games": "stats",
         "team_seasons": "stats",
+        "game_rotations": "stats",
     }
     for table, source in datasets.items():
         meta = metadata.get(table, {})
