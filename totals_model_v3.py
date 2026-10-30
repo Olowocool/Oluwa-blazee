@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from team_name_utils import normalize_team_name
+from points_engine import calculate_matchup_points
 
 MODEL_VERSION = "totals-v3-possession-ridge"
 SEASONS_TO_KEEP = 8
@@ -574,6 +575,33 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
     }
 
 
+
+def _build_game_score_history(team_logs: pd.DataFrame) -> pd.DataFrame:
+    """Create one historical game row for the existing Points Engine V2 benchmark."""
+    records = []
+    for game_id, game in team_logs.groupby("game_id", sort=False):
+        if len(game) != 2:
+            continue
+        home_rows = game.loc[game["is_home"] == True]
+        away_rows = game.loc[game["is_home"] == False]
+        neutral = not (len(home_rows) == 1 and len(away_rows) == 1)
+        if neutral:
+            ordered = game.sort_values("team_name")
+            home_row, away_row = ordered.iloc[0], ordered.iloc[1]
+        else:
+            home_row, away_row = home_rows.iloc[0], away_rows.iloc[0]
+        records.append({
+            "game_id": str(game_id),
+            "game_date": pd.Timestamp(home_row["game_date"]),
+            "home_team": home_row["team_name"],
+            "away_team": away_row["team_name"],
+            "home_score": float(home_row["points"]),
+            "away_score": float(away_row["points"]),
+            "total_score": float(home_row["points"] + away_row["points"]),
+            "is_neutral_site": bool(neutral),
+        })
+    return pd.DataFrame(records)
+
 def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                               min_prior_team_rows: int = 500) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Chronological game-level backtest; every forecast sees strictly prior dates."""
@@ -589,9 +617,11 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
     selected_ids = set(game_meta["game_id"].astype(str))
     selected_logs = logs.loc[logs["game_id"].isin(selected_ids)].copy()
     records: list[dict[str, Any]] = []
+    score_history = _build_game_score_history(logs)
 
     for game_date, day_games in selected_logs.groupby("game_date", sort=True):
         prior = logs.loc[logs["game_date"] < game_date].copy()
+        prior_scores = score_history.loc[score_history["game_date"] < game_date].copy()
         if len(prior) < min_prior_team_rows:
             continue
         for game_id, game in day_games.groupby("game_id", sort=False):
@@ -615,6 +645,14 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
             )
             actual_total = float(home_row["points"] + away_row["points"])
             predicted_total = float(prediction["projected_total"])
+            baseline = calculate_matchup_points(
+                home_team=home_row["team_name"],
+                away_team=away_row["team_name"],
+                history_df=prior_scores,
+                bookmaker_total=None,
+                game_date=game_date,
+            )
+            baseline_total = float(baseline["projected_total"])
             records.append({
                 "game_id": str(game_id),
                 "game_date": pd.Timestamp(game_date).date().isoformat(),
@@ -624,6 +662,9 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                 "projected_total": predicted_total,
                 "error": predicted_total - actual_total,
                 "absolute_error": abs(predicted_total - actual_total),
+                "v2_projected_total": baseline_total,
+                "v2_error": baseline_total - actual_total,
+                "v2_absolute_error": abs(baseline_total - actual_total),
                 "expected_possessions": prediction["expected_possessions"],
                 "history_rows_used": prediction["history_rows_used"],
                 "seasons_used": ",".join(map(str, prediction["seasons_used"])),
@@ -636,6 +677,9 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
             "game pairing, and min_prior_team_rows setting."
         )
     errors = results["error"].astype(float)
+    baseline_errors = results["v2_error"].astype(float)
+    v3_mae = float(results["absolute_error"].mean())
+    v2_mae = float(results["v2_absolute_error"].mean())
     summary = {
         "model_version": MODEL_VERSION,
         "test_games": int(len(results)),
@@ -643,11 +687,17 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
         "history_end": str(logs["game_date"].max().date()),
         "test_start": str(pd.to_datetime(results["game_date"]).min().date()),
         "test_end": str(pd.to_datetime(results["game_date"]).max().date()),
-        "mean_absolute_error": round(float(results["absolute_error"].mean()), 4),
-        "root_mean_squared_error": round(float(np.sqrt(np.mean(errors ** 2))), 4),
-        "mean_error_bias": round(float(errors.mean()), 4),
-        "within_5_points_pct": round(float((results["absolute_error"] <= 5).mean() * 100), 2),
-        "within_10_points_pct": round(float((results["absolute_error"] <= 10).mean() * 100), 2),
+        "v3_mean_absolute_error": round(v3_mae, 4),
+        "v3_root_mean_squared_error": round(float(np.sqrt(np.mean(errors ** 2))), 4),
+        "v3_mean_error_bias": round(float(errors.mean()), 4),
+        "v3_within_5_points_pct": round(float((results["absolute_error"] <= 5).mean() * 100), 2),
+        "v3_within_10_points_pct": round(float((results["absolute_error"] <= 10).mean() * 100), 2),
+        "v2_mean_absolute_error_same_games": round(v2_mae, 4),
+        "v2_root_mean_squared_error_same_games": round(float(np.sqrt(np.mean(baseline_errors ** 2))), 4),
+        "v2_mean_error_bias_same_games": round(float(baseline_errors.mean()), 4),
+        "v2_within_5_points_pct_same_games": round(float((results["v2_absolute_error"] <= 5).mean() * 100), 2),
+        "v2_within_10_points_pct_same_games": round(float((results["v2_absolute_error"] <= 10).mean() * 100), 2),
+        "v3_mae_improvement_vs_v2_points": round(v2_mae - v3_mae, 4),
         "min_prior_team_rows": int(min_prior_team_rows),
         "max_games_requested": int(max_games),
         "note": (
