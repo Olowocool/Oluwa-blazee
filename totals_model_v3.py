@@ -127,13 +127,16 @@ def prepare_team_game_logs(raw_df: pd.DataFrame) -> pd.DataFrame:
             "matchup": df[matchup_col].astype(str),
             "points": _numeric(df[points_col]),
         })
-        work["is_home"] = work["matchup"].str.contains(
+        home_marker = work["matchup"].str.contains(
             r"\bvs\.?\b", case=False, regex=True, na=False
         )
-        has_away_marker = work["matchup"].str.contains(
+        away_marker = work["matchup"].str.contains(
             r"\s@\s", case=False, regex=True, na=False
         )
-        work.loc[has_away_marker, "is_home"] = False
+        work["is_home"] = [
+            True if is_home else False if is_away else None
+            for is_home, is_away in zip(home_marker, away_marker)
+        ]
 
         if season_col:
             season_values = df[season_col].reset_index(drop=True)
@@ -252,7 +255,7 @@ def _fit_ridge_ratings(logs: pd.DataFrame, league_efficiency: float,
     teams = sorted(set(logs["team_name"]) | set(logs["opponent_name"]))
     team_index = {team: index for index, team in enumerate(teams)}
     n_teams = len(teams)
-    if len(logs) < max(12, n_teams):
+    if len(logs) < 12:
         return {"off": {}, "def": {}, "home_advantage": 0.0}
 
     x = np.zeros((len(logs), 2 * n_teams + 1), dtype=float)
@@ -409,7 +412,7 @@ def estimate_pregame_ratings(prior_logs: pd.DataFrame, target_date: Any) -> dict
 
 
 def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: str,
-                          game_date: Any) -> dict[str, Any]:
+                          game_date: Any, neutral_site: bool = False) -> dict[str, Any]:
     """Predict a game total with possession pace and opponent-adjusted efficiency."""
     ratings = estimate_pregame_ratings(prior_logs, game_date)
     home = normalize_team_name(home_team)
@@ -430,7 +433,8 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
         + (away_pace - ratings["league_pace"])
     ) / 2.0
 
-    home_efficiency = home_off + away_def - league_eff + ratings["home_advantage"]
+    home_court_adjustment = 0.0 if neutral_site else ratings["home_advantage"]
+    home_efficiency = home_off + away_def - league_eff + home_court_adjustment
     away_efficiency = away_off + home_def - league_eff
     home_points = expected_pace * home_efficiency / 100.0
     away_points = expected_pace * away_efficiency / 100.0
@@ -439,6 +443,8 @@ def predict_game_total_v3(prior_logs: pd.DataFrame, home_team: str, away_team: s
     return {
         "model_version": MODEL_VERSION,
         "game_date": pd.Timestamp(game_date).date().isoformat(),
+        "neutral_site": bool(neutral_site),
+        "home_court_adjustment": round(float(home_court_adjustment), 3),
         "home_team": home,
         "away_team": away,
         "projected_home_points": round(float(home_points), 2),
@@ -487,7 +493,8 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                 continue
             home_rows = game.loc[game["is_home"] == True]
             away_rows = game.loc[game["is_home"] == False]
-            if len(home_rows) == 1 and len(away_rows) == 1:
+            neutral_site = not (len(home_rows) == 1 and len(away_rows) == 1)
+            if not neutral_site:
                 home_row = home_rows.iloc[0]
                 away_row = away_rows.iloc[0]
             else:
@@ -495,12 +502,10 @@ def run_walk_forward_backtest(raw_logs: pd.DataFrame, max_games: int = 1500,
                 # and avoid attributing a home-court adjustment.
                 ordered = game.sort_values("team_name")
                 home_row, away_row = ordered.iloc[0], ordered.iloc[1]
-                prior_for_prediction = prior.copy()
-                prior_for_prediction["is_home"] = None
-                prior = prior_for_prediction
 
             prediction = predict_game_total_v3(
-                prior, home_row["team_name"], away_row["team_name"], game_date
+                prior, home_row["team_name"], away_row["team_name"],
+                game_date, neutral_site=neutral_site
             )
             actual_total = float(home_row["points"] + away_row["points"])
             predicted_total = float(prediction["projected_total"])
