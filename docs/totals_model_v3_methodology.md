@@ -40,8 +40,11 @@ the previous season's rating. The blend ramps from prior-season ratings to
 current-season ratings over the first 20 team games. All features are estimated
 only from games strictly before the target game date.
 
-The league efficiency and pace baselines use a rolling eight-season window, with
-more recent games receiving greater weight.
+The league baseline uses an eight-season weighted history with a 3-year
+half-life. During the current season, a 60-day rolling league average gradually
+replaces that long-run baseline as teams accumulate their first 20 games.
+Previous-season team ratings are fitted against the previous season's own
+league-efficiency level before being blended with current-season ratings.
 
 ## Evaluation
 
@@ -76,6 +79,24 @@ This test window has now been examined during development; it must not be
 described as an untouched holdout for subsequent V3 feature selection. Any
 further tuning requires a new evaluation period or prospective observations.
 The first report is score-prediction research only and says nothing about ROI.
+
+## Pace versus efficiency diagnostic
+
+A later V3-only run decomposed the same 500-game sample into pace and scoring
+efficiency:
+
+- Mean actual possessions: 101.9499
+- Mean expected possessions: 101.9776
+- Mean pace error: +0.0277 possessions
+- Actual combined points per 100 possessions: 226.4783
+- Expected combined points per 100 possessions: 221.3684
+- Mean efficiency error: -5.1099 points per 100
+
+This indicates the original V3 underprediction was not primarily caused by
+pace. The efficiency estimate was too low. V3.1 therefore tests a dynamic
+current-season league-efficiency baseline. This is a development adjustment,
+not an approved model change; it must pass the same walk-forward checks and a
+new prospective validation before use.
 
 ## Not yet included
 
