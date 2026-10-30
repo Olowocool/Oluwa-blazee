@@ -54,9 +54,11 @@ def load_project_game_csv() -> pd.DataFrame:
     games = games.loc[
         games["season_type"].fillna("").str.strip().str.casefold().eq("regular season")
     ].copy()
-    # NBA season end-year: games from July onward belong to the following spring's season.
-    games["season"] = games["game_date"].dt.year + (games["game_date"].dt.month >= 7).astype(int)
+    # NBA Stats season_id is 2YYYY for regular-season data; YYYY is the season start year.
+    # Convert to end-year so July/August 2020 bubble games remain in the 2019-20 season.
+    games["season"] = pd.to_numeric(games["season_id"].astype(str).str[-4:], errors="coerce") + 1
     games = games.loc[games["season"].between(FIRST_SEASON - 1, LAST_SEASON)].copy()
+    candidate_games = int(len(games))
 
     numeric = [
         "fga_home", "fta_home", "oreb_home", "tov_home", "pts_home",
@@ -64,6 +66,7 @@ def load_project_game_csv() -> pd.DataFrame:
     ]
     for col in numeric:
         games[col] = pd.to_numeric(games[col], errors="coerce")
+    missing_by_column = games[["game_id", "game_date", "team_id_home", "team_id_away", *numeric]].isna().sum().astype(int).to_dict()
     games = games.dropna(subset=[
         "game_id", "game_date", "team_id_home", "team_id_away", *numeric
     ])
@@ -103,7 +106,15 @@ def load_project_game_csv() -> pd.DataFrame:
     team_games = pd.concat([home, away], ignore_index=True)
     if team_games.duplicated(["season", "game_id", "team_id"]).any():
         raise RuntimeError("Duplicate team/game key in transformed game.csv")
-    return team_games.sort_values(["game_date", "season", "game_id", "team_id"]).reset_index(drop=True)
+    load_audit = {
+        "candidate_regular_season_games_in_window": candidate_games,
+        "valid_games_after_required_boxscore_check": int(len(games)),
+        "games_excluded_for_missing_required_values": int(candidate_games - len(games)),
+        "missing_values_by_column_before_drop": missing_by_column,
+    }
+    team_games = team_games.sort_values(["game_date", "season", "game_id", "team_id"]).reset_index(drop=True)
+    team_games.attrs["load_audit"] = load_audit
+    return team_games
 
 
 def fit_rating_model(history: pd.DataFrame):
@@ -279,6 +290,7 @@ def metrics(frame: pd.DataFrame, prediction_col: str) -> dict:
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     team_games = load_project_game_csv()
+    load_audit = team_games.attrs.get("load_audit", {})
     if team_games.empty:
         raise RuntimeError("No regular-season team games found in data/game.csv")
     formula_poss = team_games.fga + 0.44 * team_games.fta - team_games.oreb + team_games.tov
@@ -286,7 +298,8 @@ def main():
         raise RuntimeError("Invalid formula possession values in data/game.csv")
     data_audit = {
         "source_file": str(DATA_PATH),
-        **load_audit,\n        "regular_season_team_game_rows": int(len(team_games)),
+        **load_audit,\n        **load_audit,
+        "regular_season_team_game_rows": int(len(team_games)),
         "regular_season_games": int(team_games[["season", "game_id"]].drop_duplicates().shape[0]),
         "first_game_date": str(team_games.game_date.min().date()),
         "last_game_date": str(team_games.game_date.max().date()),
