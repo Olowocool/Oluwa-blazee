@@ -299,7 +299,7 @@ def main():
         raise RuntimeError("Invalid formula possession values in data/game.csv")
     data_audit = {
         "source_file": str(DATA_PATH),
-        **load_audit,\n        **load_audit,
+        **load_audit,
         "regular_season_team_game_rows": int(len(team_games)),
         "regular_season_games": int(team_games[["season", "game_id"]].drop_duplicates().shape[0]),
         "first_game_date": str(team_games.game_date.min().date()),
