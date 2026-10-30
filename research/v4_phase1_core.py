@@ -144,7 +144,7 @@ def build_point_in_time(raw: pd.DataFrame):
         if not prior_data.empty:
             for team, group in prior_data.groupby("team_id"):
                 prior_pace_by_team[str(team)] = weighted_recent_mean(group, "formula_poss")
-        prior_league_pace = weighted_recent_mean(prior_data, "formula_poss") if not prior_data.empty else 100.0
+        prior_league_pace = float(prior_data["formula_poss"].mean()) if not prior_data.empty else 100.0
 
         # Process every game on a date from the same frozen pre-date history.
         for date, todays in season_data.groupby("game_date", sort=True):
@@ -153,7 +153,7 @@ def build_point_in_time(raw: pd.DataFrame):
                 league_pace = prior_league_pace
             else:
                 current_rating = fit_rating_model(history)
-                league_pace = weighted_recent_mean(history, "formula_poss")
+                league_pace = float(history["formula_poss"].mean())
                 if not np.isfinite(league_pace):
                     league_pace = prior_league_pace
             team_history = {
