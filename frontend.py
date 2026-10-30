@@ -903,12 +903,36 @@ if st.button("Load Daily Predictions"):
             timeout=90
         )
 
-        if response.status_code != 200:
+        if response.status_code == 429:
+            # The research UI must not depend on the production API's inbound
+            # rate limit. On 429 only, call the same repository backend function
+            # in-process from this research service. Production is not changed.
+            st.warning(
+                "The shared backend is temporarily rate-limited. "
+                "Loading this research slate through the local research fallback."
+            )
+            try:
+                import app as local_research_backend
+                data = local_research_backend.predict_today(date_input)
+            except Exception as local_error:
+                st.error(
+                    "The local research schedule fallback also failed: "
+                    f"{local_error}"
+                )
+                st.stop()
+
+            if not isinstance(data, dict) or "games" not in data:
+                st.error("The local research fallback returned an invalid schedule response.")
+                st.stop()
+            st.caption("Schedule source: local research fallback (same repository backend code).")
+
+        elif response.status_code != 200:
             st.error(f"Prediction API failed with status {response.status_code}")
             st.write(response.text)
             st.stop()
 
-        data = response.json()
+        else:
+            data = response.json()
 
         st.session_state["daily_data"] = data
         st.session_state["last_loaded_date"] = date_input
