@@ -596,8 +596,12 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, team_hist, playe
             candidate_ids.discard(pid)
             continue
         hist = team_hist.get((team_id, pid), [])
+        # Do not carry a traded player's former-team minutes into a new-team
+        # rotation. Without a prior appearance for this team, the new role is
+        # not identifiable from pregame data, so this player is excluded until
+        # team-specific history exists.
         if not hist:
-            hist = all_hist
+            continue
         m = recent_minutes(hist, game_date)
         if m > MIN_ROTATION_MINUTES:
             estimates[pid] = m
