@@ -387,11 +387,19 @@ def load_pace_history() -> dict[str, Any]:
 def _team_form(
     team_id: str,
     season: int,
+    target_date: Any,
     team_history: dict[str, list[dict[str, Any]]],
     league: dict[str, float],
     previous_league: dict[str, float],
 ) -> dict[str, float]:
-    history = team_history.get(team_id, [])
+    # The downloaded source includes all completed games currently available.
+    # Filter again per requested game date so the test bench remains point-in-time
+    # correct even when used to evaluate an older target or a future slate.
+    target = _as_date(target_date)
+    history = [
+        row for row in team_history.get(team_id, [])
+        if pd.Timestamp(row["date"]).normalize() < target
+    ]
     current = [row for row in history if int(row["season"]) == season]
     previous = [row for row in history if int(row["season"]) == season - 1]
     n_current = len(current)
@@ -473,13 +481,17 @@ def pace_component(
     target_season = start_year + 1
     league_history = pace_history["league_history"]
     team_history = pace_history["team_history"]
-    previous_league = _league_stats(
-        list(league_history.get(target_season - 1, []))
-    )
-    league = _league_stats(
-        list(league_history.get(target_season, [])),
-        fallback=previous_league,
-    )
+    target = _as_date(target_date)
+    prior_league_rows = [
+        row for row in league_history.get(target_season - 1, [])
+        if pd.Timestamp(row["date"]).normalize() < target
+    ]
+    target_league_rows = [
+        row for row in league_history.get(target_season, [])
+        if pd.Timestamp(row["date"]).normalize() < target
+    ]
+    previous_league = _league_stats(prior_league_rows)
+    league = _league_stats(target_league_rows, fallback=previous_league)
     home_rows = team_history.get(home_id, [])
     away_rows = team_history.get(away_id, [])
     valid_prior = any(int(row["season"]) <= target_season - 1 for row in home_rows) and any(
@@ -492,8 +504,8 @@ def pace_component(
             "adjustment": 0.0,
         }
 
-    home_form = _team_form(home_id, target_season, team_history, league, previous_league)
-    away_form = _team_form(away_id, target_season, team_history, league, previous_league)
+    home_form = _team_form(home_id, target_season, target, team_history, league, previous_league)
+    away_form = _team_form(away_id, target_season, target, team_history, league, previous_league)
     expected_l10 = 0.5 * (home_form["pace10"] + away_form["pace10"])
     pace_gap_l10 = float(expected_l10 - league["pace"])
     adjustment = float(PACE_LAST10_BETA * pace_gap_l10)
@@ -634,16 +646,18 @@ def calculate_game_components(
         h2h_mode=h2h_mode,
         rest_mode=rest_mode,
     )
-    latest_history = pd.to_datetime(score_history["game_date"]).max()
-    if not latest_history < target:
-        # The CSV may contain games dated on/after the target date, but all
-        # component helpers independently filter strict prior dates. The score
-        # history itself is allowed to contain future records; V5 uses cutoff.
-        cutoff_ok = bool(
-            pd.to_datetime(score_history["game_date"]).lt(target).any()
-        )
-    else:
-        cutoff_ok = True
+    h2h_latest = h2h.get("latest_date")
+    home_latest = home_rest.get("last_game_date")
+    away_latest = away_rest.get("last_game_date")
+    v5_cutoff = _as_date(v5.get("history_cutoff"))
+    cutoff_ok = bool(
+        v5_cutoff == target
+        and (h2h_latest is None or pd.Timestamp(h2h_latest).normalize() < target)
+        and (home_latest is None or pd.Timestamp(home_latest).normalize() < target)
+        and (away_latest is None or pd.Timestamp(away_latest).normalize() < target)
+    )
+    if not cutoff_ok:
+        raise RuntimeError("At least one model input failed the strict prior-date cutoff audit.")
 
     return {
         "home_team": normalize_team_name(home_team),
@@ -723,13 +737,29 @@ def parse_current_totals_markets(
                             or over_price <= 1.0 or under_price <= 1.0
                         ):
                             continue
+                        update_text = str(
+                            market.get("last_update") or bookmaker.get("last_update") or ""
+                        ).strip()
+                        if update_text:
+                            try:
+                                update_dt = datetime.fromisoformat(update_text.replace("Z", "+00:00"))
+                            except ValueError:
+                                continue
+                            if update_dt.tzinfo is None:
+                                continue
+                            update_utc = update_dt.astimezone(timezone.utc)
+                            if update_utc > clock or update_utc >= commence_dt.astimezone(timezone.utc):
+                                continue
+                        else:
+                            update_utc = None
                         quotes.append({
                             "bookmaker": book_name,
                             "total_line": float(over_line),
                             "over_odds_decimal": float(over_price),
                             "under_odds_decimal": float(under_price),
-                            "last_update_utc": str(
-                                market.get("last_update") or bookmaker.get("last_update") or ""
+                            "last_update_utc": (
+                                update_utc.isoformat().replace("+00:00", "Z")
+                                if update_utc else ""
                             ),
                         })
                         break
