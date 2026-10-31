@@ -850,7 +850,8 @@ PAPER_FIELDS = [
     "home_team", "away_team", "market_median_total", "bookmaker_count",
     "bookmaker_quotes_json", "v5_raw_total", "v5_plus_pace",
     "v5_plus_legacy_h2h", "v5_plus_legacy_rest", "v5_all_legacy_components",
-    "selected_testbench_prediction", "pace_adjustment", "h2h_adjustment_selected",
+    "selected_testbench_prediction", "selected_configuration",
+    "pace_adjustment", "h2h_adjustment_selected",
     "rest_adjustment_selected", "h2h_games_used", "home_rest_days",
     "away_rest_days", "paper_status",
 ]
