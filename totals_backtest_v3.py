@@ -69,7 +69,11 @@ def metrics(actual, predicted):
 def run_backtest():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     history = load_history()
-    dates = sorted(history["game_date"].unique())[-MAX_GAMES_TO_TEST:]
+    # Select the dates covering the most recent N games (not N calendar dates).
+    # The old implementation accidentally selected up to 2,000 dates, which
+    # could mean testing tens of thousands of games.
+    cutoff_date = history.tail(MAX_GAMES_TO_TEST)["game_date"].min()
+    dates = sorted(history.loc[history["game_date"] >= cutoff_date, "game_date"].unique())
     records = []
     skipped = 0
     # One cleaned history + one ratings fit per target date, reused for every
