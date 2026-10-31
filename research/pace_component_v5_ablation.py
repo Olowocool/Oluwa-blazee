@@ -114,10 +114,11 @@ def pair_source(raw):
         raise RuntimeError("Duplicate (season, game_id, team_id) keys.")
 
     # NBA advanced pace is retained for comparison, but the candidate uses
-    # play-by-play possessions normalized to 48 minutes. Team-game MIN is
-    # the sum of five players' minutes, so 48-minute pace = POSS * 240 / MIN.
+    # play-by-play possessions normalized to 48 minutes. In these team-game
+    # logs, MIN is elapsed game duration (48 regulation minutes, plus OT),
+    # so 48-minute pace = PBP POSS * 48 / elapsed game minutes.
     d["nba_pace"] = d["pace"]
-    d["pace"] = d["poss"] * 240.0 / d["min"]
+    d["pace"] = d["poss"] * 48.0 / d["min"]
 
     # The requested box-score approximation is audited as-is. In this source,
     # player OREB excludes team offensive rebounds, which are reported
@@ -463,6 +464,7 @@ def main():
     poss_delta = (poss_audit.formula_poss - poss_audit.source_poss).abs()
     adjusted_audit = poss_audit.dropna(subset=["abs_adjusted_formula_diff"])
     adjusted_delta = adjusted_audit["abs_adjusted_formula_diff"]
+    unadjusted_on_adjusted_sample = adjusted_audit["abs_formula_diff"]
     pace_delta = poss_audit["abs_pbp_vs_nba_pace"]
     poss_summary = {
         "team_game_rows": int(len(poss_audit)),
@@ -472,6 +474,10 @@ def main():
         "unadjusted_formula_exact_within_0_01_pct": float((poss_delta <= .01).mean() * 100),
         "team_oreb_available_rows": int(len(adjusted_audit)),
         "team_oreb_available_pct": float(len(adjusted_audit) / len(poss_audit) * 100),
+        "unadjusted_formula_mae_on_same_team_oreb_sample": (
+            float(unadjusted_on_adjusted_sample.mean())
+            if len(unadjusted_on_adjusted_sample) else None
+        ),
         "team_oreb_adjusted_formula_mae_vs_play_by_play_poss": (
             float(adjusted_delta.mean()) if len(adjusted_delta) else None
         ),
@@ -498,7 +504,7 @@ def main():
         "selected_holdout_metrics": holdout_row.to_dict(),
         "paired_date_cluster_bootstrap_vs_v5": bootstrap,
         "same_day_results_excluded": True,
-        "pace_measure": "play-by-play possessions * 240 / team total minutes",
+        "pace_measure": "play-by-play possessions * 48 / elapsed game minutes",
         "boxscore_formula_audit": "FGA + 0.44*FTA - OREB + TOV; separately subtract team_oreb where available",
         "production_modified": False,
         "source_updated_utc": {
