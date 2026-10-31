@@ -127,8 +127,24 @@ def scheduled_task_status() -> dict[str, Any]:
         return {"status": "not_windows", "tasks": []}
     ps = r"""
     $ErrorActionPreference='Stop'; Import-Module ScheduledTasks -ErrorAction Stop
-    $found=@(Get-ScheduledTask | Where-Object { (($_.Actions | ForEach-Object { $_.Execute+' '+$_.Arguments }) -join ' ') -match '(?i)run_market_snapshot_capture\.bat' } | ForEach-Object { $i=Get-ScheduledTaskInfo -TaskName $_.TaskName -TaskPath $_.TaskPath; [pscustomobject]@{name=$_.TaskName;path=$_.TaskPath;state=[string]$_.State;last_run=[string]$i.LastRunTime;last_result=[string]$i.LastTaskResult;next_run=[string]$i.NextRunTime;action=(($_.Actions | ForEach-Object {$_.Execute+' '+$_.Arguments}) -join ' ')} })
-    if($found.Count){@{status='matched';tasks=$found}|ConvertTo-Json -Compress -Depth 4}else{@{status='not_found';tasks=@()}|ConvertTo-Json -Compress}
+    $found=@(Get-ScheduledTask | Where-Object { (($_.Actions | ForEach-Object { $_.Execute+' '+$_.Arguments }) -join ' ') -match '(?i)run_market_snapshot_capture\.bat' } | ForEach-Object {
+      $task=$_
+      $i=Get-ScheduledTaskInfo -TaskName $task.TaskName -TaskPath $task.TaskPath
+      $triggers=@($task.Triggers | ForEach-Object { [pscustomobject]@{type=$_.CimClass.CimClassName;enabled=$_.Enabled;start_boundary=$_.StartBoundary;repetition_interval=$_.Repetition.Interval;repetition_duration=$_.Repetition.Duration} })
+      [pscustomobject]@{
+        name=$task.TaskName;path=$task.TaskPath;state=[string]$task.State
+        last_run=[string]$i.LastRunTime;last_result=[string]$i.LastTaskResult;next_run=[string]$i.NextRunTime
+        action=(($task.Actions | ForEach-Object {$_.Execute+' '+$_.Arguments}) -join ' ')
+        triggers=$triggers
+        settings=[pscustomobject]@{
+          start_when_available=$task.Settings.StartWhenAvailable
+          wake_to_run=$task.Settings.WakeToRun
+          execution_time_limit=$task.Settings.ExecutionTimeLimit
+          multiple_instances=$task.Settings.MultipleInstances
+        }
+      }
+    })
+    if($found.Count){@{status='matched';tasks=$found}|ConvertTo-Json -Compress -Depth 7}else{@{status='not_found';tasks=@()}|ConvertTo-Json -Compress}
     """
     try:
         p = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
@@ -171,6 +187,18 @@ def write_report(audit: dict[str, Any], task: dict[str, Any], out_dir: Path, log
                 f"last run {item.get('last_run')}; result {item.get('last_result')}; next run {item.get('next_run')}.",
                 f"- Action: {item.get('action')}.",
             ]
+            for trigger in item.get("triggers", []):
+                lines.append(
+                    f"- Trigger: type {trigger.get('type')}; enabled {trigger.get('enabled')}; "
+                    f"start {trigger.get('start_boundary')}; repeat interval {trigger.get('repetition_interval')}; "
+                    f"repeat duration {trigger.get('repetition_duration')}."
+                )
+            settings = item.get("settings", {})
+            lines.append(
+                f"- Settings: start when available {settings.get('start_when_available')}; "
+                f"wake to run {settings.get('wake_to_run')}; execution limit {settings.get('execution_time_limit')}; "
+                f"multiple instances {settings.get('multiple_instances')}."
+            )
     elif task.get("status") == "not_found":
         lines.append("- No task action referencing run_market_snapshot_capture.bat was found. A differently named launcher/task is not ruled out.")
     else:
