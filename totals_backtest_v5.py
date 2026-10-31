@@ -28,7 +28,7 @@ OUTPUT_DIR = "outputs"
 PREDICTIONS_PATH = os.path.join(OUTPUT_DIR, "raw_total_v5_engine_predictions.csv")
 SUMMARY_PATH = os.path.join(OUTPUT_DIR, "raw_total_v5_engine_summary.csv")
 MIN_PRIOR_GAMES = 10
-LEAKAGE_SAMPLE_COUNT = 5
+LEAKAGE_SAMPLE_COUNT = 25
 
 
 def load_history():
