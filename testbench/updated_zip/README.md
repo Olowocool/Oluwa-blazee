@@ -1,14 +1,14 @@
 # Uploaded ZIP — isolated test bench
 
-This folder tests the project snapshot supplied as `Oluwa-blazee-main-updated.zip` on 2026-10-31.
+This test bench validates the project snapshot supplied as `Oluwa-blazee-main-updated.zip` on 2026-10-31.
 
 ## Isolation
 
 - Test branch: `testbench/updated-zip-2026-10-31`
 - Base: repository `main` at `b86b8a1eda87e908a60589f494f1acd8f42b4352`
-- The uploaded source subset is stored as `snapshot.zip` and extracted only inside the test workflow.
+- The uploaded source archive remains stored as the original, checksummed `snapshot.zip` base64 parts.
+- CI extracts that snapshot into a temporary directory, applies `source_fixes.patch`, adds the regression suite, and tests the resulting working copy.
 - No production application files, model artifacts, betting ledger, or deployment configuration are overwritten.
-- The workflow runs the uploaded tests against the snapshot modules by putting the extracted snapshot ahead of the repository modules on each test's Python path.
 
 ## Shared data
 
@@ -23,23 +23,19 @@ The ZIP's large inputs are reused from the base repository because their Git blo
 
 This avoids committing a second copy of roughly 68 MB of data and model files.
 
-## Test scope
+## Fixes applied in the test bench
 
-The snapshot contains the uploaded totals/moneyline guards, frontend, totals model, points engine, pace engine, possession model, box-score updater, supporting injury modules, and the two uploaded test suites.
+1. `betting_guards.assess_moneyline` now rejects non-finite or out-of-range model probabilities and decimal odds that are non-finite or less than/equal to 1.0. `devig_two_way` enforces the same decimal-odds rule.
+2. `points_engine.calculate_matchup_points` accepts `game_date` and filters historical rows to dates strictly before the target date. Same-day and future results are excluded. If a target date is supplied but the history lacks `game_date`, it fails closed.
+3. `totals_model.predict_game_total` applies the same as-of cutoff before calculating Points Engine, pace, recent form, venue, rest, and early-season features, and passes the target date through to Points Engine. The early-season window is evaluated relative to the target date.
+4. The frontend syntax test closes its file handle cleanly.
 
-CI performs Python compilation and runs `unittest` using the repository's matching data files.
+The regression suite tests invalid betting inputs and verifies that neither the Points Engine nor Totals Model fallback receives same-day or future game results.
 
-## Initial findings
+## Validation and remaining limitation
 
-The local test run completed 29 tests: 25 passed and 4 are deliberately marked as expected failures so the branch records known defects without disguising them as resolved:
+The local suite completed **33 tests with 0 failures**. GitHub Actions independently recompiles the extracted snapshot and reruns the complete suite; see the workflow run linked from the branch after it completes.
 
-1. The uploaded `points_engine.calculate_matchup_points` does not accept an explicit target `game_date`.
-2. The uploaded `totals_model.predict_game_total` does not pass its target date into the legacy Points Engine call or filter the history frame to that date. Historical forecasts can therefore see results later than their target date.
-3. The moneyline guard accepts decimal odds at or below 1.0 rather than rejecting invalid decimal prices.
-4. The moneyline guard accepts model probabilities outside the interval [0, 1].
+One data freshness limitation remains: the uploaded `data/game.csv` ends on 2023-06-12. The possession model's freshness check therefore refuses to use it for current 2026 forecasts, and the integration tests exercise the Points Engine fallback. Fresh box-score ingestion is still required before the possession model can serve live forecasts.
 
-One further operational limitation is visible in the supplied data: `data/game.csv` ends on 2023-06-12. The possession model's in-season freshness rule rejects that data for current games, so the supplied integration test correctly exercises the Points Engine fallback. A current box-score update is needed before the possession model can serve live forecasts.
-
-The uploaded frontend syntax test also emits a non-fatal `ResourceWarning` because it reads a file without closing the handle.
-
-These findings are test results, not permission to merge or deploy. Fixes can be developed and retested on this branch independently.
+These checks establish code behavior, not betting profitability, calibration quality, or a profitable ROI. The branch remains separate; nothing has been merged to `main` or deployed.
