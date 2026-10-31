@@ -20,7 +20,7 @@ from sklearn.linear_model import Ridge
 BASE = "https://basketball-data.billmill.org"
 OUT = Path("outputs/research/v4_phase1")
 FIRST_SEASON = 2019  # 2018-19, giving a prior season for the first scored season
-LAST_SEASON = 2026   # through 2025-26; current partial season excluded
+LAST_SEASON = 2026   # historical evaluation default; current partial season is opt-in
 TEST_SEASONS = list(range(2020, LAST_SEASON + 1))
 ROLLING_GAMES = 25
 RECENCY_HALF_LIFE = 12.0
@@ -28,13 +28,16 @@ PRIOR_STRENGTH_GAMES = 20.0
 RIDGE_ALPHA = 20.0
 
 
-def connect_and_load():
+def connect_and_load(last_season: int = LAST_SEASON):
+    if int(last_season) < FIRST_SEASON:
+        raise ValueError(f"last_season must be >= {FIRST_SEASON}")
+    last_season = int(last_season)
     with urlopen(f"{BASE}/nba/metadata.json", timeout=60) as response:
         metadata = json.loads(response.read().decode())["datasets"]
     con = duckdb.connect()
     con.execute("INSTALL httpfs")
     con.execute("LOAD httpfs")
-    seasons = list(range(FIRST_SEASON - 1, LAST_SEASON + 1))
+    seasons = list(range(FIRST_SEASON - 1, last_season + 1))
     for name in ("team_game_logs", "games"):
         urls = ", ".join("'" + f"{BASE}/nba/stats/{name}/season={s}/data.parquet" + "'" for s in seasons)
         con.execute(
@@ -50,7 +53,7 @@ def connect_and_load():
         WHERE t.season BETWEEN ? AND ?
           AND g.game_type = 'regular_season'
         ORDER BY t.game_date, t.season, t.game_id, t.team_id
-    """, [FIRST_SEASON - 1, LAST_SEASON]).fetchdf()
+    """, [FIRST_SEASON - 1, last_season]).fetchdf()
     return raw, metadata
 
 
@@ -103,7 +106,17 @@ def weighted_recent_mean(frame, column):
     return float(np.average(f[column].to_numpy(dtype=float), weights=w))
 
 
-def build_point_in_time(raw: pd.DataFrame):
+def build_point_in_time(
+    raw: pd.DataFrame,
+    last_season: int = LAST_SEASON,
+    min_team_games: int = 5,
+):
+    if int(last_season) < FIRST_SEASON:
+        raise ValueError(f"last_season must be >= {FIRST_SEASON}")
+    if int(min_team_games) < 1:
+        raise ValueError("min_team_games must be at least 1")
+    last_season = int(last_season)
+    min_team_games = int(min_team_games)
     d = raw.copy()
     d["game_date"] = pd.to_datetime(d.game_date, errors="coerce").dt.normalize()
     for col in ("pts", "source_poss", "source_pace", "fga", "fta", "oreb", "tov"):
@@ -133,7 +146,7 @@ def build_point_in_time(raw: pd.DataFrame):
 
     season_frames = {int(s): g.copy() for s, g in paired.groupby("season", sort=True)}
     all_rows = []
-    for season in range(FIRST_SEASON, LAST_SEASON + 1):
+    for season in range(FIRST_SEASON, last_season + 1):
         season_data = season_frames.get(season)
         if season_data is None:
             continue
@@ -188,7 +201,7 @@ def build_point_in_time(raw: pd.DataFrame):
                 # feature windows themselves remain capped at the latest 25 games.
                 h_n = int((history.team_id.astype(str) == h_id).sum()) if not history.empty else 0
                 a_n = int((history.team_id.astype(str) == a_id).sum()) if not history.empty else 0
-                if min(h_n, a_n) < 5:
+                if min(h_n, a_n) < min_team_games:
                     continue
 
                 # Estimate matchup efficiencies from current-season and previous-season
