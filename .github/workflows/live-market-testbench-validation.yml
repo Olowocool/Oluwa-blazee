@@ -67,5 +67,35 @@ jobs:
               "teams": len(set(history["home_team"]) | set(history["away_team"])),
           })
           PY
+      - name: Smoke-test V5 total plus point-in-time components
+        run: |
+          python - <<'PY'
+          from live_market_testbench_engine import (
+              calculate_game_components,
+              load_score_history,
+              load_team_id_map,
+          )
+          history = load_score_history()
+          prediction = calculate_game_components(
+              "Boston Celtics",
+              "Miami Heat",
+              "2026-11-01",
+              history,
+              None,
+              load_team_id_map(),
+              use_pace=False,
+              h2h_mode="off",
+              rest_mode="off",
+          )
+          assert prediction["raw_total"] > 0
+          assert prediction["point_in_time_cutoff"] is True
+          assert prediction["composed"]["selected_prediction"] == prediction["raw_total"]
+          print({
+              "v5_raw_total": prediction["raw_total"],
+              "history_rows": len(history),
+              "target_date": prediction["target_date"],
+              "strict_cutoff": prediction["point_in_time_cutoff"],
+          })
+          PY
       - name: Verify Streamlit CLI
         run: streamlit --version
