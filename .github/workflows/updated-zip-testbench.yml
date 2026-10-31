@@ -31,11 +31,13 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install --upgrade pip numpy pandas requests
 
-      - name: Rebuild, verify, and extract uploaded ZIP snapshot
+      - name: Rebuild, verify, extract, and patch uploaded ZIP snapshot
         run: |
           python - <<'PY'
           from pathlib import Path
           import base64
+          import shutil
+          import subprocess
           import zipfile
 
           root = Path("testbench/updated_zip")
@@ -51,12 +53,25 @@ jobs:
           archive.write_bytes(base64.b64decode(encoded, validate=True))
 
           target = root / "snapshot"
+          if target.exists():
+              shutil.rmtree(target)
           target.mkdir(parents=True, exist_ok=True)
           with zipfile.ZipFile(archive) as zf:
               bad = zf.testzip()
               if bad:
                   raise RuntimeError(f"Corrupt source archive member: {bad}")
               zf.extractall(target)
+
+          patch_file = (root / "source_fixes.patch").resolve()
+          subprocess.run(
+              ["patch", "--batch", "--forward", "-p1", "-i", str(patch_file)],
+              cwd=target,
+              check=True,
+          )
+          regression_source = root / "regression_tests" / "test_known_safety_gaps.py"
+          tests_dir = target / "tests"
+          tests_dir.mkdir(parents=True, exist_ok=True)
+          shutil.copy2(regression_source, tests_dir / regression_source.name)
 
           required = [
               "frontend.py",
@@ -79,7 +94,7 @@ jobs:
                   raise RuntimeError(f"Required shared input is missing: {name}")
 
           print(f"Verified archive: {archive.stat().st_size:,} bytes")
-          print(f"Extracted {len(list(target.rglob('*.py')))} Python files.")
+          print(f"Extracted and patched {len(list(target.rglob('*.py')))} Python files.")
           PY
 
       - name: Compile uploaded source snapshot
