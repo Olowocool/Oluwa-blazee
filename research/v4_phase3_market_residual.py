@@ -101,6 +101,12 @@ def prepare_snapshots(raw: pd.DataFrame, bookmaker: str = BOOKMAKER) -> tuple[pd
     row_game_date = d["game_date"].dt.date.astype(str)
     if (start_et_date != row_game_date).any():
         raise ValueError("Game date does not match scheduled start date in America/New_York.")
+    # The collector's former year-rollover bug left duplicate rows with game
+    # starts almost exactly one year after the local observation. Exclude those
+    # legacy anomalies here as well as in the standalone capture audit.
+    future_start_anomaly = d["commence_time_utc"] > d["observed_at_utc"] + pd.Timedelta(days=7)
+    future_start_anomaly_rows_excluded = int(future_start_anomaly.sum())
+    d = d.loc[~future_start_anomaly].copy()
     d = d.loc[d["bookmaker"].astype(str).str.strip().str.casefold() == bookmaker.casefold()].copy()
     if d.empty:
         raise ValueError(f"No snapshots exist for {bookmaker!r}.")
@@ -117,8 +123,11 @@ def prepare_snapshots(raw: pd.DataFrame, bookmaker: str = BOOKMAKER) -> tuple[pd
         raise ValueError("No strictly pregame observations remain.")
     d = d.sort_values(["game_date", "commence_time_utc", "observed_at_utc"]).reset_index(drop=True)
     return d, {
-        "input_rows": int(len(raw)), "selected_bookmaker_rows": int(len(d)),
-        "post_start_rows_excluded": int(post_start.sum()), "unique_games": int(d.game_key.nunique()),
+        "input_rows": int(len(raw)),
+        "future_start_anomaly_rows_excluded": future_start_anomaly_rows_excluded,
+        "selected_bookmaker_rows": int(len(d)),
+        "post_start_rows_excluded": int(post_start.sum()),
+        "unique_games": int(d.game_key.nunique()),
     }
 
 
