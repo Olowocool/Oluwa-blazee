@@ -67,6 +67,11 @@ def evaluate_market_game(
             "note": note,
         }
 
+    target_timestamp = pd.Timestamp(target_date)
+    history_dates = pd.to_datetime(score_history["game_date"], errors="coerce")
+    expected_prior_rows = int((history_dates.notna() & history_dates.lt(target_timestamp)).sum())
+    main_history_cutoff_ok = int(main_prediction.get("history_rows", -1)) == expected_prior_rows
+
     return {
         "market": market,
         "market_line_used_for_both": market_line,
@@ -74,9 +79,11 @@ def evaluate_market_game(
         "main_prediction": main_prediction,
         "research_prediction": research_prediction,
         "variant_signals": variant_signals,
+        "main_history_cutoff_ok": main_history_cutoff_ok,
         "same_inputs": bool(
             main_prediction.get("bookmaker_total") is not None
             and abs(float(main_prediction["bookmaker_total"]) - market_line) < 1e-9
+            and main_history_cutoff_ok
             and research_prediction.get("target_date") == target_date
             and research_prediction.get("point_in_time_cutoff") is True
         ),
