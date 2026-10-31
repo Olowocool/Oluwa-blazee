@@ -36,6 +36,6 @@ jobs:
         run: |
           python -m py_compile research/v4_phase1_core.py research/v4_phase3_market_residual.py research/v4_phase3_blend_market.py
       - name: Run market-blend regression tests
-        run: pytest -q research/tests/test_v4_phase3_blend_market.py research/tests/test_v4_phase3_market_residual.py
+        run: python -m pytest -q research/tests/test_v4_phase3_blend_market.py research/tests/test_v4_phase3_market_residual.py
       - name: Check current 2026-27 V4 pregame-feature coverage
         run: python research/v4_phase3_blend_market.py --check-advanced-source-only
