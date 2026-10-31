@@ -86,7 +86,7 @@ This commit establishes the data-capture layer only. It does not yet establish p
 
 ## Walk-forward market-residual evaluator
 
-After the local private archive contains observations with final scores available in `data/historical_nba_scores.csv`, run:
+After the local private archive contains observations with final scores available in the base history and/or dated research patches, run:
 
 ```powershell
 py -3 -m pip install numpy pandas scikit-learn
@@ -110,5 +110,7 @@ Outputs are written locally under `outputs/research/v4_phase3_market_residual/` 
 The model's betting summary compares Points Engine and residual model on the exact same games for which the residual model produced a prediction. The paired bootstrap interval is for residual-model MAE minus entry-market MAE on the reserved holdout; negative favours the model.
 
 **Interpretation safeguards:** the first locally observed total is not called the sportsbook's true opening line. The last locally observed pregame observation is not called the official close. Line and probability CLV are explicitly measured against that last locally observed observation, not a verified bookmaker close. No result is reported until real snapshots and their score joins exist. No profitability claim is valid on a warmup/development sample alone; retain the chronological holdout untouched.
+
+Score history is assembled in memory from `data/historical_nba_scores.csv` plus every file matching `research/data/score_history_patch_*.csv`. Add each newly verified slate as a dated patch using the five-column schema `game_date,home_team,away_team,home_score,away_score`; do not overwrite the original base history. The evaluator discovers these patches automatically. It rejects conflicting duplicate game results. An explicit patch list can be supplied with `--score-patch-files` when a controlled subset is needed.
 
 The backtest does not call DunkAPI or spend provider credits. It reads only the local ignored archive. It must not be run against fabricated/synthetic snapshots or with closing prices copied into earlier timestamps.
