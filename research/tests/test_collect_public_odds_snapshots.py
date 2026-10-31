@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from research.collect_public_odds_snapshots import merge_snapshot_rows, parse_odds_page
+from research.collect_public_odds_snapshots import merge_snapshot_rows, parse_game_start, parse_odds_page
 
 
 FIXTURE = """<!doctype html>
@@ -83,14 +83,11 @@ def test_skips_a_scheduled_game_when_no_bookmaker_table_is_posted():
     assert diagnostics["games_without_odds_table"] == 1
 
 def test_rejects_expired_game_instead_of_rolling_it_forward_one_year():
-    # The page is fresh, but its Friday game listing is over ten hours old.
-    html = FIXTURE.replace(
-        "Lines as of Oct 30, 10:05 AM ET.",
-        "Lines as of Oct 31, 5:00 AM ET.",
-    )
-    retrieved = datetime(2026, 10, 31, 9, 28, tzinfo=timezone.utc)
+    from zoneinfo import ZoneInfo
+
+    asof = datetime(2026, 10, 31, 5, 0, tzinfo=ZoneInfo("America/New_York"))
     with pytest.raises(ValueError, match="outside the upcoming schedule window"):
-        parse_odds_page(html, retrieved_at=retrieved)
+        parse_game_start("Fri, Oct 30, 7:00 PM ET", asof)
 
 
 def test_resolves_new_year_game_to_the_next_calendar_year():
