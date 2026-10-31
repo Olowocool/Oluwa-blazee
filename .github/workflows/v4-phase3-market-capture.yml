@@ -9,6 +9,10 @@ on:
       - "research/v4_phase3_market_residual.py"
       - "research/tests/test_collect_public_odds_snapshots.py"
       - "research/tests/test_v4_phase3_market_residual.py"
+      - "research/audit_phase3_capture.py"
+      - "research/tests/test_audit_phase3_capture.py"
+      - "research/run_market_snapshot_capture.bat"
+      - "research/run_phase3_capture_audit.bat"
       - "docs/v4_phase3_prospective_market_data_capture.md"
       - ".github/workflows/v4-phase3-market-capture.yml"
   workflow_dispatch:
@@ -33,9 +37,11 @@ jobs:
         run: |
           python -m py_compile research/collect_public_odds_snapshots.py
           python -m py_compile research/v4_phase3_market_residual.py
+          python -m py_compile research/audit_phase3_capture.py
       - name: Run collector and residual walk-forward tests
         run: |
           python -m pytest -q research/tests/test_collect_public_odds_snapshots.py
           python -m pytest -q research/tests/test_v4_phase3_market_residual.py
+          python -m pytest -q research/tests/test_audit_phase3_capture.py
       - name: Validate current public odds page without saving prices
         run: python research/collect_public_odds_snapshots.py --check-only
