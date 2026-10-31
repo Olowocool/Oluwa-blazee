@@ -128,7 +128,7 @@ def test_rest_adjustments_return_research_variants():
         + 0.073308 * 0
         + 0.315415 * 1
         + 0.462948 * 0
-        - 0.065809 * 0
+        - 0.065809 * 1
         + 0.432959 * 0
     )
     assert result["learned_schedule_density"] == pytest.approx(expected_schedule)
