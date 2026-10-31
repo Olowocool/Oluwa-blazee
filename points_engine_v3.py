@@ -64,6 +64,13 @@ def _clean_history(history_df, game_date):
     return history
 
 
+def season_games_mask(history, season_start):
+    """Vectorized NBA-season filter (October through June)."""
+    dates = history["game_date"]
+    starts = dates.dt.year.where(dates.dt.month >= 10, dates.dt.year - 1)
+    return starts == season_start
+
+
 def _fit_season_ratings(season_games):
     """Fit additive opponent-adjusted offense and defensive-weakness ratings."""
     if season_games.empty:
@@ -199,26 +206,36 @@ def _recent_form(history, team, ratings):
     }
 
 
-def calculate_matchup_points_v3(home_team, away_team, history_df=None, game_date=None):
-    """Return V3 raw team and total projections using strictly prior games."""
-    history = _clean_history(history_df, game_date)
+def calculate_matchup_points_v3(
+    home_team, away_team, history_df=None, game_date=None, _prepared_cache=None
+):
+    """Return V3 raw projections; optionally reuse date-level preparation in backtests."""
+    cache_key = str(pd.Timestamp(game_date).date()) if game_date is not None else None
+    prepared = _prepared_cache.get(cache_key) if _prepared_cache is not None else None
 
-    if game_date is None:
-        if history.empty:
-            season_start = None
+    if prepared is None:
+        history = _clean_history(history_df, game_date)
+        if game_date is None:
+            season_start = (
+                None if history.empty
+                else nba_season_start_year(pd.Timestamp.now().date())
+            )
         else:
-            season_start = nba_season_start_year(pd.Timestamp.now().date())
-    else:
-        season_start = nba_season_start_year(game_date)
+            season_start = nba_season_start_year(game_date)
 
-    if season_start is None:
-        season_games = history.iloc[0:0].copy()
-    else:
-        season_games = history[
-            history["game_date"].map(nba_season_start_year) == season_start
-        ].copy()
+        if season_start is None:
+            season_games = history.iloc[0:0].copy()
+        else:
+            season_games = history[
+                season_games_mask(history, season_start)
+            ].copy()
 
-    ratings = _fit_season_ratings(season_games)
+        ratings = _fit_season_ratings(season_games)
+        prepared = (history, season_start, season_games, ratings)
+        if _prepared_cache is not None and cache_key is not None:
+            _prepared_cache[cache_key] = prepared
+
+    history, season_start, season_games, ratings = prepared
     league_avg = ratings["league_avg"]
 
     home_key = normalize_team_name(home_team)
