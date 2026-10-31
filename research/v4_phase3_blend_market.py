@@ -375,7 +375,7 @@ def build_report(
         f"- DraftKings pregame observations after validation: {diagnostics['draftkings_pregame_rows']:,}.",
         f"- Games with a valid T-{diagnostics['entry_minutes']} entry: {diagnostics['games_with_entry_observation']:,}.",
         f"- Entry games matched to final scores and V2 forecasts: {diagnostics['games_with_score_and_v2']:,}.",
-        f"- V4 feature rows available for current season {diagnostics['target_season']}: {diagnostics['current_season_v4_feature_rows']:,}.",
+        f"- V4 feature rows available for current season {diagnostics['target_season']}: {diagnostics['target_season_v4_feature_rows']:,}.",
         f"- Settled entry games with a score-consistent V4 forecast: {diagnostics['shared_v2_v4_games']:,}.",
         f"- V4 feature misses: {diagnostics['v4_feature_missing_games']:,}; score mismatches excluded: {diagnostics['v4_score_mismatch_games']:,}.",
         "",
