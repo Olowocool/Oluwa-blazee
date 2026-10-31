@@ -1,0 +1,105 @@
+name: Uploaded ZIP isolated test bench
+
+on:
+  push:
+    branches:
+      - "testbench/updated-zip-2026-10-31"
+    paths:
+      - "testbench/updated_zip/**"
+      - ".github/workflows/updated-zip-testbench.yml"
+      - "data/game.csv"
+      - "data/historical_nba_scores.csv"
+      - "outputs/training_dataset.parquet"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  uploaded-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out test branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip numpy pandas requests
+
+      - name: Rebuild, verify, and extract uploaded ZIP snapshot
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import zipfile
+
+          root = Path("testbench/updated_zip")
+          parts = sorted(root.glob("snapshot.zip.b64.part*"))
+          if len(parts) != 17:
+              raise RuntimeError(
+                  f"Expected 17 base64 ZIP parts, found {len(parts)}: "
+                  f"{[p.name for p in parts]}"
+              )
+
+          encoded = "".join(p.read_text(encoding="ascii").strip() for p in parts)
+          archive = root / "snapshot.zip"
+          archive.write_bytes(base64.b64decode(encoded, validate=True))
+
+          target = root / "snapshot"
+          target.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(archive) as zf:
+              bad = zf.testzip()
+              if bad:
+                  raise RuntimeError(f"Corrupt source archive member: {bad}")
+              zf.extractall(target)
+
+          required = [
+              "frontend.py",
+              "totals_model.py",
+              "points_engine.py",
+              "pace_engine.py",
+              "betting_guards.py",
+              "possession_total_model.py",
+              "update_boxscores.py",
+              "tests/test_betting_guards.py",
+              "tests/test_possession_model.py",
+              "tests/test_known_safety_gaps.py",
+          ]
+          missing = [name for name in required if not (target / name).is_file()]
+          if missing:
+              raise RuntimeError(f"Snapshot is missing required files: {missing}")
+
+          for name in ["data/game.csv", "data/historical_nba_scores.csv"]:
+              if not Path(name).is_file():
+                  raise RuntimeError(f"Required shared input is missing: {name}")
+
+          print(f"Verified archive: {archive.stat().st_size:,} bytes")
+          print(f"Extracted {len(list(target.rglob('*.py')))} Python files.")
+          PY
+
+      - name: Compile uploaded source snapshot
+        run: python -m compileall -q testbench/updated_zip/snapshot
+
+      - name: Run uploaded tests and safety regressions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sys
+          import unittest
+
+          snapshot = Path("testbench/updated_zip/snapshot").resolve()
+          sys.path.insert(0, str(snapshot))
+          suite = unittest.defaultTestLoader.discover(
+              start_dir=str(snapshot / "tests"),
+              pattern="test*.py",
+              top_level_dir=str(snapshot),
+          )
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful():
+              raise SystemExit(1)
+          PY
