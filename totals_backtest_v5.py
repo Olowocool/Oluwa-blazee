@@ -109,8 +109,30 @@ def calculate_summary(results):
         ("V5 implemented 55/45", "v5_raw_total"),
     ]
     rows = []
-    for period in ["development", "later_seasons", "all"]:
-        subset = results if period == "all" else results[results["period"] == period]
+    # The preceding multi-season run labels the holdout period
+    # "later_validation". Accept that exact label (and the earlier
+    # "later_seasons" spelling) rather than silently producing an empty group.
+    available_periods = set(results["period"].astype(str).str.casefold())
+    validation_label = next(
+        (label for label in ("later_validation", "later_seasons", "validation")
+         if label in available_periods),
+        None,
+    )
+    for period, source_label in [
+        ("development", "development"),
+        ("later_validation", validation_label),
+        ("all", None),
+    ]:
+        if period == "all":
+            subset = results
+        elif source_label is None:
+            continue
+        else:
+            subset = results[
+                results["period"].astype(str).str.casefold() == source_label
+            ]
+        if subset.empty:
+            continue
         for name, column in models:
             row = {"scope": period, "model": name}
             row.update(metrics(subset["actual_total"], subset[column]))
