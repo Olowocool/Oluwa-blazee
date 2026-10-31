@@ -133,3 +133,7 @@ outputs/totals_forward_paper_trading_summary.json
 data/private/dunkapi_public_odds_snapshots.csv
 # Local/private output from the V4 market-residual research backtest.
 outputs/research/v4_phase3_market_residual/
+
+# Local-only Phase 3B capture diagnostics (timestamps/matchups; no prices).
+outputs/research/phase3_capture_audit/
+outputs/research/market_capture/
