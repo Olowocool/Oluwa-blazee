@@ -68,3 +68,16 @@ def test_duplicate_publication_keeps_earliest_observed_time():
     )
     assert result["duplicate_pregame_rows_removed_for_audit"] == 1
     assert result["games"][0]["entry_observed_utc"] == "2026-10-31T17:00:00Z"
+
+
+def test_excludes_game_dates_rolled_one_year_into_the_future():
+    rows = [
+        row("valid", "2026-10-31 20:00", "2026-10-31 17:00"),
+        row("year_anomaly", "2027-10-31 20:00", "2026-10-31 17:00"),
+    ]
+    result = build_capture_audit(
+        pd.DataFrame(rows), audit_time=pd.Timestamp("2026-10-31 20:30", tz="UTC")
+    )
+    assert result["future_start_anomaly_rows_excluded"] == 1
+    assert result["unique_games"] == 1
+    assert result["entry_status_counts"] == {"fresh_entry": 1, "stale_entry": 0, "no_entry": 0}
