@@ -72,6 +72,9 @@ def run_backtest():
     dates = sorted(history["game_date"].unique())[-MAX_GAMES_TO_TEST:]
     records = []
     skipped = 0
+    # One cleaned history + one ratings fit per target date, reused for every
+    # matchup on that date. This avoids repeating the expensive fit per game.
+    prepared_cache = {}
 
     for date in dates:
         prior = history[history["game_date"] < date].copy()
@@ -83,7 +86,8 @@ def run_backtest():
         for row in day.itertuples(index=False):
             try:
                 v2 = calculate_matchup_points(
-                    row.home_team, row.away_team, prior, game_date=date
+                    row.home_team, row.away_team, prior, game_date=date,
+                    _prepared_cache=prepared_cache
                 )
                 v3 = calculate_matchup_points_v3(
                     row.home_team, row.away_team, prior, game_date=date
