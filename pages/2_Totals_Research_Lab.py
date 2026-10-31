@@ -319,7 +319,9 @@ for result in results:
             "schedule-density adjustment": research["rest_adjustments"]["learned_schedule_density"],
             "home rest days": research["home_rest"]["rest_days"],
             "away rest days": research["away_rest"]["rest_days"],
-            "strict prior-date input check": result["same_inputs"],
+            "main-app history cutoff check": result["main_history_cutoff_ok"],
+            "research strict prior-date input check": research["point_in_time_cutoff"],
+            "both engines use same inputs": result["same_inputs"],
         })
 
         quotes = pd.DataFrame(market["bookmaker_quotes"])
