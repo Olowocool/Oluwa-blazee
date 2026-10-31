@@ -107,7 +107,7 @@ def pair_source(raw):
     d = d.dropna(subset=["game_date", "season", "pts", "min", "poss", "pace",
                          "off_rating", "def_rating", "fga", "fta", "oreb", "tov", "home"])
     d = d[
-        (d.poss > 0) & (d.min > 0) & (d.pace > 0)
+        (d.poss > 0) & (d["min"] > 0) & (d.pace > 0)
         & (~d.neutral_site.fillna(False).astype(bool))
     ]
     if d.duplicated(["season", "game_id", "team_id"]).any():
