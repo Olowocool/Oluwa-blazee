@@ -90,11 +90,11 @@ def run_backtest():
         for row in day.itertuples(index=False):
             try:
                 v2 = calculate_matchup_points(
-                    row.home_team, row.away_team, prior, game_date=date,
-                    _prepared_cache=prepared_cache
+                    row.home_team, row.away_team, prior, game_date=date
                 )
                 v3 = calculate_matchup_points_v3(
-                    row.home_team, row.away_team, prior, game_date=date
+                    row.home_team, row.away_team, prior, game_date=date,
+                    _prepared_cache=prepared_cache
                 )
                 actual = float(row.home_score) + float(row.away_score)
                 records.append({
