@@ -90,10 +90,13 @@ def parse_game_start(token: str, asof: datetime) -> datetime:
             )
         except ValueError:
             pass
-    future = [dt for dt in candidates if dt >= asof - timedelta(hours=3)]
-    if not future:
+    # Resolve the date to the calendar year nearest the board timestamp first.
+    # Filtering for future dates before choosing a year can roll an expired
+    # game forward by 12 months when the board keeps showing a completed game.
+    closest = min(candidates, key=lambda dt: abs((dt - asof).total_seconds()))
+    if closest < asof - timedelta(hours=3):
         raise ValueError(f"Game start is outside the upcoming schedule window: {token!r}")
-    return min(future)
+    return closest
 
 
 def parse_american(cell: str, field: str) -> int:
