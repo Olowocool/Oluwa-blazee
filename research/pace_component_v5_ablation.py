@@ -262,10 +262,11 @@ def main():
     history_scores = scores.copy()
     team_hist, league_hist = defaultdict(list), defaultdict(list)
     rows = []
-    v5_cache = {}
-
     for date_idx, date in enumerate(sorted(dates), start=1):
         today_rows = dates[date]
+        # Keep the same-date V3/V4 ratings cached across that slate's games,
+        # but do not retain full historical DataFrame copies for every date.
+        date_cache = {}
         pending_team_updates = []
         for season, gid, h, a in today_rows:
             start_year = season - 1
@@ -281,7 +282,7 @@ def main():
                 if min(hf["n"], af["n"]) >= MIN_TEAM_GAMES:
                     v5 = calculate_matchup_points_v5(
                         hid, aid, history_scores, game_date=date,
-                        _prepared_cache=v5_cache,
+                        _prepared_cache=date_cache,
                     )
                     expected = {
                         "l10": 0.5 * (hf["pace10"] + af["pace10"]),
