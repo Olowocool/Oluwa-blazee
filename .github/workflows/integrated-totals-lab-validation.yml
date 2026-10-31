@@ -1,0 +1,119 @@
+name: Integrated totals lab validation
+
+on:
+  push:
+    branches:
+      - "research/integrated-totals-lab"
+    paths:
+      - "frontend.py"
+      - "pages/2_Totals_Research_Lab.py"
+      - "integrated_totals_lab.py"
+      - "live_market_testbench_engine.py"
+      - "points_engine.py"
+      - "points_engine_v3.py"
+      - "points_engine_v4.py"
+      - "points_engine_v5.py"
+      - "totals_model.py"
+      - "pace_engine.py"
+      - "injury_impact_engine.py"
+      - "team_name_utils.py"
+      - "team_map.json"
+      - "data/historical_nba_scores.csv"
+      - "tests/test_integrated_totals_lab.py"
+      - "tests/test_live_market_testbench.py"
+      - "requirements.txt"
+      - "requirements-testbench.txt"
+      - ".github/workflows/integrated-totals-lab-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-integrated-totals-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .
+    steps:
+      - name: Check out isolated research branch
+        uses: actions/checkout@v4
+        with:
+          ref: research/integrated-totals-lab
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install focused model and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-testbench.txt
+      - name: Compile integrated pages and model modules
+        run: |
+          python -m py_compile \
+            frontend.py \
+            pages/2_Totals_Research_Lab.py \
+            integrated_totals_lab.py \
+            live_market_testbench_engine.py \
+            points_engine.py \
+            points_engine_v3.py \
+            points_engine_v4.py \
+            points_engine_v5.py \
+            totals_model.py \
+            pace_engine.py \
+            injury_impact_engine.py \
+            team_name_utils.py
+      - name: Run totals research unit tests
+        run: |
+          python -m pytest -q \
+            tests/test_live_market_testbench.py \
+            tests/test_integrated_totals_lab.py
+      - name: Verify shared historical data
+        run: |
+          python - <<'PY'
+          from live_market_testbench_engine import load_score_history, load_team_id_map
+          history = load_score_history()
+          team_ids = load_team_id_map()
+          assert len(history) > 60000, f"Unexpected history size: {len(history)}"
+          assert "boston celtics" in team_ids
+          assert "miami heat" in team_ids
+          print({
+              "history_rows": len(history),
+              "latest_history_date": str(history["game_date"].max().date()),
+              "mapped_active_teams": len(team_ids),
+          })
+          PY
+      - name: Smoke-test matched main-app and V5 predictions
+        run: |
+          python - <<'PY'
+          from integrated_totals_lab import evaluate_market_game
+          from live_market_testbench_engine import load_score_history, load_team_id_map
+          history = load_score_history()
+          market = {
+              "event_id": "ci-smoke",
+              "home_team": "Boston Celtics",
+              "away_team": "Miami Heat",
+              "game_date_wat": "2026-11-01",
+              "commence_time_utc": "2026-11-01T20:00:00Z",
+              "market_median_total": 222.5,
+              "bookmaker_count": 1,
+              "bookmaker_quotes": [],
+          }
+          result = evaluate_market_game(
+              market, history, None, load_team_id_map(),
+              use_pace=False, h2h_mode="off", rest_mode="off",
+              v5_cache={"v3": {}, "v4": {}},
+          )
+          assert result["same_inputs"] is True
+          assert result["main_prediction"]["bookmaker_total"] == 222.5
+          assert result["research_prediction"]["point_in_time_cutoff"] is True
+          assert result["variant_signals"]["V5 raw"]["projected_total"] > 0
+          print({
+              "main_app_total": result["main_prediction"]["projected_total"],
+              "v5_raw_total": result["research_prediction"]["raw_total"],
+              "shared_market_total": result["market_line_used_for_both"],
+              "same_inputs": result["same_inputs"],
+          })
+          PY
+      - name: Verify Streamlit CLI
+        run: streamlit --version
