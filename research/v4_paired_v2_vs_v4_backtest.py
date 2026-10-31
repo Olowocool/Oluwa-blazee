@@ -76,6 +76,9 @@ def prepare_v2_score_history(history: pd.DataFrame | None = None) -> tuple[pd.Da
     """Load and validate the full score-history source used by Points Engine V2."""
     source = "data/historical_nba_scores.csv via points_engine.load_game_history()"
     if history is None:
+        source_path = REPOSITORY_ROOT / "data" / "historical_nba_scores.csv"
+        if not source_path.is_file():
+            raise FileNotFoundError(f"Full Points Engine V2 score source is missing: {source_path}")
         history = load_game_history()
     if history is None or history.empty:
         raise ValueError("Points Engine V2 score history is empty or unavailable.")
@@ -329,7 +332,7 @@ def build_paired_predictions(
 
     history_columns = [
         "game_date", "home_team", "away_team", "home_score", "away_score",
-        "actual_total", "total_score", "is_neutral_site",
+        "total_score", "is_neutral_site",
     ]
     # Index each franchise's complete score history once. For each target,
     # concatenate the two teams' pre-date histories and deduplicate their
