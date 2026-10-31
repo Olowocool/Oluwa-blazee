@@ -77,12 +77,14 @@ The read-only audit writes:
 - `outputs/research/phase3_capture_audit/phase3_capture_audit.md`
 - `outputs/research/phase3_capture_audit/phase3_capture_audit.json`
 
-The report contains timestamps, matchup names and coverage counts only. It does not emit total lines, spreads, odds or prices, and it does not modify the private archive. The Task Scheduler check searches task actions for `run_market_snapshot_capture.bat`; a differently named or differently configured task may not match. A task's last-run result describes only its latest run.
+The report contains timestamps, matchup names and coverage counts only. It does not emit total lines, spreads, odds or prices, and it does not modify the private archive. It excludes rows whose scheduled start is more than seven days after their local observation as likely date/year rollover anomalies, and reports the exclusion count. The Task Scheduler check searches task actions for `run_market_snapshot_capture.bat`; a differently named or differently configured task may not match. A task's last-run result describes only its latest run. Verify the action points to the same repository copy that contains the private archive and updated launcher.
 
 ## Data-quality safeguards
 
 The collector:
 - rejects pages with no recognizable page timestamp;
+- resolves an unqualified game date to the calendar year nearest the page publication time before applying the 3-hour expired-game guard; it never advances an expired listing into the following year;
+- skips expired game headings individually, preserving valid current games elsewhere on the same board;
 - rejects a page more than 180 minutes old or more than 5 minutes in the future;
 - requires a single game heading and bookmaker table structure;
 - stores total, spread, both total-side prices and moneyline/spread prices from the same bookmaker row;
