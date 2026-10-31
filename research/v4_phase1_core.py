@@ -145,17 +145,28 @@ def build_point_in_time(raw: pd.DataFrame):
             for team, group in prior_data.groupby("team_id"):
                 prior_pace_by_team[str(team)] = weighted_recent_mean(group, "formula_poss")
         prior_league_pace = float(prior_data["formula_poss"].mean()) if not prior_data.empty else 100.0
+        prior_league_off_eff = (
+            100.0 * float(prior_data["pts"].sum()) / float(prior_data["formula_poss"].sum())
+            if not prior_data.empty and float(prior_data["formula_poss"].sum()) > 0 else 110.0
+        )
 
         # Process every game on a date from the same frozen pre-date history.
         for date, todays in season_data.groupby("game_date", sort=True):
             if history.empty:
                 current_rating = None
                 league_pace = prior_league_pace
+                league_off_eff = prior_league_off_eff
             else:
                 current_rating = fit_rating_model(history)
                 league_pace = float(history["formula_poss"].mean())
+                league_off_eff = (
+                    100.0 * float(history["pts"].sum()) / float(history["formula_poss"].sum())
+                    if float(history["formula_poss"].sum()) > 0 else prior_league_off_eff
+                )
                 if not np.isfinite(league_pace):
                     league_pace = prior_league_pace
+                if not np.isfinite(league_off_eff):
+                    league_off_eff = prior_league_off_eff
             team_history = {
                 str(team): group.sort_values(["game_date", "game_id"]).tail(ROLLING_GAMES)
                 for team, group in history.groupby("team_id")
@@ -219,6 +230,7 @@ def build_point_in_time(raw: pd.DataFrame):
                     "home_games_prior": h_n, "away_games_prior": a_n,
                     "season_blend_weight": blend,
                     "league_pace_prior": league_pace,
+                    "league_off_eff_prior": league_off_eff,
                     "home_pace_est": h_pace, "away_pace_est": a_pace,
                     "expected_possessions": expected_pace,
                     "expected_home_efficiency": h_eff,
