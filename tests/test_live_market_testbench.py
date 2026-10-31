@@ -116,7 +116,7 @@ def test_rest_adjustments_return_research_variants():
         "games_prev_5d": 3,
     }
     away = {
-        "rest_days": 2,
+        "rest_days": 1,
         "games_prev_3d": 0,
         "games_prev_5d": 1,
     }
