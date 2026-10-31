@@ -429,7 +429,7 @@ def main():
         "probability_candidate_lower_rmse": float(np.mean(d_rmse < 0)),
     }
 
-    poss_delta = (poss_audit.formula_poss - poss_audit.poss).abs()
+    poss_delta = (poss_audit.formula_poss - poss_audit.source_poss).abs()
     poss_summary = {
         "rows": int(len(poss_audit)),
         "formula_mae_vs_play_by_play_poss": float(poss_delta.mean()),
