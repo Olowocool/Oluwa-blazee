@@ -41,6 +41,12 @@ def build_capture_audit(
     ).any(axis=1)
     invalid = d[["commence_time_utc", "published_as_of_utc", "observed_at_utc"]].isna().any(axis=1) | blank
     d = d.loc[~invalid].copy()
+    # The public board is for near-term games. A start more than seven days
+    # after the row's observation is a likely year-rollover parse anomaly,
+    # not a valid pregame quote for a game a year away.
+    future_start_anomaly = d["commence_time_utc"] > d["observed_at_utc"] + pd.Timedelta(days=7)
+    future_start_anomaly_rows_excluded = int(future_start_anomaly.sum())
+    d = d.loc[~future_start_anomaly].copy()
     d["_book"] = d["bookmaker"].astype(str).str.strip().str.casefold()
     dk = d.loc[d["_book"].eq(bookmaker.casefold())].copy()
     if dk.empty:
@@ -93,6 +99,7 @@ def build_capture_audit(
     return {
         "archive_rows": int(len(raw)),
         "invalid_rows_excluded": int(invalid.sum()),
+        "future_start_anomaly_rows_excluded": future_start_anomaly_rows_excluded,
         "bookmaker": bookmaker,
         "bookmaker_rows_including_post_start": int(len(dk)),
         "post_start_rows_excluded": int(post.sum()),
@@ -117,6 +124,7 @@ def build_capture_audit(
         "archive_caveats": [
             "Same-publication polls are deduplicated, so the archive cannot show every collector invocation.",
             "The previous batch launcher did not log invocations; historical poll frequency cannot be reconstructed from this archive alone.",
+            "Rows with commence_time more than seven days after their first local observation are excluded as likely date/year rollover anomalies.",
             "A scheduled-task last-run status describes only the latest run, not every prior trigger.",
         ],
     }
@@ -162,6 +170,7 @@ def write_report(audit: dict[str, Any], task: dict[str, Any], out_dir: Path, log
         "# Phase 3B — local market-capture audit", "", "## Archive summary", "",
         f"- Archive rows: {audit['archive_rows']:,}; DraftKings rows incl. post-start: {audit['bookmaker_rows_including_post_start']:,}.",
         f"- Post-start rows excluded: {audit['post_start_rows_excluded']:,}; retained pregame rows: {audit['pregame_rows_after_dedup']:,}.",
+        f"- Rows excluded for scheduled starts more than seven days after observation (likely date anomalies): {audit['future_start_anomaly_rows_excluded']:,}.",
         f"- Games: {audit['unique_games']}; distinct provider publications: {audit['distinct_board_publications']}.",
         f"- Publication gap median/min/max: {audit['publication_gap_median_minutes']} / {audit['publication_gap_min_minutes']} / {audit['publication_gap_max_minutes']} minutes.",
         f"- Retrieval/page-age median/max: {audit['page_age_median_minutes']} / {audit['page_age_max_minutes']} minutes.",
