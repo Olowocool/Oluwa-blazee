@@ -19,6 +19,8 @@ jobs:
   blend-market:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
         with:
