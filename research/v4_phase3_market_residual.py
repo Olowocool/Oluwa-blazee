@@ -24,10 +24,7 @@ from sklearn.preprocessing import StandardScaler
 
 DEFAULT_SNAPSHOTS = "data/private/dunkapi_public_odds_snapshots.csv"
 DEFAULT_SCORES = "data/historical_nba_scores.csv"
-DEFAULT_SCORE_PATCH_FILES = (
-    "research/data/score_history_patch_2026-10-21_to_2026-10-29.csv",
-    "research/data/score_history_patch_2026-10-30.csv",
-)
+DEFAULT_SCORE_PATCH_DIR = REPOSITORY_ROOT / "research" / "data"
 DEFAULT_OUTPUT = "outputs/research/v4_phase3_market_residual"
 BOOKMAKER = "DraftKings"
 ENTRY_MINUTES = 120
@@ -185,6 +182,26 @@ def select_entry_and_last(snapshots: pd.DataFrame, entry_minutes: int = ENTRY_MI
     }
 
 
+def discover_score_patch_files(
+    patch_dir: str | Path = DEFAULT_SCORE_PATCH_DIR,
+    explicit_paths: list[str] | tuple[str, ...] | None = None,
+) -> list[Path]:
+    """Discover every dated score patch, or resolve an explicit patch list."""
+    if explicit_paths is None:
+        directory = Path(patch_dir)
+        if not directory.is_absolute():
+            directory = REPOSITORY_ROOT / directory
+        return sorted(directory.glob("score_history_patch_*.csv"))
+
+    paths = []
+    for value in explicit_paths:
+        candidate = Path(value)
+        if not candidate.is_absolute() and not candidate.exists():
+            candidate = REPOSITORY_ROOT / candidate
+        paths.append(candidate)
+    return paths
+
+
 def load_combined_score_history(
     score_file: str,
     score_patch_files: list[str] | tuple[str, ...] = (),
@@ -193,7 +210,10 @@ def load_combined_score_history(
     from totals_betting_backtest import prepare_score_history
     from team_name_utils import normalize_history_team_columns, normalize_team_name
 
-    paths = [Path(score_file), *(Path(path) for path in score_patch_files)]
+    base_path = Path(score_file)
+    if not base_path.is_absolute() and not base_path.exists():
+        base_path = REPOSITORY_ROOT / base_path
+    paths = [base_path, *discover_score_patch_files(explicit_paths=score_patch_files)]
     frames = []
     raw_row_count = 0
     for path in paths:
@@ -469,8 +489,12 @@ def run(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame, dict[str,
     selected, select_diag = select_entry_and_last(snapshots, args.entry_minutes, args.max_entry_age_minutes)
     if selected.empty:
         raise ValueError("No games have an eligible fixed-cutoff entry snapshot.")
+    patch_files = discover_score_patch_files(
+        patch_dir=args.score_patch_dir,
+        explicit_paths=args.score_patch_files,
+    )
     games, score_diag = build_game_dataset(
-        selected, args.scores_file, args.score_patch_files
+        selected, args.scores_file, [str(path) for path in patch_files]
     )
     pred = walk_forward(games, args.min_train_games, args.ridge_alpha)
     pred = add_bets(pred, "points_engine_total", "points_engine")
@@ -508,10 +532,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--snapshots-file", default=DEFAULT_SNAPSHOTS)
     p.add_argument("--scores-file", default=DEFAULT_SCORES)
     p.add_argument(
+        "--score-patch-dir",
+        default=str(DEFAULT_SCORE_PATCH_DIR),
+        help="Directory scanned for score_history_patch_*.csv files (default: research/data).",
+    )
+    p.add_argument(
         "--score-patch-files",
         nargs="*",
-        default=list(DEFAULT_SCORE_PATCH_FILES),
-        help="Additional score CSVs merged in memory with the base history (default: dated research patches).",
+        default=None,
+        help="Optional explicit score patch list; overrides automatic patch discovery.",
     )
     p.add_argument("--bookmaker", default=BOOKMAKER)
     p.add_argument("--entry-minutes", type=int, default=ENTRY_MINUTES)
