@@ -212,6 +212,25 @@ def build_paired_predictions(
     features["game_id"] = features["game_id"].astype(str)
 
     scored = features.loc[features["season"].isin(TEST_SEASONS)].copy()
+    required_v4_fields = {
+        "expected_possessions", "league_off_eff_prior", "league_pace_prior",
+        "expected_home_efficiency", "expected_away_efficiency", "projected_total",
+    }
+    missing_v4_fields = sorted(required_v4_fields - set(scored.columns))
+    if missing_v4_fields:
+        raise ValueError(f"V4 features are missing required point-in-time fields: {missing_v4_fields}")
+    # These three factor baselines are derived in the earlier factor-audit
+    # script, not by build_point_in_time itself. Recreate the same equations.
+    scored["pace_only_total"] = (
+        scored["expected_possessions"] * 2.0 * scored["league_off_eff_prior"] / 100.0
+    )
+    scored["efficiency_only_total"] = (
+        scored["league_pace_prior"] *
+        (scored["expected_home_efficiency"] + scored["expected_away_efficiency"]) / 100.0
+    )
+    scored["league_environment_total"] = (
+        2.0 * scored["league_pace_prior"] * scored["league_off_eff_prior"] / 100.0
+    )
     matched = scored.merge(
         scores,
         on=["season", "game_id"],
