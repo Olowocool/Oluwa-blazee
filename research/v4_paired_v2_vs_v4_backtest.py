@@ -132,6 +132,7 @@ def build_score_history(raw: pd.DataFrame, team_names: dict[str, str]) -> pd.Dat
             "home_score": float(home_row["pts"]),
             "away_score": float(away_row["pts"]),
             "actual_total": float(home_row["pts"] + away_row["pts"]),
+            "total_score": float(home_row["pts"] + away_row["pts"]),
             "is_neutral_site": neutral,
         })
 
@@ -250,7 +251,7 @@ def build_paired_predictions(
 
     history_columns = [
         "game_date", "home_team", "away_team", "home_score", "away_score",
-        "actual_total", "is_neutral_site",
+        "actual_total", "total_score", "is_neutral_site",
     ]
     full_history = scores[history_columns].copy()
     full_history["game_date"] = pd.to_datetime(full_history["game_date"], errors="raise")
