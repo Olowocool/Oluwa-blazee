@@ -70,7 +70,7 @@ This log begins only after the updated launcher is installed and first run. It c
 To audit the existing private archive and inspect a matching Windows Scheduled Task without printing odds or prices, run:
 
 ```cmd
-research\\run_phase3_capture_audit.bat
+research\run_phase3_capture_audit.bat
 ```
 
 The read-only audit writes:
