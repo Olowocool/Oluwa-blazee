@@ -120,3 +120,26 @@ def test_bet_summary_uses_entry_side_and_later_line_only_as_clv():
     assert summary.loc["Points Engine V2", "mean_side_adjusted_line_clv_points"] == pytest.approx(1.0)
     assert summary.loc["V2 + V4 blend", "bets"] == 1
     assert summary.loc["V2 + V4 blend", "mean_side_adjusted_line_clv_points"] == pytest.approx(-1.0)
+
+def test_v2_only_bet_summary_works_without_v4_columns():
+    from research.v4_phase3_blend_market import summarize_bets
+
+    frame = pd.DataFrame([{
+        "points_engine_side": "Over",
+        "points_engine_settlement": "Loss",
+        "points_engine_profit_units": -1.0,
+        "entry_total": 175.5,
+        "last_observed_total": 176.5,
+        "over_probability_no_vig": 0.51,
+        "last_observed_over_probability_no_vig": 0.52,
+        "under_probability_no_vig": 0.49,
+        "last_observed_under_probability_no_vig": 0.48,
+    }])
+    result = summarize_bets(
+        frame, [("Points Engine V2", "points_engine")]
+    )
+    assert len(result) == 1
+    assert result.loc[0, "strategy"] == "Points Engine V2"
+    assert result.loc[0, "evaluated_games"] == 1
+    assert result.loc[0, "bets"] == 1
+    assert result.loc[0, "net_profit_units"] == pytest.approx(-1.0)
