@@ -4,11 +4,11 @@ import sys
 import pandas as pd
 import pytest
 
-import research.v4_team_strength_season_audit as audit
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
+
+import research.v4_team_strength_season_audit as audit
 
 from research.v4_team_strength_season_audit import (
     build_league_season_environment,
