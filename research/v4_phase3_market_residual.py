@@ -6,6 +6,15 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any
+import sys
+
+# Running this file as `python research/v4_phase3_market_residual.py` places
+# the research/ folder, not the repository root, at sys.path[0]. Add the root
+# explicitly so imports of totals_betting_backtest, points_engine, and
+# team_name_utils work both from the CLI and when imported by the test suite.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 import numpy as np
 import pandas as pd
