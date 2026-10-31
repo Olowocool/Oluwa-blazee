@@ -184,7 +184,7 @@ def build_current_v4_predictions(
         "all_v4_history_strictly_prior": True,
         "historical_stat_vintages_reconstructed_not_archived": True,
         "metadata_team_game_logs_last_season": int(
-            metadata["datasets"]["team_game_logs"]["last_season"]
+            metadata["team_game_logs"]["last_season"]
         ),
     }
     return current, diag
