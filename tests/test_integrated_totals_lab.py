@@ -72,7 +72,13 @@ def test_both_engines_receive_same_target_and_market_line(monkeypatch):
     monkeypatch.setattr(lab, "predict_game_total", fake_main)
     monkeypatch.setattr(lab, "calculate_game_components", fake_research)
 
-    history = pd.DataFrame({"game_date": [pd.Timestamp("2026-10-30")]})
+    history = pd.DataFrame({
+        "game_date": [pd.Timestamp("2026-10-30")] * 123,
+        "home_team": ["Boston Celtics"] * 123,
+        "away_team": ["Miami Heat"] * 123,
+        "home_score": [110] * 123,
+        "away_score": [108] * 123,
+    })
     result = lab.evaluate_market_game(
         _market(),
         history,
