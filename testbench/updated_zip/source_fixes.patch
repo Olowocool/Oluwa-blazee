@@ -220,7 +220,7 @@
      )
 --- a/tests/test_betting_guards.py
 +++ b/tests/test_betting_guards.py
-@@ -103,7 +103,8 @@
+@@ -103,6 +103,7 @@
          import py_compile
          path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend.py")
          py_compile.compile(path, doraise=True)
