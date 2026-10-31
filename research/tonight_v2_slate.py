@@ -31,8 +31,8 @@ def fetch_recent_public_scores() -> pd.DataFrame:
     """Read recent completed NBA score rows from the audited public game-log Parquet source."""
     import duckdb
 
-    logs_url = "https://basketball-data.billmill.org/nba/stats/team_game_logs/season=2026/data.parquet"
-    teams_url = "https://basketball-data.billmill.org/nba/stats/team_seasons/season=2026/data.parquet"
+    logs_url = "https://basketball-data.billmill.org/nba/stats/team_game_logs/season=2027/data.parquet"
+    teams_url = "https://basketball-data.billmill.org/nba/stats/team_seasons/season=2027/data.parquet"
 
     con = duckdb.connect()
     try:
