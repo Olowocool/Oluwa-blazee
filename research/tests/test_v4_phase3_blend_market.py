@@ -59,7 +59,7 @@ def test_attach_v4_features_calculates_frozen_beta_blend_on_exact_match():
 
 
 def test_attach_v4_features_rejects_same_day_history():
-    with pytest.raises(AssertionError, match="strictly prior"):
+    with pytest.raises(AssertionError, match="target-date/future history"):
         attach_v4_features(
             pd.DataFrame([base_game()]),
             pd.DataFrame([v4_feature(max_history_date=pd.Timestamp("2026-10-30"))]),
