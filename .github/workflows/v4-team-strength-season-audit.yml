@@ -1,0 +1,43 @@
+name: NBA cross-season team form and totals audit
+
+on:
+  push:
+    branches:
+      - "research/nba-advanced-data-audit"
+    paths:
+      - "research/v4_team_strength_season_audit.py"
+      - "research/tests/test_v4_team_strength_season_audit.py"
+      - ".github/workflows/v4-team-strength-season-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  team-strength:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/nba-advanced-data-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install research dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install duckdb pandas numpy scikit-learn tabulate pytest
+      - name: Compile and test team-strength audit
+        run: |
+          python -m py_compile research/v4_phase1_core.py research/v4_team_strength_season_audit.py
+          pytest -q research/tests/test_v4_team_strength_season_audit.py
+      - name: Run cross-season analysis
+        run: python research/v4_team_strength_season_audit.py
+      - name: Upload research evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nba-cross-season-team-strength-audit
+          path: outputs/research/v4_team_strength_season_audit/
+          if-no-files-found: error
+          retention-days: 30
