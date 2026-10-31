@@ -275,6 +275,11 @@ def select_v2_relevant_history(
     Passing only this union is exactly equivalent for its existing formula.
     """
     target = pd.Timestamp(target_date).normalize()
+    # The team-history indexes are keyed by canonical display names. NBA Stats
+    # may supply aliases such as "LA Clippers"; normalize before dictionary
+    # lookup so the selector includes the same franchise history as V2.
+    home_team = normalize_team_name(home_team)
+    away_team = normalize_team_name(away_team)
     pieces = []
     for team in (home_team, away_team):
         frame = team_history_frames.get(team)
