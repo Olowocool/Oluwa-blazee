@@ -13,6 +13,7 @@ from points_engine import calculate_matchup_points
 from research.v4_paired_v2_vs_v4_backtest import (
     build_paired_predictions,
     build_score_history,
+    prepare_v2_score_history,
     paired_bootstrap_mae_difference,
     regression_metrics,
 )
@@ -71,11 +72,13 @@ def test_paired_backtest_uses_same_games_and_strictly_prior_history():
         assert (history["game_date"] < pd.Timestamp(kwargs["game_date"])).all()
         return {"projected_total": 222.0}
 
+    names = {"A": "Team A", "B": "Team B", "C": "Team C", "D": "Team D"}
     results, diagnostics = build_paired_predictions(
         raw_games(),
-        {"A": "Team A", "B": "Team B", "C": "Team C", "D": "Team D"},
+        names,
         v4_features=features,
         predictor=fake_v2,
+        v2_history=build_score_history(raw_games(), names),
     )
 
     assert len(results) == 1
@@ -128,11 +131,13 @@ def test_neutral_site_targets_are_excluded_from_paired_comparison():
             "max_history_date": pd.Timestamp("2026-01-02"),
         },
     ])
+    names = {"A": "Team A", "B": "Team B", "C": "Team C", "D": "Team D"}
     results, diagnostics = build_paired_predictions(
         raw_games(),
-        {"A": "Team A", "B": "Team B", "C": "Team C", "D": "Team D"},
+        names,
         v4_features=features,
         predictor=lambda **kwargs: {"projected_total": 210.0},
+        v2_history=build_score_history(raw_games(), names),
     )
     assert len(results) == 1
     assert results.loc[0, "game_id"] == "3"
@@ -190,3 +195,20 @@ def test_relevant_team_history_is_equivalent_to_full_prior_score_history():
     assert relevant_prediction["rest_adjustment"] == pytest.approx(
         full_prediction["rest_adjustment"]
     )
+
+
+
+def test_v2_score_history_rebuilds_totals_and_fails_closed_on_duplicate_games():
+    source = build_score_history(
+        raw_games(),
+        {"A": "Team A", "B": "Team B", "C": "Team C", "D": "Team D"},
+    )
+    prepared, diagnostics = prepare_v2_score_history(source)
+    assert len(prepared) == 4
+    assert prepared["total_score"].tolist() == [195.0, 200.0, 225.0, 205.0]
+    assert diagnostics["v2_score_history_rows"] == 4
+    assert diagnostics["v2_score_history_duplicate_rows"] == 0
+
+    duplicate = pd.concat([source, source.iloc[[0]]], ignore_index=True)
+    with pytest.raises(ValueError, match="duplicate game rows"):
+        prepare_v2_score_history(duplicate)
