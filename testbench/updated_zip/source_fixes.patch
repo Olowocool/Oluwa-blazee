@@ -1,0 +1,232 @@
+--- a/betting_guards.py
++++ b/betting_guards.py
+@@ -6,6 +6,8 @@
+ sportsbook data yet (the project had no historical totals lines or odds).
+ Re-fit them once you have a few thousand logged games with closing lines.
+ """
++
++import math
+ 
+ # ---- Moneyline -------------------------------------------------------------
+ # How much of the model's disagreement with the no-vig market to trust.
+@@ -44,9 +46,29 @@
+ USE_TOTALS_AI_MODEL = False
+ 
+ 
++def _validated_finite_float(value, name):
++    if isinstance(value, bool):
++        raise ValueError(f"{name} must be a finite number, not a boolean")
++    try:
++        number = float(value)
++    except (TypeError, ValueError, OverflowError) as exc:
++        raise ValueError(f"{name} must be a finite number") from exc
++    if not math.isfinite(number):
++        raise ValueError(f"{name} must be a finite number")
++    return number
++
++
+ def devig_two_way(odds_a, odds_b):
+-    """Decimal odds for both sides -> (fair_prob_a, fair_prob_b) with the vig removed."""
+-    ia, ib = 1.0 / float(odds_a), 1.0 / float(odds_b)
++    """Decimal odds for both sides -> fair probabilities with the vig removed.
++
++    Decimal prices must be finite and strictly greater than 1.0. Invalid prices
++    are rejected instead of allowing division-by-zero or impossible markets.
++    """
++    odds_a = _validated_finite_float(odds_a, "odds_a")
++    odds_b = _validated_finite_float(odds_b, "odds_b")
++    if odds_a <= 1.0 or odds_b <= 1.0:
++        raise ValueError("Decimal odds for both sides must be greater than 1.0")
++    ia, ib = 1.0 / odds_a, 1.0 / odds_b
+     total = ia + ib
+     return ia / total, ib / total
+ 
+@@ -75,6 +97,17 @@
+ 
+ 
+ def assess_moneyline(model_home_prob, home_odds, away_odds):
++    model_home_prob = _validated_finite_float(model_home_prob, "model_home_prob")
++    if not 0.0 <= model_home_prob <= 1.0:
++        raise ValueError("model_home_prob must be between 0.0 and 1.0 inclusive")
++
++    # Validate odds here as well as in devig_two_way so the public entry point
++    # always fails with a clear ValueError before any betting calculations.
++    home_odds = _validated_finite_float(home_odds, "home_odds")
++    away_odds = _validated_finite_float(away_odds, "away_odds")
++    if home_odds <= 1.0 or away_odds <= 1.0:
++        raise ValueError("Decimal odds for both sides must be greater than 1.0")
++
+     fair_home, fair_away = devig_two_way(home_odds, away_odds)
+     home = _side(model_home_prob, fair_home, home_odds)
+     away = _side(1.0 - model_home_prob, fair_away, away_odds)
+--- a/points_engine.py
++++ b/points_engine.py
+@@ -117,6 +117,50 @@
+             return pd.DataFrame()
+ 
+     return pd.DataFrame()
++
++
++def filter_history_before_date(history_df, game_date):
++    """Return only completed games strictly before the target game date.
++
++    The target date is treated as a calendar date. Excluding the entire target
++    date avoids using the target game's result or another same-day result when
++    timestamps are not available. If a target date is supplied but the history
++    has no usable date column, fail closed rather than silently use future data.
++    """
++    if history_df is None:
++        return pd.DataFrame()
++
++    filtered = history_df.copy()
++    if filtered.empty:
++        return filtered
++
++    if "game_date" not in filtered.columns:
++        if game_date is not None:
++            raise ValueError("Historical data must contain game_date when game_date is supplied")
++        return filtered
++
++    dates = pd.to_datetime(filtered["game_date"], errors="coerce")
++    if getattr(dates.dt, "tz", None) is not None:
++        dates = dates.dt.tz_localize(None)
++    valid_dates = dates.notna()
++    filtered = filtered.loc[valid_dates].copy()
++    filtered["game_date"] = dates.loc[valid_dates]
++
++    if game_date is None:
++        return filtered.sort_values("game_date").reset_index(drop=True)
++
++    target = pd.to_datetime(game_date, errors="coerce")
++    if pd.isna(target):
++        raise ValueError(f"Invalid target game_date: {game_date!r}")
++    if getattr(target, "tzinfo", None) is not None:
++        target = target.tz_localize(None)
++    target = target.normalize()
++
++    dates = pd.to_datetime(filtered["game_date"], errors="coerce")
++    mask = dates < target
++    filtered = filtered.loc[mask].copy()
++    filtered["game_date"] = dates.loc[mask]
++    return filtered.sort_values("game_date").reset_index(drop=True)
+ 
+ 
+ def default_points_features(team_name):
+@@ -328,13 +372,22 @@
+     home_team,
+     away_team,
+     history_df=None,
+-    bookmaker_total=None
++    bookmaker_total=None,
++    game_date=None,
+ ):
+     if history_df is None:
+         history_df = load_game_history()
+ 
+     if history_df is None:
+         history_df = pd.DataFrame()
++
++    history_df = filter_history_before_date(history_df, game_date)
++    if not history_df.empty and "total_score" not in history_df.columns:
++        history_df = history_df.copy()
++        history_df["total_score"] = (
++            pd.to_numeric(history_df["home_score"], errors="coerce")
++            + pd.to_numeric(history_df["away_score"], errors="coerce")
++        )
+ 
+     home_projection = calculate_projected_team_points(
+         home_team,
+@@ -0,0 +1,160 @@
+--- a/totals_model.py
++++ b/totals_model.py
+@@ -4,7 +4,11 @@
+ 
+ from injury_impact_engine import get_injury_impact
+ from pace_engine import calculate_matchup_pace
+-from points_engine import calculate_matchup_points, load_game_history
++from points_engine import (
++    calculate_matchup_points,
++    filter_history_before_date,
++    load_game_history,
++)
+ from betting_guards import (
+     USE_STACKED_ADJUSTMENTS,
+     EARLY_SEASON_MIN_GAMES,
+@@ -124,20 +128,33 @@
+         return pd.DataFrame()
+ 
+ 
+-def games_in_recent_window(history_df, team_name, window_days):
++def games_in_recent_window(history_df, team_name, window_days, as_of_date=None):
+     """Games a team played in the window_days before the latest game in history.
+     Returns None if it cannot be computed (caller must then not block)."""
+     try:
+         d = history_df[["game_date", "home_team", "away_team"]].copy()
+         d["game_date"] = pd.to_datetime(d["game_date"], errors="coerce")
++        if getattr(d["game_date"].dt, "tz", None) is not None:
++            d["game_date"] = d["game_date"].dt.tz_localize(None)
+         d = d.dropna(subset=["game_date"])
+-        latest = d["game_date"].max()
++        has_explicit_as_of_date = as_of_date is not None
++        if not has_explicit_as_of_date:
++            reference_date = d["game_date"].max()
++        else:
++            reference_date = pd.to_datetime(as_of_date, errors="coerce")
++            if pd.isna(reference_date):
++                return None
++            if getattr(reference_date, "tzinfo", None) is not None:
++                reference_date = reference_date.tz_localize(None)
++            reference_date = reference_date.normalize()
+         t = str(team_name).strip().lower()
+         is_team = (
+             (d["home_team"].astype(str).str.strip().str.lower() == t)
+             | (d["away_team"].astype(str).str.strip().str.lower() == t)
+         )
+-        in_window = d["game_date"] >= latest - pd.Timedelta(days=window_days)
++        in_window = d["game_date"] >= reference_date - pd.Timedelta(days=window_days)
++        if has_explicit_as_of_date:
++            in_window &= d["game_date"] < reference_date
+         return int((is_team & in_window).sum())
+     except Exception:
+         return None
+@@ -253,6 +270,10 @@
+ 
+ def predict_game_total(home_team, away_team, bookmaker_total, game_date=None):
+     history_df = load_history()
++    # Apply one as-of cutoff before deriving ANY historical feature. This keeps
++    # the Points Engine, pace, form, venue, rest, and early-season checks on the
++    # same strictly prior-only dataset during historical backtests.
++    history_df = filter_history_before_date(history_df, game_date)
+ 
+     history_rows = len(history_df)
+     history_columns = str(list(history_df.columns))
+@@ -262,6 +283,7 @@
+         away_team=away_team,
+         history_df=history_df,
+         bookmaker_total=bookmaker_total,
++        game_date=game_date,
+     )
+ 
+     projected_home_points = points_data["projected_home_points"]
+@@ -362,10 +384,10 @@
+ 
+     # PATCH: early in a season the "last 10 games" are mostly last season's games.
+     home_recent_games = games_in_recent_window(
+-        history_df, home_team, EARLY_SEASON_WINDOW_DAYS
++        history_df, home_team, EARLY_SEASON_WINDOW_DAYS, as_of_date=game_date
+     )
+     away_recent_games = games_in_recent_window(
+-        history_df, away_team, EARLY_SEASON_WINDOW_DAYS
++        history_df, away_team, EARLY_SEASON_WINDOW_DAYS, as_of_date=game_date
+     )
+--- a/tests/test_betting_guards.py
++++ b/tests/test_betting_guards.py
+@@ -103,7 +103,8 @@
+         import py_compile
+         path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend.py")
+         py_compile.compile(path, doraise=True)
+-        src = open(path, encoding="utf-8").read()
++        with open(path, encoding="utf-8") as handle:
++            src = handle.read()
+         self.assertIn("assess_moneyline", src)
+         self.assertIn("USE_TOTALS_AI_MODEL", src)
