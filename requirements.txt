@@ -15,3 +15,4 @@ streamlit
 requests
 beautifulsoup4
 psycopg[binary]>=3.2,<4
+duckdb
