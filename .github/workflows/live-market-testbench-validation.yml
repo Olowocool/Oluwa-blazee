@@ -1,0 +1,71 @@
+name: Live market test-bench validation
+
+on:
+  push:
+    branches:
+      - "research/live-market-testbench"
+    paths:
+      - "live_market_testbench.py"
+      - "live_market_testbench_engine.py"
+      - "points_engine.py"
+      - "points_engine_v3.py"
+      - "points_engine_v4.py"
+      - "points_engine_v5.py"
+      - "team_name_utils.py"
+      - "team_map.json"
+      - "data/historical_nba_scores.csv"
+      - "tests/test_live_market_testbench.py"
+      - "requirements-testbench.txt"
+      - ".github/workflows/live-market-testbench-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-testbench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .
+    steps:
+      - name: Check out test-bench branch
+        uses: actions/checkout@v4
+        with:
+          ref: research/live-market-testbench
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test-bench dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-testbench.txt
+      - name: Compile app and model modules
+        run: |
+          python -m py_compile \
+            live_market_testbench.py \
+            live_market_testbench_engine.py \
+            points_engine.py \
+            points_engine_v3.py \
+            points_engine_v4.py \
+            points_engine_v5.py \
+            team_name_utils.py
+      - name: Run unit tests
+        run: python -m pytest -q tests/test_live_market_testbench.py
+      - name: Verify bundled historical score history
+        run: |
+          python - <<'PY'
+          from live_market_testbench_engine import load_score_history
+          history = load_score_history()
+          assert len(history) > 60000, f"Unexpectedly small history: {len(history)}"
+          assert history["game_date"].notna().all()
+          assert history[["home_score", "away_score"]].notna().all().all()
+          print({
+              "rows": len(history),
+              "latest_date": str(history["game_date"].max().date()),
+              "teams": len(set(history["home_team"]) | set(history["away_team"])),
+          })
+          PY
+      - name: Verify Streamlit CLI
+        run: streamlit --version
