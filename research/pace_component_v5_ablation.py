@@ -53,7 +53,7 @@ def league_stats(rows, fallback=None):
     poss = np.asarray([x["poss"] for x in rows], dtype=float)
     pts = np.asarray([x["pts"] for x in rows], dtype=float)
     pace = np.asarray([x["pace"] for x in rows], dtype=float)
-    drtg = np.asarray([x["drtg"] for x in rows], dtype=float)
+    drtg = np.asarray([x["def"] for x in rows], dtype=float)
     ok = np.isfinite(poss) & (poss > 0) & np.isfinite(pts)
     ortg = 100.0 * pts[ok].sum() / poss[ok].sum() if ok.any() else fallback["ortg"]
     return {
@@ -180,22 +180,27 @@ def team_form(team_id, season, team_history, lg, prev_lg):
     }
 
 
-def legacy_proxy(team_id, current_season, team_history):
+def legacy_proxy(team_id, team_history, target_home):
+    """Recreate legacy score-proxy pace using only this team's prior games."""
     hist = team_history.get(team_id, [])
     if not hist:
         return 100.0
     totals = [x["game_total"] for x in hist]
+    venue = [x["game_total"] for x in hist if bool(x["home"]) == bool(target_home)]
     vals = [
-        np.mean(totals[-10:]) if totals else 225.0,
-        np.mean(totals[-20:]) if totals else 225.0,
-        np.mean([x["game_total"] for x in hist if x["season"] == current_season]) if any(
-            x["season"] == current_season for x in hist
-        ) else 225.0,
-        np.mean([x["game_total"] for x in hist if x["home"] == hist[-1]["home"]][-20:])
-        if any(x["home"] == hist[-1]["home"] for x in hist) else 225.0,
+        _mean(totals[-10:], 225.0),
+        _mean(totals[-20:], 225.0),
+        _mean(totals, 225.0),
+        _mean(venue[-20:], _mean(totals, 225.0)),
     ]
     proxy = [100.0 + ((v - 225.0) / 225.0) * 20.0 for v in vals]
-    return 0.4 * proxy[0] + 0.25 * proxy[1] + 0.2 * proxy[2] + 0.15 * proxy[3]
+    return 0.40 * proxy[0] + 0.25 * proxy[1] + 0.20 * proxy[2] + 0.15 * proxy[3]
+
+
+def _mean(values, default):
+    a = np.asarray(values, dtype=float)
+    a = a[np.isfinite(a)]
+    return float(a.mean()) if len(a) else float(default)
 
 
 def fit_beta(dev, signal):
@@ -310,7 +315,7 @@ def main():
                         "physical_adj_l20": gaps["l20"] * conversion,
                         "physical_adj_blend": gaps["blend"] * conversion,
                         "legacy_score_pace_adj": (
-                            (0.5 * (legacy_proxy(hid, season, team_hist) + legacy_proxy(aid, season, team_hist)) - 100.0) * 2.5
+                            (0.5 * (legacy_proxy(hid, team_hist, True) + legacy_proxy(aid, team_hist, False)) - 100.0) * 2.5
                         ),
                         "max_history_date": max_history_date,
                     }
