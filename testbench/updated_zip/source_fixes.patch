@@ -207,7 +207,7 @@
      )
  
      projected_home_points = points_data["projected_home_points"]
-@@ -362,10 +384,10 @@
+@@ -362,8 +384,8 @@
  
      # PATCH: early in a season the "last 10 games" are mostly last season's games.
      home_recent_games = games_in_recent_window(
