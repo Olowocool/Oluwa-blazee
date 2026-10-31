@@ -46,7 +46,7 @@ That raw odds file is ignored by Git. Do not force-add it, upload it to a public
 
 ## Recommended capture cadence
 
-The board's underlying odds snapshots are hourly for games in the next four days. Run the local collector every 15 minutes; repeated polls of the same page publication are idempotently discarded. This helps avoid missing a newly published hourly snapshot because the local computer was asleep during the exact update minute.
+DunkAPI's current timing documentation says each book's game lines are captured hourly for games in the next four days ([provider timing documentation](https://dunkapi.com/docs/timing-and-rights)). Run the local collector every 15 minutes to reduce the chance of missing an hourly publication while the computer is awake and online. Polling every 15 minutes does **not** create new sportsbook prices between the provider's hourly captures; repeated polls of the same page publication are idempotently discarded.
 
 For Windows Task Scheduler, create a task with:
 
@@ -56,6 +56,28 @@ For Windows Task Scheduler, create a task with:
 - Start in: the repository root.
 
 Keep the computer awake and connected to the internet during the capture period. Task Scheduler on a sleeping/off computer cannot collect observations.
+
+## Capture-run logging and local coverage audit
+
+The Windows launcher `research/run_market_snapshot_capture.bat` appends each future invocation's start time, collector output and exit code to:
+
+```
+outputs/research/market_capture/capture_runs.log
+```
+
+This log begins only after the updated launcher is installed and first run. It cannot reconstruct earlier Task Scheduler activity or determine whether the computer slept in the past.
+
+To audit the existing private archive and inspect a matching Windows Scheduled Task without printing odds or prices, run:
+
+```cmd
+research\\run_phase3_capture_audit.bat
+```
+
+The read-only audit writes:
+- `outputs/research/phase3_capture_audit/phase3_capture_audit.md`
+- `outputs/research/phase3_capture_audit/phase3_capture_audit.json`
+
+The report contains timestamps, matchup names and coverage counts only. It does not emit total lines, spreads, odds or prices, and it does not modify the private archive. The Task Scheduler check searches task actions for `run_market_snapshot_capture.bat`; a differently named or differently configured task may not match. A task's last-run result describes only its latest run.
 
 ## Data-quality safeguards
 
