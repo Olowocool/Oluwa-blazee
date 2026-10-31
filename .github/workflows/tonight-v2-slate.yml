@@ -25,7 +25,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install minimal dependency
-        run: python -m pip install --upgrade pip pandas
+        run: python -m pip install --upgrade pip pandas duckdb
 
       - name: Run unmodified Points Engine V2 on tonight's slate
         run: python research/tonight_v2_slate.py
