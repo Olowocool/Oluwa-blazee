@@ -286,11 +286,29 @@ def build_paired_predictions(
         prior.attrs["_team_names_normalized"] = True
 
         for _, game in day.iterrows():
+            home_name = str(game["home_team"])
+            away_name = str(game["away_team"])
+            # V2 only reads rows involving the two target teams (team form,
+            # venue splits, rest and their head-to-heads). Removing unrelated
+            # games preserves every V2 input while avoiding repeated scans of
+            # the full league-wide score history for each target game.
+            relevant_prior = prior.loc[
+                prior["home_team"].isin([home_name, away_name])
+                | prior["away_team"].isin([home_name, away_name])
+            ].copy()
+            relevant_prior.attrs["_strict_history_cutoff_date"] = pd.Timestamp(target_date).date().isoformat()
+            relevant_prior.attrs["_team_names_normalized"] = True
+            if relevant_prior.empty:
+                raise RuntimeError(
+                    f"No prior V2 history exists for {away_name} at {home_name} on {target_date}."
+                )
+            if not (relevant_prior["game_date"] < pd.Timestamp(target_date)).all():
+                raise AssertionError(f"V2 relevant history is not strictly prior to {target_date}.")
             try:
                 prediction = predictor(
-                    home_team=game["home_team"],
-                    away_team=game["away_team"],
-                    history_df=prior,
+                    home_team=home_name,
+                    away_team=away_name,
+                    history_df=relevant_prior,
                     bookmaker_total=None,
                     game_date=target_date,
                 )
@@ -327,8 +345,8 @@ def build_paired_predictions(
                 "v2_absolute_error": abs(v2_total - actual),
                 "v4_absolute_error": abs(v4_total - actual),
                 "v4_max_history_date": pd.Timestamp(game["max_history_date"]).date().isoformat(),
-                "v2_max_history_date": prior["game_date"].max().date().isoformat(),
-                "v2_prior_history_rows": int(len(prior)),
+                "v2_max_history_date": relevant_prior["game_date"].max().date().isoformat(),
+                "v2_prior_history_rows": int(len(relevant_prior)),
                 "is_neutral_site": False,
             })
 
@@ -399,7 +417,7 @@ def write_report(results: pd.DataFrame, overall: pd.DataFrame, by_season: pd.Dat
         "## Scope",
         "",
         "- Both candidates are evaluated on the exact same NBA Stats regular-season games.",
-        "- Both use only score/stat history strictly earlier than the target game date; all same-date games are excluded from history.",
+        "- Both use only score/stat history strictly earlier than the target game date; all same-date games are excluded from history. For efficiency, V2 receives only prior games involving either target team; this preserves every row used by its recent-form, venue, rest and head-to-head calculations.",
         "- V2 is the repository's existing Points Engine V2 implementation, not a retrained substitute.",
         "- V4 is the fixed Phase 1 pace + opponent-adjusted efficiency candidate.",
         "- Target games at neutral sites are excluded because the current V2 target-venue logic is not neutral-site aware.",
