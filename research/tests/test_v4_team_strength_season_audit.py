@@ -4,6 +4,8 @@ import sys
 import pandas as pd
 import pytest
 
+import research.v4_team_strength_season_audit as audit
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
@@ -98,3 +100,30 @@ def test_missing_opponent_record_fails_closed():
     raw = synthetic_games().iloc[:-1].copy()
     with pytest.raises(ValueError, match="do not have exactly one opponent row"):
         prepare_team_game_data(raw)
+
+
+
+def test_factor_ablation_uses_phase1_prediction_columns(monkeypatch):
+    sample = pd.DataFrame([{
+        "season": 2026,
+        "expected_possessions": 102.0,
+        "league_pace_prior": 100.0,
+        "league_off_eff_prior": 110.0,
+        "expected_home_efficiency": 120.0,
+        "expected_away_efficiency": 115.0,
+        "projected_total": 239.0,
+        "actual_total": 245.0,
+    }])
+    monkeypatch.setattr(audit, "build_point_in_time", lambda raw: sample.copy())
+
+    predictions, summary = audit.build_factor_ablation(pd.DataFrame())
+
+    assert predictions.loc[0, "pace_only_total"] == pytest.approx(224.4)
+    assert predictions.loc[0, "efficiency_only_total"] == pytest.approx(235.0)
+    assert predictions.loc[0, "league_environment_total"] == pytest.approx(220.0)
+    assert predictions.loc[0, "projected_total"] == pytest.approx(239.0)
+    combined = summary.loc[
+        (summary["season"] == "ALL_TEST_SEASONS")
+        & (summary["predictor"] == "pace_plus_opponent_adjusted_efficiency")
+    ].iloc[0]
+    assert combined["mae"] == pytest.approx(6.0)
