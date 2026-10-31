@@ -218,7 +218,7 @@ def test_v2_score_history_rebuilds_totals_and_fails_closed_on_duplicate_games():
 
 def test_sufficient_v2_history_matches_full_history_forecast():
     names = {"A": "Team A", "B": "Team B", "C": "Team C", "D": "Team D"}
-    history = prepare_v2_score_history(build_score_history(raw_games(), names))
+    history, _diagnostics = prepare_v2_score_history(build_score_history(raw_games(), names))
     team_rows = {}
     for record in history.to_dict("records"):
         team_rows.setdefault(record["home_team"], []).append(record)
