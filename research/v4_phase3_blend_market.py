@@ -84,10 +84,10 @@ def load_team_name_map(season: int) -> dict[str, str]:
         con.execute("INSTALL httpfs")
         con.execute("LOAD httpfs")
         rows = con.execute(
-            "SELECT team_id, full_name FROM read_parquet([?], "
+            f"SELECT team_id, full_name FROM read_parquet(['{url}'], "
             "hive_partitioning=true, hive_types={'season': INTEGER}, "
             "union_by_name=true) WHERE season = ? AND is_nba = TRUE",
-            [[url], int(season)],
+            [int(season)],
         ).fetchdf()
     finally:
         con.close()
