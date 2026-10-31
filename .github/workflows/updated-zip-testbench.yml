@@ -97,7 +97,6 @@ jobs:
           suite = unittest.defaultTestLoader.discover(
               start_dir=str(snapshot / "tests"),
               pattern="test*.py",
-              top_level_dir=str(snapshot),
           )
           result = unittest.TextTestRunner(verbosity=2).run(suite)
           if not result.wasSuccessful():
