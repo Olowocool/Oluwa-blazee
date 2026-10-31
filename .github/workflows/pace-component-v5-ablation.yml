@@ -1,0 +1,48 @@
+name: V5 possession and pace component ablation
+
+on:
+  push:
+    branches:
+      - "research/nba-advanced-data-audit"
+    paths:
+      - "research/pace_component_v5_ablation.py"
+      - "points_engine.py"
+      - "points_engine_v3.py"
+      - "points_engine_v4.py"
+      - "points_engine_v5.py"
+      - "team_name_utils.py"
+      - ".github/workflows/pace-component-v5-ablation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  v5-pace-ablation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/nba-advanced-data-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install research dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install duckdb pandas numpy
+      - name: Compile V5 and pace research modules
+        run: |
+          python -m py_compile points_engine.py points_engine_v3.py points_engine_v4.py points_engine_v5.py research/pace_component_v5_ablation.py
+      - name: Run point-in-time possession and pace ablation
+        run: python research/pace_component_v5_ablation.py
+      - name: Upload pace component evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v5-possession-pace-component-ablation
+          path: outputs/research/pace_component_v5/
+          if-no-files-found: error
+          retention-days: 30
