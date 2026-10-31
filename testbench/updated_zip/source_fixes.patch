@@ -136,7 +136,6 @@
  
      home_projection = calculate_projected_team_points(
          home_team,
-@@ -0,0 +1,160 @@
 --- a/totals_model.py
 +++ b/totals_model.py
 @@ -4,7 +4,11 @@
