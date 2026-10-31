@@ -370,6 +370,9 @@ def main():
     features["v5_legacy_score_proxy"] = features.v5_raw_total + features.legacy_score_pace_adj
     candidates["V5 + legacy score proxy"] = "v5_legacy_score_proxy"
 
+    # Rebuild the holdout view after creating all pace-adjusted prediction columns.
+    hold = features[features.period == "holdout"].copy()
+
     comparison_rows, pace_rows = [], []
     for period in ("development", "holdout", "all"):
         part = features if period == "all" else features[features.period == period]
