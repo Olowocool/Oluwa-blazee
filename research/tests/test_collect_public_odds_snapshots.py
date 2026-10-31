@@ -103,3 +103,30 @@ def test_resolves_new_year_game_to_the_next_calendar_year():
     assert start.year == 2027
     assert start.month == 1
     assert start.day == 1
+
+
+
+def test_skips_expired_game_without_rolling_it_forward_one_year():
+    html = FIXTURE.replace(
+        "Lines as of Oct 30, 10:05 AM ET.",
+        "Lines as of Oct 31, 5:00 AM ET.",
+    ).replace("Fri, Oct 30, 7:30 PM ET", "Sat, Oct 31, 7:30 PM ET")
+    retrieved = datetime(2026, 10, 31, 9, 28, tzinfo=timezone.utc)
+    rows, diagnostics = parse_odds_page(html, retrieved_at=retrieved)
+    assert len(rows) == 1
+    assert rows[0]["away_team"] == "Chicago Bulls"
+    assert rows[0]["commence_time_utc"].startswith("2026-10-31")
+    assert diagnostics["games_seen"] == 2
+    assert diagnostics["games_skipped_outside_schedule_window"] == 1
+
+
+def test_resolves_new_year_game_to_the_next_calendar_year():
+    from zoneinfo import ZoneInfo
+    from research.collect_public_odds_snapshots import parse_game_start
+
+    eastern = ZoneInfo("America/New_York")
+    asof = datetime(2026, 12, 31, 18, 0, tzinfo=eastern)
+    start = parse_game_start("Fri, Jan 1, 7:00 PM ET", asof)
+    assert start.year == 2027
+    assert start.month == 1
+    assert start.day == 1
