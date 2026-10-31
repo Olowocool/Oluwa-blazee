@@ -209,8 +209,15 @@ def main():
                     )
                     era_values.append(meeting["total"] + current_league_avg - historical_season_avg)
 
+                max_h2h_date = recent[-1]["date"] if recent else None
+                if max_h2h_date is not None and not max_h2h_date < date:
+                    raise RuntimeError("H2H history contains same-day or future meetings.")
+
                 record = {
                     "game_date": date,
+                    "h2h_max_history_date": (
+                        max_h2h_date.date().isoformat() if max_h2h_date is not None else None
+                    ),
                     "game_id": game_id,
                     "season_start_year": season_start,
                     "period": "development" if season_start in DEV_YEARS else "holdout",
@@ -268,6 +275,12 @@ def main():
         raise RuntimeError(f"Expected 6,140 target predictions, produced {len(features)}.")
     if features.duplicated(["game_date", "game_id"]).any():
         raise RuntimeError("Duplicate target-game predictions.")
+    h2h_cutoff_ok = features["h2h_max_history_date"].isna() | (
+        pd.to_datetime(features["h2h_max_history_date"], errors="coerce")
+        < pd.to_datetime(features["game_date"])
+    )
+    if not bool(h2h_cutoff_ok.all()):
+        raise RuntimeError("H2H feature contains a same-day or future meeting.")
 
     # Development-only coefficient fitting. The existing rule uses a fixed 0.15.
     dev = features[features["period"] == "development"].copy()
@@ -317,6 +330,9 @@ def main():
     hold_row = comparison[
         (comparison["period"] == "holdout") & (comparison["model"] == selected_name)
     ].iloc[0]
+    # Candidate columns are added after the initial split, so rebuild the
+    # holdout frame before paired bootstrap comparison.
+    hold = features[features["period"] == "holdout"].copy()
     bootstrap = paired_date_bootstrap(hold.reset_index(drop=True), selected_col)
 
     h2h_counts = features["h2h_games_last10"]
@@ -331,6 +347,7 @@ def main():
         "target_date_end": str(pd.Timestamp(features.game_date.max()).date()),
         "h2h_regular_season_non_neutral_only": True,
         "same_day_results_excluded": True,
+        "same_day_h2h_cutoff_passed": bool(h2h_cutoff_ok.all()),
         "h2h_history_count": {
             "mean": float(h2h_counts.mean()),
             "median": float(h2h_counts.median()),
