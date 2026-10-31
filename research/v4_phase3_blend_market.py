@@ -294,13 +294,18 @@ def _accuracy_rows(frame: pd.DataFrame, columns: list[tuple[str, str]], split: s
     return pd.DataFrame(rows)
 
 
-def summarize_bets(frame: pd.DataFrame) -> pd.DataFrame:
+def summarize_bets(
+    frame: pd.DataFrame,
+    strategies: list[tuple[str, str]] | None = None,
+) -> pd.DataFrame:
     rows = []
-    for label, prefix in (
-        ("Points Engine V2", "points_engine"),
-        ("V4", "v4"),
-        ("V2 + V4 blend", "blend"),
-    ):
+    if strategies is None:
+        strategies = [
+            ("Points Engine V2", "points_engine"),
+            ("V4", "v4"),
+            ("V2 + V4 blend", "blend"),
+        ]
+    for label, prefix in strategies:
         side_col = f"{prefix}_side"
         settlement_col = f"{prefix}_settlement"
         profit_col = f"{prefix}_profit_units"
@@ -357,6 +362,8 @@ def summarize_bets(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_report(
+    v2_all_metrics: pd.DataFrame,
+    v2_all_bets: pd.DataFrame,
     metrics: pd.DataFrame,
     bets: pd.DataFrame,
     diagnostics: dict[str, Any],
@@ -385,13 +392,21 @@ def build_report(
         f"- Settled entry games with a score-consistent V4 forecast: {diagnostics['shared_v2_v4_games']:,}.",
         f"- V4 feature misses: {diagnostics['v4_feature_missing_games']:,}; score mismatches excluded: {diagnostics['v4_score_mismatch_games']:,}.",
         "",
+        "## Points Engine V2 across all settled entry games",
+        "",
+        v2_all_metrics.to_markdown(index=False, floatfmt=".4f") if not v2_all_metrics.empty else "_No settled T-120 entry games are matched to V2 scores._",
+        "",
+        "### V2 entry-price betting simulation",
+        "",
+        v2_all_bets.to_markdown(index=False, floatfmt=".4f") if not v2_all_bets.empty else "_No eligible V2 bets were generated._",
+        "",
         "## Accuracy on common V2/V4 games",
         "",
         metrics.to_markdown(index=False, floatfmt=".4f") if not metrics.empty else "_No settled games have a valid V4 forecast; no same-sample accuracy comparison is available._",
         "",
-        "## Entry-price betting simulation on the same games",
+        "## Entry-price betting simulation on the same V2/V4 games",
         "",
-        bets.to_markdown(index=False, floatfmt=".4f") if not bets.empty else "_No settled games have a valid V4 forecast; no blend betting simulation is available._",
+        bets.to_markdown(index=False, floatfmt=".4f") if not bets.empty else "_No settled games have a valid V4 forecast; no same-sample V4/blend betting comparison is available._",
         "",
         "## Important limitations",
         "",
@@ -424,6 +439,21 @@ def run(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame, dict[str,
     v4_features, v4_diag = build_current_v4_predictions(
         target_season=args.target_season, min_team_games=args.min_team_games
     )
+    # Evaluate V2 independently across every settled T-120 entry matched
+    # to a final score, regardless of whether early-season V4 features exist.
+    v2_all_metrics = _accuracy_rows(
+        v2_games,
+        [
+            ("DraftKings T-120 entry total", "entry_total"),
+            ("Points Engine V2", "points_engine_total"),
+        ],
+        "all_v2_score_matched_entries",
+    )
+    v2_all_betting = add_bets(v2_games, "points_engine_total", "points_engine")
+    v2_all_bet_summary = summarize_bets(
+        v2_all_betting, [("Points Engine V2", "points_engine")]
+    )
+
     joined = attach_v4_features(v2_games, v4_features, beta=args.beta)
     valid = joined.loc[joined["v4_prediction_valid"]].copy()
 
@@ -468,6 +498,9 @@ def run(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame, dict[str,
         "games_without_entry_observation": int(select_diag["games_without_entry_observation"]),
         "games_entry_observation_too_old": int(select_diag["games_entry_observation_too_old"]),
         "games_with_score_and_v2": int(len(v2_games)),
+        "v2_all_entry_bets": int(len(v2_all_betting.loc[
+            v2_all_betting["points_engine_side"].isin(["Over", "Under"])
+        ])),
         "shared_v2_v4_games": int(len(valid)),
         "v4_feature_missing_games": int((~joined["v4_feature_matched"]).sum()),
         "v4_score_mismatch_games": int(joined.attrs.get("v4_score_mismatch_rows", 0)),
@@ -492,20 +525,30 @@ def run(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame, dict[str,
     games_path = output / "v4_phase3_blend_market_games.csv"
     metrics_path = output / "v4_phase3_blend_market_accuracy.csv"
     bets_path = output / "v4_phase3_blend_market_bets.csv"
+    v2_metrics_path = output / "v4_phase3_v2_all_entry_accuracy.csv"
+    v2_bets_path = output / "v4_phase3_v2_all_entry_bets.csv"
     diagnostics_path = output / "v4_phase3_blend_market_quality.json"
     report_path = output / "v4_phase3_blend_market_report.md"
     betting.to_csv(games_path, index=False)
     metrics.to_csv(metrics_path, index=False)
     bet_summary.to_csv(bets_path, index=False)
+    v2_all_metrics.to_csv(v2_metrics_path, index=False)
+    v2_all_bet_summary.to_csv(v2_bets_path, index=False)
     diagnostics_path.write_text(json.dumps(diagnostics, indent=2, default=str), encoding="utf-8")
     report_path.write_text(
-        build_report(metrics, bet_summary, diagnostics, float(args.beta)),
+        build_report(
+            v2_all_metrics, v2_all_bet_summary, metrics, bet_summary,
+            diagnostics, float(args.beta)
+        ),
         encoding="utf-8",
     )
     print(json.dumps(diagnostics, indent=2, default=str))
-    print("\nAccuracy:")
+    print("\nV2 across all settled entry games:")
+    print(v2_all_metrics.to_string(index=False) if not v2_all_metrics.empty else "No V2-scored games")
+    print(v2_all_bet_summary.to_string(index=False) if not v2_all_bet_summary.empty else "No V2 bets")
+    print("\nCommon V2/V4 accuracy:")
     print(metrics.to_string(index=False) if not metrics.empty else "No matched V4 games")
-    print("\nBetting:")
+    print("\nCommon V2/V4 betting:")
     print(bet_summary.to_string(index=False) if not bet_summary.empty else "No matched V4 games")
     print(f"\nReport: {report_path}")
     return betting, metrics, diagnostics
