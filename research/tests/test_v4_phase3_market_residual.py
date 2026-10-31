@@ -8,6 +8,7 @@ import pytest
 from research.v4_phase3_market_residual import (
     american_to_decimal,
     no_vig,
+    load_combined_score_history,
     paired_bootstrap_mae_difference,
     prepare_snapshots,
     select_entry_and_last,
@@ -144,3 +145,43 @@ def test_holdout_mae_bootstrap_is_paired_and_summary_uses_same_games_for_bets():
     boot = paired_bootstrap_mae_difference(boot_frame, n_resamples=500, seed=42)
     assert boot["observed_mae_difference_model_minus_market"] == pytest.approx(-3.0)
     assert boot["bootstrap_95_ci"] == pytest.approx([-3.0, -3.0])
+
+
+
+def test_score_history_patches_are_merged_and_conflicting_duplicates_fail(tmp_path):
+    base = pd.DataFrame([
+        {
+            "game_date": "2026-10-29",
+            "home_team": "Atlanta Hawks",
+            "away_team": "Cleveland Cavaliers",
+            "home_score": 114,
+            "away_score": 111,
+        }
+    ])
+    patch = pd.DataFrame([
+        {
+            "game_date": "2026-10-30",
+            "home_team": "Washington Wizards",
+            "away_team": "Charlotte Hornets",
+            "home_score": 95,
+            "away_score": 79,
+        }
+    ])
+    base_path = tmp_path / "base.csv"
+    patch_path = tmp_path / "patch.csv"
+    base.to_csv(base_path, index=False)
+    patch.to_csv(patch_path, index=False)
+
+    merged, diag = load_combined_score_history(str(base_path), [str(patch_path)])
+    assert len(merged) == 2
+    assert str(pd.Timestamp(merged["game_date"].max()).date()) == "2026-10-30"
+    assert diag["score_history_input_rows"] == 2
+    assert diag["score_history_rows_after_dedup"] == 2
+    assert diag["score_history_latest_game_date"] == "2026-10-30"
+
+    conflict = patch.copy()
+    conflict.loc[0, "home_score"] = 96
+    conflict_path = tmp_path / "conflict.csv"
+    conflict.to_csv(conflict_path, index=False)
+    with pytest.raises(ValueError, match="Conflicting score-history records"):
+        load_combined_score_history(str(patch_path), [str(conflict_path)])
