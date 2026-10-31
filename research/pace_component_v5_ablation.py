@@ -85,7 +85,7 @@ def load_source():
         )
     raw = con.execute("""
         SELECT t.season, t.game_id, t.game_date, t.team_id, t.opp_team_id,
-               t.home, t.pts, t.poss, t.pace, t.off_rating, t.def_rating,
+               t.home, t.pts, t.min, t.poss, t.pace, t.off_rating, t.def_rating,
                t.fga, t.fta, t.oreb, t.tov, t.team_oreb,
                g.game_type, g.neutral_site
         FROM team_game_logs t JOIN games g USING (season, game_id)
@@ -99,17 +99,33 @@ def load_source():
 def pair_source(raw):
     d = raw.copy()
     d["game_date"] = pd.to_datetime(d.game_date, errors="coerce").dt.normalize()
-    for c in ("season", "pts", "poss", "pace", "off_rating", "def_rating",
+    for c in ("season", "pts", "min", "poss", "pace", "off_rating", "def_rating",
               "fga", "fta", "oreb", "tov", "team_oreb"):
         d[c] = pd.to_numeric(d[c], errors="coerce")
     d["team_id"] = d.team_id.astype(str)
     d["opp_team_id"] = d.opp_team_id.astype(str)
-    d = d.dropna(subset=["game_date", "season", "pts", "poss", "pace",
+    d = d.dropna(subset=["game_date", "season", "pts", "min", "poss", "pace",
                          "off_rating", "def_rating", "fga", "fta", "oreb", "tov", "home"])
-    d = d[(d.poss > 0) & (d.pace > 0) & (~d.neutral_site.fillna(False).astype(bool))]
+    d = d[
+        (d.poss > 0) & (d.min > 0) & (d.pace > 0)
+        & (~d.neutral_site.fillna(False).astype(bool))
+    ]
     if d.duplicated(["season", "game_id", "team_id"]).any():
         raise RuntimeError("Duplicate (season, game_id, team_id) keys.")
+
+    # NBA advanced pace is retained for comparison, but the candidate uses
+    # play-by-play possessions normalized to 48 minutes. Team-game MIN is
+    # the sum of five players' minutes, so 48-minute pace = POSS * 240 / MIN.
+    d["nba_pace"] = d["pace"]
+    d["pace"] = d["poss"] * 240.0 / d["min"]
+
+    # The requested box-score approximation is audited as-is. In this source,
+    # player OREB excludes team offensive rebounds, which are reported
+    # separately; test that adjusted version too where team_oreb is available.
     d["formula_poss"] = d.fga + 0.44 * d.fta - d.oreb + d.tov
+    d["formula_poss_team_oreb_adjusted"] = (
+        d["formula_poss"] - d["team_oreb"].fillna(0)
+    )
 
     dates = defaultdict(list)
     score_rows, audit_rows = [], []
@@ -135,11 +151,25 @@ def pair_source(raw):
         })
         for r in (h, a):
             delta = float(r["formula_poss"]) - float(r["poss"])
+            team_oreb_available = bool(pd.notna(r["team_oreb"]))
+            adjusted_formula = (
+                float(r["formula_poss_team_oreb_adjusted"])
+                if team_oreb_available else np.nan
+            )
             audit_rows.append({
-                "season": season, "source_poss": float(r["poss"]),
+                "season": season,
+                "source_poss": float(r["poss"]),
                 "formula_poss": float(r["formula_poss"]),
                 "abs_formula_diff": abs(delta),
-                "team_oreb_available": bool(pd.notna(r["team_oreb"])),
+                "adjusted_formula_poss": adjusted_formula,
+                "abs_adjusted_formula_diff": (
+                    abs(adjusted_formula - float(r["poss"]))
+                    if team_oreb_available else np.nan
+                ),
+                "team_oreb_available": team_oreb_available,
+                "nba_pace": float(r["nba_pace"]),
+                "pbp_pace": float(r["pace"]),
+                "abs_pbp_vs_nba_pace": abs(float(r["pace"]) - float(r["nba_pace"])),
             })
     scores = pd.DataFrame(score_rows).sort_values("game_date").reset_index(drop=True)
     return d, dates, scores, pd.DataFrame(audit_rows)
@@ -310,6 +340,7 @@ def main():
                         "home_team_id": hid, "away_team_id": aid,
                         "actual_total": float(h["pts"]) + float(a["pts"]),
                         "actual_pace": actual_pace,
+                        "actual_nba_pace": 0.5 * (float(h["nba_pace"]) + float(a["nba_pace"])),
                         "actual_possessions": 0.5 * (float(h["poss"]) + float(a["poss"])),
                         "v5_raw_total": float(v5["raw_total"]),
                         "league_pace_prior": lg["pace"], "league_ortg_prior": lg["ortg"],
@@ -430,12 +461,30 @@ def main():
     }
 
     poss_delta = (poss_audit.formula_poss - poss_audit.source_poss).abs()
+    adjusted_audit = poss_audit.dropna(subset=["abs_adjusted_formula_diff"])
+    adjusted_delta = adjusted_audit["abs_adjusted_formula_diff"]
+    pace_delta = poss_audit["abs_pbp_vs_nba_pace"]
     poss_summary = {
-        "rows": int(len(poss_audit)),
-        "formula_mae_vs_play_by_play_poss": float(poss_delta.mean()),
-        "formula_median_abs_diff": float(poss_delta.median()),
-        "formula_p95_abs_diff": float(poss_delta.quantile(.95)),
-        "exact_within_0_01_pct": float((poss_delta <= .01).mean() * 100),
+        "team_game_rows": int(len(poss_audit)),
+        "unadjusted_formula_mae_vs_play_by_play_poss": float(poss_delta.mean()),
+        "unadjusted_formula_median_abs_diff": float(poss_delta.median()),
+        "unadjusted_formula_p95_abs_diff": float(poss_delta.quantile(.95)),
+        "unadjusted_formula_exact_within_0_01_pct": float((poss_delta <= .01).mean() * 100),
+        "team_oreb_available_rows": int(len(adjusted_audit)),
+        "team_oreb_available_pct": float(len(adjusted_audit) / len(poss_audit) * 100),
+        "team_oreb_adjusted_formula_mae_vs_play_by_play_poss": (
+            float(adjusted_delta.mean()) if len(adjusted_delta) else None
+        ),
+        "team_oreb_adjusted_formula_median_abs_diff": (
+            float(adjusted_delta.median()) if len(adjusted_delta) else None
+        ),
+        "team_oreb_adjusted_formula_p95_abs_diff": (
+            float(adjusted_delta.quantile(.95)) if len(adjusted_delta) else None
+        ),
+        "pbp_derived_pace_mae_vs_nba_advanced_pace": float(pace_delta.mean()),
+        "pbp_derived_pace_mean_bias_vs_nba_advanced_pace": float(
+            (poss_audit.pbp_pace - poss_audit.nba_pace).mean()
+        ),
     }
     payload = {
         "run_utc": datetime.now(timezone.utc).isoformat(),
@@ -449,6 +498,8 @@ def main():
         "selected_holdout_metrics": holdout_row.to_dict(),
         "paired_date_cluster_bootstrap_vs_v5": bootstrap,
         "same_day_results_excluded": True,
+        "pace_measure": "play-by-play possessions * 240 / team total minutes",
+        "boxscore_formula_audit": "FGA + 0.44*FTA - OREB + TOV; separately subtract team_oreb where available",
         "production_modified": False,
         "source_updated_utc": {
             x: metadata[x]["updated"] for x in ("team_game_logs", "games")
