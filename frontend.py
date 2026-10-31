@@ -881,6 +881,12 @@ else:
         "app secrets/environment before relying on this as a persistent archive."
     )
 
+st.warning(
+    "ISOLATED RESEARCH ENVIRONMENT — this is a separate copy of the main app. "
+    "Changes, paper records, and local files here do not update the production app. "
+    "Use the Totals Research Lab page to compare the official main-app forecast with V5."
+)
+
 st.title("NBA Games")
 
 date_input = st.text_input(
