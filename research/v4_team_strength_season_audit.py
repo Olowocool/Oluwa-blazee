@@ -30,27 +30,8 @@ from research.v4_phase1_core import (
 OUT = Path("outputs/research/v4_team_strength_season_audit")
 PROFILE_REQUIRED = {
     "season", "game_id", "game_date", "team_id", "team_name",
-    "opp_team_id", "pts", "fga", "fta", "oreb", "tov", "fgm", "fg3m",
+    "opp_team_id", "pts", "fga", "fta", "oreb", "tov", "fgm", "fg3m", "fg3a",
 }
-
-
-def _season_urls(info: dict, first: int, last: int) -> list[str]:
-    source_first = int(info["first_season"])
-    source_last = int(info["last_season"])
-    if first < source_first or last > source_last or last < first:
-        raise RuntimeError(
-            f"Requested seasons {first}-{last} are outside source coverage "
-            f"{source_first}-{source_last}."
-        )
-    # The catalog represents continuous season partitions. Validate that claim
-    # before constructing URLs; never silently skip a missing season.
-    if int(info["seasons"]) != source_last - source_first + 1:
-        raise RuntimeError(f"Non-contiguous season metadata: {info}")
-    return [
-        f"{BASE}/nba/stats/{name}/season={season}/data.parquet"
-        for name in []
-        for season in []
-    ]
 
 
 def load_raw_regular_season_logs() -> tuple[pd.DataFrame, dict]:
@@ -257,8 +238,16 @@ def build_team_season_profiles(paired: pd.DataFrame) -> pd.DataFrame:
     result = pd.DataFrame(records)
     if result.empty:
         raise ValueError("No team-season profiles were produced.")
+    rating_columns = [
+        "schedule_adj_offense_effect_per100",
+        "opponent_scoring_allowance_effect_per100",
+        "schedule_adj_net_strength_effect_per100",
+    ]
     if not ratings.empty:
         result = result.merge(ratings, on=["season", "team_id"], how="left", validate="one_to_one")
+    else:
+        for column in rating_columns:
+            result[column] = np.nan
 
     for season, idx in result.groupby("season").groups.items():
         part = result.loc[idx]
@@ -366,7 +355,7 @@ def build_report(team: pd.DataFrame, league: pd.DataFrame, ablation: pd.DataFram
         f"- Source: NBA Stats team game logs mirrored by llimllib/nba_data v2 ({metadata['catalog_url']}).",
         f"- Completed seasons covered: {metadata['first_season_end_year']}–{metadata['last_season_end_year']} "
         f"({metadata['seasons_loaded']} seasons; end-year convention).",
-        f"- Team-game rows: {len(prediction_rows.attrs.get('team_game_data', [])):,}" if prediction_rows.attrs.get("team_game_data") is not None else "- Team-game rows are included in the machine-readable summary.",
+        "- Team-game data and exact row counts are recorded in the machine-readable summary.",
         "- Current partial 2026-27 season is excluded from season-end rankings.",
         "- Preseason, All-Star, play-in, playoff and NBA Cup Final games are excluded.",
         "",
