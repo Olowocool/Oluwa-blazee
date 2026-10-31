@@ -85,7 +85,7 @@ def test_attach_v4_features_does_not_fill_missing_feature_or_score_mismatch():
 
 
 def test_attach_v4_features_rejects_duplicate_game_keys():
-    with pytest.raises(ValueError, match="duplicate date/home/away"):
+    with pytest.raises(ValueError, match="not unique by date/home/away"):
         attach_v4_features(
             pd.DataFrame([base_game()]),
             pd.DataFrame([v4_feature(), v4_feature()]),
