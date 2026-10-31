@@ -259,6 +259,54 @@ def paired_bootstrap_mae_difference(
     }
 
 
+def select_v2_relevant_history(
+    team_history_frames: dict[str, pd.DataFrame],
+    team_history_dates: dict[str, np.ndarray],
+    head_to_head_frames: dict[tuple[str, str], pd.DataFrame],
+    head_to_head_dates: dict[tuple[str, str], np.ndarray],
+    home_team: str,
+    away_team: str,
+    target_date: pd.Timestamp,
+) -> pd.DataFrame:
+    """Return the sufficient prior rows used by every V2 feature.
+
+    V2 reads each target team's last 10 games (which also supplies last-5,
+    venue splits and latest-game rest) plus the last 10 head-to-head games.
+    Passing only this union is exactly equivalent for its existing formula.
+    """
+    target = pd.Timestamp(target_date).normalize()
+    pieces = []
+    for team in (home_team, away_team):
+        frame = team_history_frames.get(team)
+        dates = team_history_dates.get(team)
+        if frame is None or dates is None:
+            continue
+        end = int(np.searchsorted(dates, target.to_datetime64(), side="left"))
+        pieces.append(frame.iloc[max(0, end - 10):end])
+
+    pair = tuple(sorted((home_team, away_team)))
+    frame = head_to_head_frames.get(pair)
+    dates = head_to_head_dates.get(pair)
+    if frame is not None and dates is not None:
+        end = int(np.searchsorted(dates, target.to_datetime64(), side="left"))
+        pieces.append(frame.iloc[max(0, end - 10):end])
+
+    if not pieces:
+        return pd.DataFrame(columns=[
+            "game_date", "home_team", "away_team", "home_score", "away_score",
+            "total_score", "is_neutral_site",
+        ])
+
+    result = pd.concat(pieces, ignore_index=True)
+    result = result.drop_duplicates(["game_date", "home_team", "away_team"])
+    result = result.sort_values(["game_date", "home_team", "away_team"]).reset_index(drop=True)
+    result.attrs["_strict_history_cutoff_date"] = target.date().isoformat()
+    result.attrs["_team_names_normalized"] = True
+    if not result.empty and not (result["game_date"] < target).all():
+        raise AssertionError("V2 sufficient-history selector admitted a target-date result.")
+    return result
+
+
 def build_paired_predictions(
     raw: pd.DataFrame,
     team_names: dict[str, str],
@@ -350,6 +398,18 @@ def build_paired_predictions(
         team_history_frames[team_name] = frame
         team_history_dates[team_name] = frame["game_date"].to_numpy(dtype="datetime64[ns]")
 
+    pair_history_rows = {}
+    for record in v2_scores[history_columns].to_dict("records"):
+        pair = tuple(sorted((record["home_team"], record["away_team"])))
+        pair_history_rows.setdefault(pair, []).append(record)
+    head_to_head_frames = {}
+    head_to_head_dates = {}
+    for pair, records in pair_history_rows.items():
+        frame = pd.DataFrame(records).sort_values(["game_date", "home_team", "away_team"]).reset_index(drop=True)
+        frame["game_date"] = pd.to_datetime(frame["game_date"], errors="raise")
+        head_to_head_frames[pair] = frame
+        head_to_head_dates[pair] = frame["game_date"].to_numpy(dtype="datetime64[ns]")
+
     rows = []
     v2_failures = []
     for target_date, day in matched.groupby("game_date", sort=True):
@@ -357,23 +417,15 @@ def build_paired_predictions(
         for _, game in day.iterrows():
             home_name = str(game["home_team"])
             away_name = str(game["away_team"])
-            home_frame = team_history_frames.get(home_name, pd.DataFrame(columns=history_columns))
-            away_frame = team_history_frames.get(away_name, pd.DataFrame(columns=history_columns))
-            home_end = int(np.searchsorted(
-                team_history_dates.get(home_name, np.array([], dtype="datetime64[ns]")),
-                target_timestamp.to_datetime64(), side="left",
-            ))
-            away_end = int(np.searchsorted(
-                team_history_dates.get(away_name, np.array([], dtype="datetime64[ns]")),
-                target_timestamp.to_datetime64(), side="left",
-            ))
-            relevant_prior = pd.concat(
-                [home_frame.iloc[:home_end], away_frame.iloc[:away_end]],
-                ignore_index=True,
-            ).drop_duplicates(["game_date", "home_team", "away_team"])
-            relevant_prior = relevant_prior.sort_values(["game_date", "home_team", "away_team"]).reset_index(drop=True)
-            relevant_prior.attrs["_strict_history_cutoff_date"] = target_timestamp.date().isoformat()
-            relevant_prior.attrs["_team_names_normalized"] = True
+            relevant_prior = select_v2_relevant_history(
+                team_history_frames,
+                team_history_dates,
+                head_to_head_frames,
+                head_to_head_dates,
+                home_name,
+                away_name,
+                target_timestamp,
+            )
             if relevant_prior.empty:
                 raise RuntimeError(
                     f"No prior V2 history exists for {away_name} at {home_name} on {target_date}."
@@ -495,7 +547,7 @@ def write_report(results: pd.DataFrame, overall: pd.DataFrame, by_season: pd.Dat
         "## Scope",
         "",
         "- Both candidates are evaluated on the exact same NBA Stats regular-season games.",
-        "- Both use only score/stat history strictly earlier than the target game date; all same-date games are excluded from history. For efficiency, V2 receives only prior games involving either target team; this preserves every row used by its recent-form, venue, rest and head-to-head calculations.",
+        "- Both use only score/stat history strictly earlier than the target game date; all same-date games are excluded. For efficiency, V2 receives the union of each target team’s last 10 games and their last 10 head-to-head meetings. This preserves every row used by its recent-form, last-5, venue, rest and H2H calculations.",
         "- V2 is the repository's existing Points Engine V2 implementation, not a retrained substitute.",
         "- V4 is the fixed Phase 1 pace + opponent-adjusted efficiency candidate.",
         "- Target games at neutral sites are excluded because the current V2 target-venue logic is not neutral-site aware.",
