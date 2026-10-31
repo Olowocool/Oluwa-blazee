@@ -9,8 +9,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from points_engine import calculate_matchup_points
 from research.v4_paired_v2_vs_v4_backtest import (
     build_paired_predictions,
+    build_score_history,
     paired_bootstrap_mae_difference,
     regression_metrics,
 )
@@ -81,7 +83,8 @@ def test_paired_backtest_uses_same_games_and_strictly_prior_history():
     assert results.loc[0, "v2_points_engine_total"] == 222.0
     assert results.loc[0, "v4_pace_efficiency_total"] == 220.0
     assert len(seen) == 1
-    assert seen[0]["game_date"].max() == pd.Timestamp("2026-01-02")
+    assert seen[0]["game_date"].max() == pd.Timestamp("2026-01-01")
+    assert len(seen[0]) == 1
     assert diagnostics["neutral_site_games_excluded"] == 0
     assert diagnostics["v2_history_strictly_prior"] is True
 
@@ -154,3 +157,36 @@ def test_metrics_and_paired_bootstrap_are_deterministic():
     assert first["v4_lower_absolute_error_games"] == 2
     assert first["v2_lower_absolute_error_games"] == 1
     assert first["ties"] == 1
+
+
+
+def test_relevant_team_history_is_equivalent_to_full_prior_score_history():
+    history = build_score_history(
+        raw_games(),
+        {"A": "Team A", "B": "Team B", "C": "Team C", "D": "Team D"},
+    )
+    prior = history.loc[history["game_date"] < pd.Timestamp("2026-01-03")].copy()
+    relevant = prior.loc[
+        prior["home_team"].isin(["Team A", "Team B"])
+        | prior["away_team"].isin(["Team A", "Team B"])
+    ].copy()
+
+    for frame in (prior, relevant):
+        frame.attrs["_strict_history_cutoff_date"] = "2026-01-03"
+        frame.attrs["_team_names_normalized"] = True
+
+    full_prediction = calculate_matchup_points(
+        "Team A", "Team B", history_df=prior, game_date="2026-01-03"
+    )
+    relevant_prediction = calculate_matchup_points(
+        "Team A", "Team B", history_df=relevant, game_date="2026-01-03"
+    )
+    assert relevant_prediction["projected_total"] == pytest.approx(
+        full_prediction["projected_total"]
+    )
+    assert relevant_prediction["h2h_adjustment"] == pytest.approx(
+        full_prediction["h2h_adjustment"]
+    )
+    assert relevant_prediction["rest_adjustment"] == pytest.approx(
+        full_prediction["rest_adjustment"]
+    )
