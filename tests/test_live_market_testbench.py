@@ -124,7 +124,12 @@ def test_rest_adjustments_return_research_variants():
     assert result["legacy_fixed_050"] == pytest.approx(-0.5)
     assert result["learned_shared_0416"] == pytest.approx(-0.416157)
     expected_schedule = (
-        REST_EXPECTED_HOME_REST
+        0.642787 * -1
+        + 0.073308 * 0
+        + 0.315415 * 1
+        + 0.462948 * 0
+        - 0.065809 * 0
+        + 0.432959 * 0
     )
     assert result["learned_schedule_density"] == pytest.approx(expected_schedule)
 
