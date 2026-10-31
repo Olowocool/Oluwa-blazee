@@ -7,7 +7,14 @@ write to production systems, picks, or the betting ledger.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
+
+# This script lives in research/, while the engines and data live at repo root.
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+os.chdir(ROOT)
 
 import pandas as pd
 
@@ -18,8 +25,6 @@ from points_engine import (
 )
 
 TARGET_DATE = "2026-10-31"
-# Reference consensus totals captured from the full-slate board at 05:21 ET.
-# They are comparison inputs, not a claim that every sportsbook has this price.
 REFERENCE_SOURCE = "FantasyAlarm NBA odds board; 2026-10-31 05:21 ET"
 GAMES = [
     ("Utah Jazz", "Portland Trail Blazers", 232.5),
@@ -101,7 +106,7 @@ def main() -> None:
         "games": results,
     }
 
-    out_dir = Path("outputs/research/tonight_v2_slate")
+    out_dir = ROOT / "outputs/research/tonight_v2_slate"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "tonight_v2_slate.json").write_text(
         json.dumps(output, indent=2), encoding="utf-8"
