@@ -110,6 +110,7 @@ def build_point_in_time(
     raw: pd.DataFrame,
     last_season: int = LAST_SEASON,
     min_team_games: int = 5,
+    prediction_seasons: list[int] | None = None,
 ):
     if int(last_season) < FIRST_SEASON:
         raise ValueError(f"last_season must be >= {FIRST_SEASON}")
@@ -146,7 +147,19 @@ def build_point_in_time(
 
     season_frames = {int(s): g.copy() for s, g in paired.groupby("season", sort=True)}
     all_rows = []
-    for season in range(FIRST_SEASON, last_season + 1):
+    if prediction_seasons is None:
+        seasons_to_build = list(range(FIRST_SEASON, last_season + 1))
+    else:
+        seasons_to_build = sorted({int(season) for season in prediction_seasons})
+        invalid_seasons = [
+            season for season in seasons_to_build
+            if season < FIRST_SEASON or season > last_season
+        ]
+        if invalid_seasons:
+            raise ValueError(
+                f"prediction_seasons are outside the loaded range: {invalid_seasons}"
+            )
+    for season in seasons_to_build:
         season_data = season_frames.get(season)
         if season_data is None:
             continue
