@@ -82,28 +82,44 @@ def test_paired_backtest_uses_same_games_and_strictly_prior_history():
 
 
 def test_neutral_site_targets_are_excluded_from_paired_comparison():
-    features = pd.DataFrame([{
-        "season": 2026,
-        "game_id": "4",
-        "game_date": pd.Timestamp("2026-01-03"),
-        "home_team_id": "C",
-        "away_team_id": "D",
-        "actual_total": 205.0,
-        "projected_total": 210.0,
-        "league_environment_total": 210.0,
-        "efficiency_only_total": 210.0,
-        "pace_only_total": 210.0,
-        "max_history_date": pd.Timestamp("2026-01-02"),
-    }])
+    features = pd.DataFrame([
+        {
+            "season": 2026,
+            "game_id": "3",
+            "game_date": pd.Timestamp("2026-01-03"),
+            "home_team_id": "A",
+            "away_team_id": "B",
+            "actual_total": 225.0,
+            "projected_total": 220.0,
+            "league_environment_total": 218.0,
+            "efficiency_only_total": 219.0,
+            "pace_only_total": 217.0,
+            "max_history_date": pd.Timestamp("2026-01-02"),
+        },
+        {
+            "season": 2026,
+            "game_id": "4",
+            "game_date": pd.Timestamp("2026-01-03"),
+            "home_team_id": "C",
+            "away_team_id": "D",
+            "actual_total": 205.0,
+            "projected_total": 210.0,
+            "league_environment_total": 210.0,
+            "efficiency_only_total": 210.0,
+            "pace_only_total": 210.0,
+            "max_history_date": pd.Timestamp("2026-01-02"),
+        },
+    ])
     results, diagnostics = build_paired_predictions(
         raw_games(),
         {"A": "Team A", "B": "Team B", "C": "Team C", "D": "Team D"},
         v4_features=features,
         predictor=lambda **kwargs: {"projected_total": 210.0},
     )
-    assert results.empty
+    assert len(results) == 1
+    assert results.loc[0, "game_id"] == "3"
     assert diagnostics["neutral_site_games_excluded"] == 1
-    assert diagnostics["v2_predictions_successful"] == 0
+    assert diagnostics["v2_predictions_successful"] == 1
 
 
 def test_metrics_and_paired_bootstrap_are_deterministic():
