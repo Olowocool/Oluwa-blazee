@@ -12,10 +12,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import urlopen
+import sys
 
 import duckdb
 import numpy as np
 import pandas as pd
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from research.v4_phase1_core import (
     BASE,
