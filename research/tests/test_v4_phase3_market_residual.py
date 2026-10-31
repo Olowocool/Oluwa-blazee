@@ -208,3 +208,17 @@ def test_score_patch_discovery_ignores_unrelated_csv_files(tmp_path):
     )
     discovered = discover_score_patch_files(patch_dir=tmp_path)
     assert [p.name for p in discovered] == ["score_history_patch_2026-10-31.csv"]
+
+
+
+def test_prepare_snapshots_excludes_legacy_one_year_future_date_anomaly():
+    valid = market_row(
+        "valid", "2026-10-31T17:00:00Z", "2026-10-31T20:00:00Z", 220.5
+    )
+    anomaly = market_row(
+        "rolled", "2026-10-31T17:00:00Z", "2027-10-31T20:00:00Z", 220.5
+    )
+    clean, diag = prepare_snapshots(pd.DataFrame([valid, anomaly]))
+    assert clean["game_key"].tolist() == ["valid"]
+    assert diag["future_start_anomaly_rows_excluded"] == 1
+    assert diag["unique_games"] == 1
