@@ -173,6 +173,7 @@ def parse_odds_page(
     skipped = 0
     games_seen = 0
     games_without_odds_table = 0
+    games_skipped_outside_schedule_window = 0
     for heading in soup.find_all(["h2", "h3"]):
         matchup = " ".join(heading.stripped_strings)
         if " at " not in matchup:
@@ -180,9 +181,15 @@ def parse_odds_page(
         away_team, home_team = [part.strip() for part in matchup.split(" at ", 1)]
         if not away_team or not home_team or away_team.casefold() == home_team.casefold():
             raise ValueError(f"Invalid matchup heading: {matchup!r}")
-        commence = parse_game_start(start_label_for_heading(heading), asof)
-        game_date = commence.astimezone(EASTERN).date().isoformat()
         games_seen += 1
+        try:
+            commence = parse_game_start(start_label_for_heading(heading), asof)
+        except ValueError as exc:
+            if "outside the upcoming schedule window" in str(exc):
+                games_skipped_outside_schedule_window += 1
+                continue
+            raise
+        game_date = commence.astimezone(EASTERN).date().isoformat()
         table = table_for_heading(heading)
         if table is None:
             games_without_odds_table += 1
@@ -247,6 +254,7 @@ def parse_odds_page(
         "page_age_minutes": round(age, 2),
         "games_seen": games_seen,
         "games_without_odds_table": games_without_odds_table,
+        "games_skipped_outside_schedule_window": games_skipped_outside_schedule_window,
         "bookmaker_rows_parsed": len(rows),
         "bookmaker_rows_skipped_incomplete": skipped,
         "unique_games": len({r["game_key"] for r in rows}),
