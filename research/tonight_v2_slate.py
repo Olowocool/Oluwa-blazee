@@ -27,62 +27,71 @@ from points_engine import (
     load_game_history,
 )
 
-def fetch_recent_espn_scores(start_date: str, end_date: str) -> pd.DataFrame:
-    """Fetch final NBA scores from ESPN for the missing recent dates (read-only)."""
-    rows = []
-    for day in pd.date_range(start=start_date, end=end_date, freq="D"):
-        day_key = day.strftime("%Y%m%d")
-        url = (
-            "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
-            f"?dates={day_key}"
-        )
-        request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        try:
-            with urlopen(request, timeout=25) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except Exception as exc:
-            raise RuntimeError(
-                f"Could not retrieve ESPN scoreboard for {day_key}: {exc}"
-            ) from exc
+def fetch_recent_public_scores() -> pd.DataFrame:
+    """Read recent completed NBA score rows from the audited public game-log Parquet source."""
+    import duckdb
 
-        for event in payload.get("events", []):
-            status = event.get("status", {}).get("type", {})
-            if status.get("completed") is not True and status.get("name") != "STATUS_FINAL":
-                continue
-            competition = (event.get("competitions") or [{}])[0]
-            competitors = competition.get("competitors", [])
-            home = next((x for x in competitors if x.get("homeAway") == "home"), None)
-            away = next((x for x in competitors if x.get("homeAway") == "away"), None)
-            if not home or not away:
-                continue
-            home_name = (home.get("team") or {}).get("displayName", "").strip()
-            away_name = (away.get("team") or {}).get("displayName", "").strip()
-            try:
-                home_score = float(home.get("score"))
-                away_score = float(away.get("score"))
-            except (TypeError, ValueError):
-                continue
-            if not home_name or not away_name or home_score <= 0 or away_score <= 0:
-                continue
-            rows.append({
-                # Use ESPN's requested NBA scoreboard calendar date, matching
-                # the historical score file's day-level game_date convention.
-                "game_date": day.strftime("%Y-%m-%d"),
-                "home_team": home_name,
-                "away_team": away_name,
-                "home_score": home_score,
-                "away_score": away_score,
-                "total_score": home_score + away_score,
-                "source": "ESPN scoreboard recent-history patch",
-            })
+    logs_url = "https://basketball-data.billmill.org/nba/stats/team_game_logs/season=2026/data.parquet"
+    teams_url = "https://basketball-data.billmill.org/nba/stats/team_seasons/season=2026/data.parquet"
 
-    if not rows:
-        raise RuntimeError("ESPN returned no completed games for the history patch.")
-    recent = pd.DataFrame(rows)
+    con = duckdb.connect()
+    try:
+        con.execute("INSTALL httpfs")
+        con.execute("LOAD httpfs")
+        query = """
+            WITH logs AS (
+                SELECT
+                    CAST(game_date AS DATE) AS game_date,
+                    season,
+                    game_id,
+                    team_id,
+                    home,
+                    pts
+                FROM read_parquet(?, hive_partitioning=true)
+                WHERE CAST(game_date AS DATE)
+                    BETWEEN DATE '2026-10-21' AND DATE '2026-10-30'
+            ),
+            teams AS (
+                SELECT season, team_id, full_name
+                FROM read_parquet(?, hive_partitioning=true)
+            )
+            SELECT
+                h.game_date,
+                ht.full_name AS home_team,
+                at.full_name AS away_team,
+                h.pts AS home_score,
+                a.pts AS away_score,
+                h.pts + a.pts AS total_score
+            FROM logs h
+            JOIN logs a
+              ON a.season = h.season
+             AND a.game_id = h.game_id
+             AND a.team_id <> h.team_id
+            JOIN teams ht
+              ON ht.season = h.season AND ht.team_id = h.team_id
+            JOIN teams at
+              ON at.season = a.season AND at.team_id = a.team_id
+            WHERE h.home IS TRUE AND a.home IS FALSE
+            ORDER BY h.game_date, h.game_id
+        """
+        recent = con.execute(query, [logs_url, teams_url]).fetchdf()
+    finally:
+        con.close()
+
+    if recent.empty:
+        raise RuntimeError("Audited public NBA game-log source returned no recent completed games.")
+    recent["game_date"] = pd.to_datetime(recent["game_date"], errors="coerce")
+    recent = recent.dropna(subset=["game_date", "home_team", "away_team", "home_score", "away_score"])
     recent = normalize_history_team_columns(recent)
     recent = recent.drop_duplicates(
         subset=["game_date", "home_team", "away_team"], keep="last"
     )
+    latest = recent["game_date"].max()
+    if latest.date().isoformat() != "2026-10-30" or len(recent) < 30:
+        raise RuntimeError(
+            f"Recent score source incomplete: games={len(recent)}, latest={latest}"
+        )
+    recent["source"] = "Audited public NBA team_game_logs Parquet"
     return recent
 
 
@@ -104,10 +113,10 @@ def main() -> None:
     if history is None or history.empty:
         raise RuntimeError("Historical score history did not load.")
 
-    # The tracked historical file is behind the user's local score patch.
-    # Retrieve only finished NBA scores from Oct 21–30 in-memory for this slate.
-    # This does not alter, commit, or replace any source data file.
-    recent = fetch_recent_espn_scores("2026-10-21", "2026-10-30")
+    # The tracked historical file is behind the latest slate. Retrieve
+    # completed score rows from the same public NBA Parquet source already
+    # used by the repository's advanced-data audit. Keep this patch in-memory.
+    recent = fetch_recent_public_scores()
     history = pd.concat([history, recent], ignore_index=True)
     history = normalize_history_team_columns(history)
     history = history.drop_duplicates(
@@ -168,8 +177,8 @@ def main() -> None:
         "model": "Points Engine V2 (unaltered baseline)",
         "experimental_adjustments_applied": False,
         "historical_rows_after_strict_cutoff": int(len(history)),
-        "recent_espn_final_games_added": int(len(recent)),
-        "recent_espn_patch_range": "2026-10-21 through 2026-10-30",
+        "recent_public_final_games_added": int(len(recent)),
+        "recent_public_patch_range": "2026-10-21 through 2026-10-30",
         "latest_historical_game_date": latest.date().isoformat(),
         "reference_line_source": REFERENCE_SOURCE,
         "important_note": (
