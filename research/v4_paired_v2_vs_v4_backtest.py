@@ -272,37 +272,51 @@ def build_paired_predictions(
         "game_date", "home_team", "away_team", "home_score", "away_score",
         "actual_total", "total_score", "is_neutral_site",
     ]
-    full_history = scores[history_columns].copy()
-    full_history["game_date"] = pd.to_datetime(full_history["game_date"], errors="raise")
+    # Index each franchise's complete score history once. For each target,
+    # concatenate the two teams' pre-date histories and deduplicate their
+    # head-to-head games. This is exactly the set of rows V2 reads, without
+    # rescanning the full league history for every matchup.
+    team_history_rows = {}
+    for record in scores[history_columns].to_dict("records"):
+        team_history_rows.setdefault(record["home_team"], []).append(record)
+        team_history_rows.setdefault(record["away_team"], []).append(record)
+    team_history_frames = {}
+    team_history_dates = {}
+    for team_name, records in team_history_rows.items():
+        frame = pd.DataFrame(records).sort_values(["game_date", "home_team", "away_team"]).reset_index(drop=True)
+        frame["game_date"] = pd.to_datetime(frame["game_date"], errors="raise")
+        team_history_frames[team_name] = frame
+        team_history_dates[team_name] = frame["game_date"].to_numpy(dtype="datetime64[ns]")
+
     rows = []
     v2_failures = []
     for target_date, day in matched.groupby("game_date", sort=True):
-        prior = full_history.loc[full_history["game_date"] < pd.Timestamp(target_date)].copy()
-        if prior.empty:
-            raise RuntimeError(f"No prior score history is available for target date {target_date}.")
-        if not (prior["game_date"] < pd.Timestamp(target_date)).all():
-            raise AssertionError(f"Target-date leakage before {target_date}.")
-        prior.attrs["_strict_history_cutoff_date"] = pd.Timestamp(target_date).date().isoformat()
-        prior.attrs["_team_names_normalized"] = True
-
+        target_timestamp = pd.Timestamp(target_date)
         for _, game in day.iterrows():
             home_name = str(game["home_team"])
             away_name = str(game["away_team"])
-            # V2 only reads rows involving the two target teams (team form,
-            # venue splits, rest and their head-to-heads). Removing unrelated
-            # games preserves every V2 input while avoiding repeated scans of
-            # the full league-wide score history for each target game.
-            relevant_prior = prior.loc[
-                prior["home_team"].isin([home_name, away_name])
-                | prior["away_team"].isin([home_name, away_name])
-            ].copy()
-            relevant_prior.attrs["_strict_history_cutoff_date"] = pd.Timestamp(target_date).date().isoformat()
+            home_frame = team_history_frames.get(home_name, pd.DataFrame(columns=history_columns))
+            away_frame = team_history_frames.get(away_name, pd.DataFrame(columns=history_columns))
+            home_end = int(np.searchsorted(
+                team_history_dates.get(home_name, np.array([], dtype="datetime64[ns]")),
+                target_timestamp.to_datetime64(), side="left",
+            ))
+            away_end = int(np.searchsorted(
+                team_history_dates.get(away_name, np.array([], dtype="datetime64[ns]")),
+                target_timestamp.to_datetime64(), side="left",
+            ))
+            relevant_prior = pd.concat(
+                [home_frame.iloc[:home_end], away_frame.iloc[:away_end]],
+                ignore_index=True,
+            ).drop_duplicates(["game_date", "home_team", "away_team"])
+            relevant_prior = relevant_prior.sort_values(["game_date", "home_team", "away_team"]).reset_index(drop=True)
+            relevant_prior.attrs["_strict_history_cutoff_date"] = target_timestamp.date().isoformat()
             relevant_prior.attrs["_team_names_normalized"] = True
             if relevant_prior.empty:
                 raise RuntimeError(
                     f"No prior V2 history exists for {away_name} at {home_name} on {target_date}."
                 )
-            if not (relevant_prior["game_date"] < pd.Timestamp(target_date)).all():
+            if not (relevant_prior["game_date"] < target_timestamp).all():
                 raise AssertionError(f"V2 relevant history is not strictly prior to {target_date}.")
             try:
                 prediction = predictor(
