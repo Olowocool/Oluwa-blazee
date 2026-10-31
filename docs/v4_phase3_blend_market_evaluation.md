@@ -28,8 +28,11 @@ Only V4 features with `max_history_date < game_date` are eligible. Neutral-site 
 
 1. Keep the existing public-board snapshot collector scheduled as before.
 2. Wait until selected T−120 entries have settled and their final scores are in the local score history or dated score patches.
-3. Double-click `research/run_phase3_blend_market_evaluation.bat`.
-4. Read `outputs/research/v4_phase3_blend_market/v4_phase3_blend_market_report.md`.
+3. Download `research/update_and_run_phase3_blend_market.bat` from this research branch into the existing local project's `research` folder.
+4. Double-click that batch file. It refreshes the research scripts and dated score patches from GitHub, checks the Python dependencies, then runs the evaluator against the existing private odds archive. It does not upload, overwrite, or commit `data/private/dunkapi_public_odds_snapshots.csv`.
+5. Read `outputs/research/v4_phase3_blend_market/v4_phase3_blend_market_report.md`.
+
+The evaluator separately reports V2 across all settled T−120 entries matched to a score and V2/V4/blend on the common games where V4 also has a valid pregame feature. This prevents missing early-season V4 coverage from suppressing the independent V2 market comparison.
 
 The command reads:
 - `data/private/dunkapi_public_odds_snapshots.csv`
