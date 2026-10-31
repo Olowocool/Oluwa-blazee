@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from live_market_testbench_engine import calculate_game_components
 from totals_model import classify_total_edge, predict_game_total
 
