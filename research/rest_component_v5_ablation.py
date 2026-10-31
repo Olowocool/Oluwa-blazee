@@ -316,27 +316,32 @@ def main():
         if bool((prior.notna() & (prior >= target)).any()):
             raise RuntimeError(f"Same-day or future history found in {col}.")
 
-    dev = features[features["period"] == "development"].copy()
-    hold = features[features["period"] == "holdout"].copy()
-    if len(dev) != 3690 or len(hold) != 2450:
-        raise RuntimeError(f"Unexpected date split: development={len(dev)}, holdout={len(hold)}.")
+    dev_count = int((features["period"] == "development").sum())
+    hold_count = int((features["period"] == "holdout").sum())
+    if dev_count != 3690 or hold_count != 2450:
+        raise RuntimeError(
+            f"Unexpected date split: development={dev_count}, holdout={hold_count}."
+        )
 
-    # Reproduce the live 0.50 rule exactly.
+    # Reproduce the live 0.50 rule and build all input features before splitting.
     features["rest_legacy_fixed_050"] = features["v5_raw_total"] + (
         0.50 * (features["home_rest_days"] + features["away_rest_days"] - 2)
     )
-
     features["combined_rest_delta"] = (
         features["home_rest_days"] + features["away_rest_days"] - 2
     )
+    features["home_rest_delta"] = features["home_rest_days"] - 1
+    features["away_rest_delta"] = features["away_rest_days"] - 1
+
+    # Fit only after the development frame contains the derived input columns.
+    dev = features[features["period"] == "development"].copy()
+    hold = features[features["period"] == "holdout"].copy()
     beta = fit_scalar_beta(dev, "combined_rest_delta")
     features["rest_learned_shared_beta"] = (
         features["v5_raw_total"] + beta * features["combined_rest_delta"]
     )
 
     # Separate home/away rest coefficients; all coefficients are fit on 2021-23 only.
-    features["home_rest_delta"] = features["home_rest_days"] - 1
-    features["away_rest_delta"] = features["away_rest_days"] - 1
     rest_features = ["home_rest_delta", "away_rest_delta"]
     candidates = {
         "V5 raw": "v5_raw_total",
