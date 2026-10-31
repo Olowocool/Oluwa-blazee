@@ -133,6 +133,11 @@ def build_current_v4_predictions(
         .first()
         .map(_bool_value)
     )
+    # NBA Stats game_id values may be numeric in the raw table while the
+    # point-in-time builder serializes them as strings. Normalize both sides
+    # before mapping; otherwise every neutral-site flag would silently become
+    # missing and be treated as non-neutral.
+    neutral.index = neutral.index.astype(str)
     current["is_neutral_site"] = current["game_id"].astype(str).map(neutral).fillna(False)
     current = current.loc[~current["is_neutral_site"]].copy()
 
