@@ -266,3 +266,76 @@ def test_sufficient_v2_history_matches_full_history_forecast():
         full_prediction["rest_adjustment"]
     )
     assert len(selected) <= 30
+
+def test_sufficient_history_selector_normalizes_clippers_alias():
+    dates = pd.date_range("2024-10-01", periods=12, freq="2D")
+    rows = []
+    for i, date in enumerate(dates):
+        opponent = "Dallas Mavericks" if i in {0, 4, 8} else f"Opponent {i}"
+        rows.append({
+            "game_date": date,
+            "home_team": "Los Angeles Clippers",
+            "away_team": opponent,
+            "home_score": 108 + i,
+            "away_score": 99 + (i % 5),
+            "is_neutral_site": False,
+        })
+    history, _diagnostics = prepare_v2_score_history(pd.DataFrame(rows))
+
+    team_rows = {}
+    for record in history.to_dict("records"):
+        team_rows.setdefault(record["home_team"], []).append(record)
+        team_rows.setdefault(record["away_team"], []).append(record)
+    team_frames, team_dates = {}, {}
+    for team, records in team_rows.items():
+        frame = pd.DataFrame(records).sort_values(
+            ["game_date", "home_team", "away_team"]
+        ).reset_index(drop=True)
+        team_frames[team] = frame
+        team_dates[team] = pd.to_datetime(frame["game_date"]).to_numpy(
+            dtype="datetime64[ns]"
+        )
+
+    pair_rows = {}
+    for record in history.to_dict("records"):
+        pair = tuple(sorted((record["home_team"], record["away_team"])))
+        pair_rows.setdefault(pair, []).append(record)
+    pair_frames, pair_dates = {}, {}
+    for pair, records in pair_rows.items():
+        frame = pd.DataFrame(records).sort_values(
+            ["game_date", "home_team", "away_team"]
+        ).reset_index(drop=True)
+        pair_frames[pair] = frame
+        pair_dates[pair] = pd.to_datetime(frame["game_date"]).to_numpy(
+            dtype="datetime64[ns]"
+        )
+
+    target = pd.Timestamp("2024-11-01")
+    full = history.loc[history["game_date"] < target].copy()
+    full.attrs["_strict_history_cutoff_date"] = target.date().isoformat()
+    full.attrs["_team_names_normalized"] = True
+    selected = select_v2_relevant_history(
+        team_frames, team_dates, pair_frames, pair_dates,
+        "LA Clippers", "Dallas Mavericks", target,
+    )
+
+    assert "Los Angeles Clippers" in set(selected["home_team"]) | set(
+        selected["away_team"]
+    )
+    full_prediction = calculate_matchup_points(
+        "LA Clippers", "Dallas Mavericks",
+        history_df=full, game_date=target,
+    )
+    selected_prediction = calculate_matchup_points(
+        "LA Clippers", "Dallas Mavericks",
+        history_df=selected, game_date=target,
+    )
+    assert selected_prediction["projected_total"] == pytest.approx(
+        full_prediction["projected_total"]
+    )
+    assert selected_prediction["h2h_adjustment"] == pytest.approx(
+        full_prediction["h2h_adjustment"]
+    )
+    assert selected_prediction["rest_adjustment"] == pytest.approx(
+        full_prediction["rest_adjustment"]
+    )
