@@ -311,20 +311,20 @@ def build_factor_ablation(raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
     if predictions.empty:
         raise RuntimeError("No completed test-season predictions were generated.")
     predictions["pace_only_total"] = (
-        predictions["expected_pace"] * 2.0 * predictions["league_ortg"] / 100.0
+        predictions["expected_possessions"] * 2.0 * predictions["league_off_eff_prior"] / 100.0
     )
     predictions["efficiency_only_total"] = (
-        predictions["league_pace"] *
+        predictions["league_pace_prior"] *
         (predictions["expected_home_efficiency"] + predictions["expected_away_efficiency"]) / 100.0
     )
     predictions["league_environment_total"] = (
-        2.0 * predictions["league_pace"] * predictions["league_ortg"] / 100.0
+        2.0 * predictions["league_pace_prior"] * predictions["league_off_eff_prior"] / 100.0
     )
     predictors = {
         "league_environment_only": "league_environment_total",
         "team_form_efficiency_only": "efficiency_only_total",
         "matchup_pace_only": "pace_only_total",
-        "pace_plus_opponent_adjusted_efficiency": "formula_total",
+        "pace_plus_opponent_adjusted_efficiency": "projected_total",
     }
     rows = []
     for season, part in predictions.groupby("season", sort=True):
@@ -376,7 +376,7 @@ def build_report(team: pd.DataFrame, league: pd.DataFrame, ablation: pd.DataFram
         "",
         all_metrics[["predictor", "games", "mae", "rmse", "bias_prediction_minus_actual", "within_5_points_pct", "within_10_points_pct"]].to_markdown(index=False),
         "",
-        "The four forecasts are deliberately separated: a league-environment baseline, team-form efficiency at league pace, matchup pace at league efficiency, and the combined pace-plus-opponent-adjusted-efficiency forecast. Each prediction uses only completed games strictly before the target date; same-date games cannot affect one another.",
+        "The four forecasts are deliberately separated: a prior league scoring/possessions baseline, team-form efficiency at prior league possessions, matchup possessions at prior league efficiency, and the combined pace-plus-opponent-adjusted-efficiency forecast. Each prediction uses only completed games strictly before the target date; same-date games cannot affect one another.",
         "",
         "## Latest completed season — strongest schedule-adjusted team profiles",
         "",
