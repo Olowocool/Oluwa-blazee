@@ -223,12 +223,20 @@ def build_paired_predictions(
     if missing.any():
         raise RuntimeError(f"{int(missing.sum())} V4 features do not match a score-history game.")
     matched = matched.drop(columns="_merge")
-    if not np.allclose(matched["actual_total"], matched["actual_total_score"], atol=0.0):
+    date_mismatch = (
+        pd.to_datetime(matched["game_date_v4"]).dt.normalize()
+        != pd.to_datetime(matched["game_date_score"]).dt.normalize()
+    )
+    if date_mismatch.any():
+        raise RuntimeError("V4 feature dates and paired score-history dates disagree.")
+    if not np.allclose(matched["actual_total_v4"], matched["actual_total_score"], atol=0.0):
         raise RuntimeError("V4 targets and paired score-history totals disagree.")
+    matched["game_date"] = pd.to_datetime(matched["game_date_score"]).dt.normalize()
+    matched["actual_total"] = pd.to_numeric(matched["actual_total_score"], errors="raise")
 
     orientation_issues = (
-        matched["home_team_id"].astype(str).ne(matched["home_team_id_score"].astype(str))
-        | matched["away_team_id"].astype(str).ne(matched["away_team_id_score"].astype(str))
+        matched["home_team_id_v4"].astype(str).ne(matched["home_team_id_score"].astype(str))
+        | matched["away_team_id_v4"].astype(str).ne(matched["away_team_id_score"].astype(str))
     )
     non_neutral = ~matched["is_neutral_site"]
     if orientation_issues.loc[non_neutral].any():
