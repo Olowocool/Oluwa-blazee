@@ -15,6 +15,10 @@ from sklearn.preprocessing import StandardScaler
 
 DEFAULT_SNAPSHOTS = "data/private/dunkapi_public_odds_snapshots.csv"
 DEFAULT_SCORES = "data/historical_nba_scores.csv"
+DEFAULT_SCORE_PATCH_FILES = (
+    "research/data/score_history_patch_2026-10-21_to_2026-10-29.csv",
+    "research/data/score_history_patch_2026-10-30.csv",
+)
 DEFAULT_OUTPUT = "outputs/research/v4_phase3_market_residual"
 BOOKMAKER = "DraftKings"
 ENTRY_MINUTES = 120
@@ -172,12 +176,70 @@ def select_entry_and_last(snapshots: pd.DataFrame, entry_minutes: int = ENTRY_MI
     }
 
 
-def build_game_dataset(selected: pd.DataFrame, score_file: str) -> tuple[pd.DataFrame, dict[str, int]]:
-    from totals_betting_backtest import game_key, prepare_score_history
-    from points_engine import calculate_matchup_points
+def load_combined_score_history(
+    score_file: str,
+    score_patch_files: list[str] | tuple[str, ...] = (),
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Load base history plus dated research patches without modifying source files."""
+    from totals_betting_backtest import prepare_score_history
     from team_name_utils import normalize_history_team_columns, normalize_team_name
 
-    scores = normalize_history_team_columns(prepare_score_history(pd.read_csv(score_file)))
+    paths = [Path(score_file), *(Path(path) for path in score_patch_files)]
+    frames = []
+    raw_row_count = 0
+    for path in paths:
+        if not path.is_file():
+            raise FileNotFoundError(f"Score history file not found: {path}")
+        raw = pd.read_csv(path)
+        if raw.empty:
+            raise ValueError(f"Score history file is empty: {path}")
+        raw_row_count += len(raw)
+        clean = normalize_history_team_columns(prepare_score_history(raw))
+        clean["_score_source"] = str(path)
+        frames.append(clean)
+
+    combined = pd.concat(frames, ignore_index=True)
+    from collections import defaultdict
+    assignments: dict[str, set[tuple[tuple[str, float], tuple[str, float]]]] = defaultdict(set)
+    for _, row in combined.iterrows():
+        team_scores = sorted([
+            (normalize_team_name(row["home_team"]), float(row["home_score"])),
+            (normalize_team_name(row["away_team"]), float(row["away_score"])),
+        ])
+        assignments[str(row["_game_key"])].add(tuple(team_scores))
+    conflicts = [key for key, values in assignments.items() if len(values) > 1]
+    if conflicts:
+        raise ValueError(
+            "Conflicting score-history records found for game keys: "
+            + ", ".join(conflicts[:5])
+        )
+
+    before_dedup = len(combined)
+    scores = (
+        combined.sort_values("game_date")
+        .drop_duplicates("_game_key", keep="last")
+        .reset_index(drop=True)
+    )
+    diagnostics = {
+        "score_files_loaded": [str(path) for path in paths],
+        "score_history_input_rows": int(raw_row_count),
+        "score_history_rows_after_dedup": int(len(scores)),
+        "score_history_duplicate_rows_removed": int(before_dedup - len(scores)),
+        "score_history_latest_game_date": str(pd.Timestamp(scores["game_date"].max()).date()),
+    }
+    return scores, diagnostics
+
+
+def build_game_dataset(
+    selected: pd.DataFrame,
+    score_file: str,
+    score_patch_files: list[str] | tuple[str, ...] = (),
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    from totals_betting_backtest import game_key
+    from points_engine import calculate_matchup_points
+    from team_name_utils import normalize_team_name
+
+    scores, score_history_diag = load_combined_score_history(score_file, score_patch_files)
     scores["game_date"] = pd.to_datetime(scores["game_date"], errors="coerce").dt.normalize()
     lookup = {r["_game_key"]: r for _, r in scores.iterrows()}
     prior_by_date: dict[pd.Timestamp, pd.DataFrame] = {}
@@ -236,6 +298,7 @@ def build_game_dataset(selected: pd.DataFrame, score_file: str) -> tuple[pd.Data
         "market_games_with_home_away_orientation_mismatch": orientation,
         "market_games_without_prior_history": no_history,
         "points_engine_prediction_failures": failed,
+        **score_history_diag,
     }
 
 
@@ -397,7 +460,9 @@ def run(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame, dict[str,
     selected, select_diag = select_entry_and_last(snapshots, args.entry_minutes, args.max_entry_age_minutes)
     if selected.empty:
         raise ValueError("No games have an eligible fixed-cutoff entry snapshot.")
-    games, score_diag = build_game_dataset(selected, args.scores_file)
+    games, score_diag = build_game_dataset(
+        selected, args.scores_file, args.score_patch_files
+    )
     pred = walk_forward(games, args.min_train_games, args.ridge_alpha)
     pred = add_bets(pred, "points_engine_total", "points_engine")
     pred = add_bets(pred, "residual_model_total", "market_residual_model")
@@ -433,6 +498,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--snapshots-file", default=DEFAULT_SNAPSHOTS)
     p.add_argument("--scores-file", default=DEFAULT_SCORES)
+    p.add_argument(
+        "--score-patch-files",
+        nargs="*",
+        default=list(DEFAULT_SCORE_PATCH_FILES),
+        help="Additional score CSVs merged in memory with the base history (default: dated research patches).",
+    )
     p.add_argument("--bookmaker", default=BOOKMAKER)
     p.add_argument("--entry-minutes", type=int, default=ENTRY_MINUTES)
     p.add_argument("--max-entry-age-minutes", type=int, default=MAX_ENTRY_AGE_MINUTES)
