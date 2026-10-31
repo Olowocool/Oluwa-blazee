@@ -58,7 +58,7 @@ def fetch_recent_public_scores() -> pd.DataFrame:
             SELECT
                 h.game_date,
                 ht.full_name AS home_team,
-                at.full_name AS away_team,
+                away_lookup.full_name AS away_team,
                 h.pts AS home_score,
                 a.pts AS away_score,
                 h.pts + a.pts AS total_score
@@ -69,8 +69,8 @@ def fetch_recent_public_scores() -> pd.DataFrame:
              AND a.team_id <> h.team_id
             JOIN teams ht
               ON ht.season = h.season AND ht.team_id = h.team_id
-            JOIN teams at
-              ON at.season = a.season AND at.team_id = a.team_id
+            JOIN teams away_lookup
+              ON away_lookup.season = a.season AND away_lookup.team_id = a.team_id
             WHERE h.home IS TRUE AND a.home IS FALSE
             ORDER BY h.game_date, h.game_id
         """
