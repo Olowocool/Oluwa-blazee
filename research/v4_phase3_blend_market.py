@@ -122,6 +122,7 @@ def build_current_v4_predictions(
         raw,
         last_season=int(target_season),
         min_team_games=int(min_team_games),
+        prediction_seasons=[int(target_season)],
     )
     current = all_features.loc[
         pd.to_numeric(all_features["season"], errors="coerce").eq(int(target_season))
