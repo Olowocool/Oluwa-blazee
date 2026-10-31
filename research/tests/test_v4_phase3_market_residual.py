@@ -8,6 +8,7 @@ import pytest
 from research.v4_phase3_market_residual import (
     american_to_decimal,
     no_vig,
+    discover_score_patch_files,
     load_combined_score_history,
     paired_bootstrap_mae_difference,
     prepare_snapshots,
@@ -185,3 +186,25 @@ def test_score_history_patches_are_merged_and_conflicting_duplicates_fail(tmp_pa
     conflict.to_csv(conflict_path, index=False)
     with pytest.raises(ValueError, match="Conflicting score-history records"):
         load_combined_score_history(str(patch_path), [str(conflict_path)])
+
+
+
+def test_default_score_patch_discovery_finds_all_dated_research_patches():
+    paths = discover_score_patch_files()
+    names = [path.name for path in paths]
+    assert names == sorted(names)
+    assert "score_history_patch_2026-10-21_to_2026-10-29.csv" in names
+    assert "score_history_patch_2026-10-30.csv" in names
+
+
+def test_score_patch_discovery_ignores_unrelated_csv_files(tmp_path):
+    (tmp_path / "score_history_patch_2026-10-31.csv").write_text(
+        "game_date,home_team,away_team,home_score,away_score\\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "historical_nba_scores.csv").write_text(
+        "this,is,not,a,patch\\n",
+        encoding="utf-8",
+    )
+    discovered = discover_score_patch_files(patch_dir=tmp_path)
+    assert [p.name for p in discovered] == ["score_history_patch_2026-10-31.csv"]
