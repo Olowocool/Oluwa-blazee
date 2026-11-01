@@ -42,13 +42,14 @@ def fit_matchup_defensive_rapm(
         return {"scores": {}, "rows_used": int(len(frame)), "defenders": 0,
                 "offensive_players": int(frame["off_player_id"].nunique()),
                 "ridge_alpha": float(ridge_alpha), "status": "insufficient_matchups"}
-    # y is points allowed per 100 matchup possessions. Weight by possession
-    # exposure so tiny samples do not receive the same influence as large ones.
+    # y is points allowed per 100 matchup possessions. Keep the one-hot design
+    # sparse: matchup tables have many player IDs and a dense matrix wastes RAM.
+    # Weight by possession exposure so tiny samples do not dominate large ones.
     y = 100.0 * frame["player_pts"].to_numpy(float) / frame["partial_poss"].to_numpy(float)
-    enc = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    enc = OneHotEncoder(handle_unknown="ignore", sparse_output=True)
     design = enc.fit_transform(frame[["off_player_id", "def_player_id"]].astype(str))
     weights = np.sqrt(frame["partial_poss"].to_numpy(float))
-    model = Ridge(alpha=ridge_alpha, fit_intercept=True)
+    model = Ridge(alpha=ridge_alpha, fit_intercept=True, solver="lsqr")
     model.fit(design, y, sample_weight=weights)
     names = enc.get_feature_names_out()
     coefficients = dict(zip(names, model.coef_.astype(float)))
