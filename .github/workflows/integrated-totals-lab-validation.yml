@@ -23,6 +23,8 @@ on:
       - "tests/test_live_market_testbench.py"
       - "tests/test_injury_data_audit.py"
       - "scripts/audit_injury_data.py"
+      - "scripts/backtest_injury_impact.py"
+      - "tests/test_injury_impact_engine.py"
       - "requirements.txt"
       - "requirements-testbench.txt"
       - ".github/workflows/integrated-totals-lab-validation.yml"
@@ -34,7 +36,7 @@ permissions:
 jobs:
   validate-integrated-totals-lab:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       PYTHONPATH: .
     steps:
@@ -65,13 +67,15 @@ jobs:
             pace_engine.py \
             injury_impact_engine.py \
             team_name_utils.py \
-            scripts/audit_injury_data.py
+            scripts/audit_injury_data.py \
+            scripts/backtest_injury_impact.py
       - name: Run totals and injury audit unit tests
         run: |
           python -m pytest -q \
             tests/test_live_market_testbench.py \
             tests/test_integrated_totals_lab.py \
-            tests/test_injury_data_audit.py
+            tests/test_injury_data_audit.py \
+            tests/test_injury_impact_engine.py
       - name: Audit public historical injury reports and player matching
         run: |
           python scripts/audit_injury_data.py \
@@ -85,6 +89,24 @@ jobs:
           path: |
             outputs/injury_data_audit/injury_data_audit.json
             outputs/injury_data_audit/injury_data_audit.md
+          if-no-files-found: error
+      - name: Run chronological V5 injury-impact backtest
+        run: |
+          python scripts/backtest_injury_impact.py \
+            --start-season 2021 \
+            --end-season 2026 \
+            --status-train-end 2023 \
+            --beta-train-end 2023 \
+            --test-start-season 2024 \
+            --output-dir outputs/injury_impact_backtest
+      - name: Upload injury impact backtest report
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-injury-impact-backtest
+          path: |
+            outputs/injury_impact_backtest/injury_impact_backtest.json
+            outputs/injury_impact_backtest/injury_impact_backtest.md
+            outputs/injury_impact_backtest/injury_impact_game_predictions.csv
           if-no-files-found: error
       - name: Verify shared historical data
         run: |
