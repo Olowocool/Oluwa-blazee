@@ -75,6 +75,35 @@ def fit_matchup_defensive_rapm(
     }
 
 
+def fit_defensive_adjustment_beta(
+    actual_minus_baseline: Any,
+    net_defensive_loss: Any,
+    *,
+    maximum_beta: float = 1.5,
+    ridge: float = 25.0,
+) -> dict[str, float | int]:
+    """Fit a nonnegative multiplier: defensive loss predicts extra opponent points."""
+    y = np.asarray(actual_minus_baseline, dtype=float).reshape(-1)
+    loss = np.asarray(net_defensive_loss, dtype=float).reshape(-1)
+    if y.shape != loss.shape:
+        raise ValueError("actual_minus_baseline and net_defensive_loss must have equal lengths.")
+    if maximum_beta < 0 or ridge < 0:
+        raise ValueError("maximum_beta and ridge must be nonnegative.")
+    valid = np.isfinite(y) & np.isfinite(loss)
+    y, loss = y[valid], loss[valid]
+    if len(y) == 0:
+        return {"beta": 0.0, "unclipped_beta": 0.0, "rows_used": 0,
+                "training_mean_net_defensive_loss": 0.0,
+                "training_mean_actual_minus_baseline": 0.0, "ridge": float(ridge)}
+    x_mean, y_mean = float(loss.mean()), float(y.mean())
+    x, yc = loss - x_mean, y - y_mean
+    slope = float(np.dot(x, yc) / (np.dot(x, x) + ridge))
+    beta = float(np.clip(slope, 0.0, maximum_beta))
+    return {"beta": beta, "unclipped_beta": slope, "rows_used": int(len(y)),
+            "training_mean_net_defensive_loss": x_mean,
+            "training_mean_actual_minus_baseline": y_mean, "ridge": float(ridge)}
+
+
 def calculate_team_defensive_injury_impact(
     team_id: Any,
     target_date: Any,
