@@ -22,6 +22,7 @@ RELEASES = {
     "box": "nba_stats_player_boxscores",
     "schedule": "nba_stats_schedules",
     "espn_schedule": "espn_nba_schedules",
+    "crosswalk": "nba_crosswalk",
     "roster": "nba_stats_game_rosters",
 }
 REQUIRED_INJURY = {
@@ -76,6 +77,7 @@ def download_season_assets(
         "box": "player_boxscores",
         "schedule": "nba_schedule",
         "espn_schedule": "nba_schedule",
+        "crosswalk": "nba_schedule_crosswalk",
         "roster": "game_rosters",
     }
     for season in seasons:
@@ -131,6 +133,7 @@ def build_pre_tip_snapshot(
     injury: pd.DataFrame,
     espn_schedule: pd.DataFrame | None,
     cutoff_minutes: int = 60,
+    crosswalk: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Select each game's latest archived injury report at least N minutes pre-tip.
 
@@ -140,7 +143,8 @@ def build_pre_tip_snapshot(
     """
     required = {"game_date", "away_team_abbr", "home_team_abbr", "report_matchup",
                 "game_id", "report_datetime", "game_time", "is_submission_placeholder"}
-    schedule_required = {"game_date", "game_date_time", "away_abbreviation", "home_abbreviation"}
+    schedule_required = {"id", "game_date", "game_date_time", "away_abbreviation", "home_abbreviation"}
+    crosswalk_required = {"nba_game_id", "espn_game_id"}
     if espn_schedule is None or espn_schedule.empty:
         return pd.DataFrame(), {
             "status": "unavailable",
@@ -149,11 +153,16 @@ def build_pre_tip_snapshot(
         }
     missing_report = sorted(required.difference(injury.columns))
     missing_schedule = sorted(schedule_required.difference(espn_schedule.columns))
-    if missing_report or missing_schedule:
+    missing_crosswalk = (
+        sorted(crosswalk_required.difference(crosswalk.columns))
+        if crosswalk is not None and not crosswalk.empty else []
+    )
+    if missing_report or missing_schedule or missing_crosswalk:
         return pd.DataFrame(), {
             "status": "schema_incomplete",
             "missing_injury_columns": missing_report,
             "missing_schedule_columns": missing_schedule,
+            "missing_crosswalk_columns": missing_crosswalk,
             "cutoff_minutes": cutoff_minutes,
         }
 
@@ -161,6 +170,7 @@ def build_pre_tip_snapshot(
     injury["game_date"] = pd.to_datetime(injury["game_date"], errors="coerce")
     injury["report_datetime"] = pd.to_datetime(injury["report_datetime"], errors="coerce")
     sched = espn_schedule.copy()
+    sched["espn_game_id_key"] = sched["id"].astype("string").str.strip()
     sched["game_date_key"] = pd.to_datetime(sched["game_date"], errors="coerce").dt.strftime("%Y-%m-%d")
     sched["away_key"] = sched["away_abbreviation"].astype("string").str.upper().str.strip()
     sched["home_key"] = sched["home_abbreviation"].astype("string").str.upper().str.strip()
@@ -186,6 +196,39 @@ def build_pre_tip_snapshot(
         how="left",
         validate="many_to_one",
     )
+    time_map = time_map.rename(columns={"tipoff_et_naive": "tipoff_by_team_match"})
+
+    crosswalk_matched = 0
+    if crosswalk is not None and not crosswalk.empty:
+        cross = crosswalk[["nba_game_id", "espn_game_id"]].dropna().copy()
+        cross["nba_game_id"] = cross["nba_game_id"].astype("string").str.strip()
+        cross["espn_game_id_key"] = cross["espn_game_id"].astype("string").str.strip()
+        cross = cross.drop_duplicates("nba_game_id", keep="last")
+        espn_id_map = sched[["espn_game_id_key", "tipoff_et_naive"]].drop_duplicates(
+            "espn_game_id_key", keep="last"
+        )
+        cross = cross.merge(
+            espn_id_map, on="espn_game_id_key", how="left", validate="many_to_one"
+        )
+        cross = cross.drop_duplicates("nba_game_id", keep="last")
+        time_map = time_map.merge(
+            cross[["nba_game_id", "espn_game_id_key", "tipoff_et_naive"]],
+            left_on="game_id", right_on="nba_game_id", how="left",
+            validate="one_to_one",
+        )
+        crosswalk_matched = int(time_map["tipoff_et_naive"].notna().sum())
+    else:
+        time_map["tipoff_et_naive"] = pd.NaT
+    time_map["tipoff_et_naive"] = time_map["tipoff_et_naive"].fillna(
+        time_map["tipoff_by_team_match"]
+    )
+    time_map["tipoff_match_source"] = "unmatched"
+    time_map.loc[time_map["tipoff_by_team_match"].notna(), "tipoff_match_source"] = "team_date"
+    if crosswalk is not None and not crosswalk.empty:
+        time_map.loc[
+            time_map["nba_game_id"].notna() & time_map["tipoff_et_naive"].notna(),
+            "tipoff_match_source",
+        ] = "nba_espn_crosswalk"
 
     def display_time(value: Any) -> str | None:
         match = re.search(r"(\d{1,2}):(\d{2})", str(value or ""))
@@ -241,6 +284,12 @@ def build_pre_tip_snapshot(
         "cutoff_minutes_before_tip": cutoff_minutes,
         "report_game_ids": int(len(report_games)),
         "report_games_matched_to_espn_tipoff": games_with_valid_tip,
+        "report_games_matched_via_nba_espn_crosswalk": crosswalk_matched,
+        "report_games_matched_via_team_date_fallback": int(
+            time_map.loc[
+                time_map["tipoff_match_source"].eq("team_date"), "game_id"
+            ].nunique()
+        ),
         "tipoff_match_coverage_pct": round(
             games_with_valid_tip / len(report_games) * 100, 2
         ) if len(report_games) else None,
@@ -303,6 +352,7 @@ def audit_frames(
     schedule: pd.DataFrame,
     roster: pd.DataFrame,
     espn_schedule: pd.DataFrame | None = None,
+    crosswalk: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     missing_columns = sorted(REQUIRED_INJURY.difference(injury.columns))
     if missing_columns:
@@ -395,7 +445,7 @@ def audit_frames(
     )
     status_check = summarize_status_vs_boxscore(latest, box)
     cutoff_latest_players, cutoff_metrics = build_pre_tip_snapshot(
-        injury, espn_schedule, cutoff_minutes=60
+        injury, espn_schedule, cutoff_minutes=60, crosswalk=crosswalk
     )
     cutoff_status_check = summarize_status_vs_boxscore(cutoff_latest_players, box)
 
@@ -492,7 +542,7 @@ def main() -> None:
 
     report = audit_frames(
         datasets["injury"], datasets["box"], datasets["schedule"], datasets["roster"],
-        datasets["espn_schedule"],
+        datasets["espn_schedule"], datasets["crosswalk"],
     )
     report["audit_metadata"] = {
         "source_repository": "sportsdataverse/sportsdataverse-data",
