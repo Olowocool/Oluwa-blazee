@@ -150,10 +150,12 @@ def audit_frames(
     )
 
     # Only actual player listings are used in player-match and status checks.
-    players = injury.loc[
+    player_listings = injury.loc[
         ~injury["is_submission_placeholder"]
-        & injury["person_id"].notna()
-        & injury["game_id"].notna()
+    ].copy()
+    players = player_listings.loc[
+        player_listings["person_id"].notna()
+        & player_listings["game_id"].notna()
     ].copy()
     report_games = set(injury["game_id"].dropna().astype(str))
     box_games = set(box["game_id"].dropna().astype(str)) if "game_id" in box else set()
@@ -161,25 +163,24 @@ def audit_frames(
 
     box_player_keys = set()
     if {"game_id", "person_id"}.issubset(box.columns):
-        box_player_keys = set(
-            zip(
-                box["game_id"].dropna().astype(str),
-                box["person_id"].dropna().astype("int64"),
-            )
-        )
+        valid_box_keys = box.dropna(subset=["game_id", "person_id"])
+        box_player_keys = set(zip(
+            valid_box_keys["game_id"].astype(str),
+            valid_box_keys["person_id"].astype("int64"),
+        ))
     roster_player_keys = set()
     if {"game_id", "player_id"}.issubset(roster.columns):
-        roster_player_keys = set(
-            zip(
-                roster["game_id"].dropna().astype(str),
-                roster["player_id"].dropna().astype("int64"),
-            )
-        )
+        valid_roster_keys = roster.dropna(subset=["game_id", "player_id"])
+        roster_player_keys = set(zip(
+            valid_roster_keys["game_id"].astype(str),
+            valid_roster_keys["player_id"].astype("int64"),
+        ))
 
     def key_coverage(frame: pd.DataFrame, key_set: set[tuple[str, int]], id_col: str) -> dict[str, Any]:
-        if frame.empty or not key_set:
-            return {"eligible_rows": int(len(frame)), "matched_rows": 0, "match_rate_pct": None}
-        pairs = list(zip(frame["game_id"].astype(str), frame[id_col].astype("int64")))
+        eligible = frame.dropna(subset=["game_id", id_col])
+        if eligible.empty or not key_set:
+            return {"eligible_rows": int(len(eligible)), "matched_rows": 0, "match_rate_pct": None}
+        pairs = list(zip(eligible["game_id"].astype(str), eligible[id_col].astype("int64")))
         matched = sum(pair in key_set for pair in pairs)
         return {
             "eligible_rows": len(pairs),
@@ -272,14 +273,15 @@ def audit_frames(
         },
         "totals": {
             "injury_report_rows_including_placeholders": int(len(injury)),
-            "player_listing_rows": int(len(players)),
+            "player_listing_rows": int(len(player_listings)),
             "unique_games_in_reports": int(injury["game_id"].nunique(dropna=True)),
-            "unique_report_versions_game_level": int(len(report_version_counts)),
+            "unique_report_versions_game_level": int(report_version_counts.sum()),
             "median_versions_per_game": round(float(report_version_counts.median()), 2) if len(report_version_counts) else None,
             "mean_versions_per_game": round(float(report_version_counts.mean()), 2) if len(report_version_counts) else None,
             "rows_with_game_id_pct": round(float(injury["game_id"].notna().mean() * 100), 2),
             "rows_with_person_id_pct": round(float(injury["person_id"].notna().mean() * 100), 2),
-            "player_rows_with_person_id_pct": round(float(players["person_id"].notna().mean() * 100), 2) if len(players) else None,
+            "player_listings_with_person_id_pct": round(float(player_listings["person_id"].notna().mean() * 100), 2) if len(player_listings) else None,
+            "player_listings_with_game_id_pct": round(float(player_listings["game_id"].notna().mean() * 100), 2) if len(player_listings) else None,
             "not_yet_submitted_or_placeholder_rows": int(injury["is_submission_placeholder"].sum()),
             "distinct_report_dates": int(injury["game_date"].nunique(dropna=True)),
         },
