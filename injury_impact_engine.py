@@ -490,3 +490,19 @@ def apply_injury_adjustment(
         "projected_total": home_points + away_points,
         "total_injury_adjustment": home_adjustment + away_adjustment,
     }
+
+
+def get_injury_impact(home_team: str, away_team: str) -> dict[str, Any]:
+    """Legacy compatibility shim for totals_model's existing diagnostic path.
+
+    The new historical injury challenger is intentionally not wired into this
+    function. Keeping zero values here preserves the official/Main App
+    comparison baseline until the research feature passes its holdout tests.
+    """
+    return {
+        "home_injury_penalty": 0.0,
+        "away_injury_penalty": 0.0,
+        "injury_adjustment": 0.0,
+        "home_missing_players": [],
+        "away_missing_players": [],
+    }
