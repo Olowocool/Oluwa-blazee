@@ -67,7 +67,7 @@ jobs:
             points_engine_v5.py \
             totals_model.py \
             pace_engine.py \
-            injury_impact_engine.py \\
+            injury_impact_engine.py \
             defensive_injury_impact_engine.py \
             team_name_utils.py \
             scripts/audit_injury_data.py \
@@ -78,7 +78,7 @@ jobs:
             tests/test_live_market_testbench.py \
             tests/test_integrated_totals_lab.py \
             tests/test_injury_data_audit.py \
-            tests/test_injury_impact_engine.py \\
+            tests/test_injury_impact_engine.py \
             tests/test_defensive_injury_impact_engine.py
       - name: Audit public historical injury reports and player matching
         run: |
