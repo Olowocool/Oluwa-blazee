@@ -21,6 +21,8 @@ on:
       - "data/historical_nba_scores.csv"
       - "tests/test_integrated_totals_lab.py"
       - "tests/test_live_market_testbench.py"
+      - "tests/test_injury_data_audit.py"
+      - "scripts/audit_injury_data.py"
       - "requirements.txt"
       - "requirements-testbench.txt"
       - ".github/workflows/integrated-totals-lab-validation.yml"
@@ -62,12 +64,28 @@ jobs:
             totals_model.py \
             pace_engine.py \
             injury_impact_engine.py \
-            team_name_utils.py
-      - name: Run totals research unit tests
+            team_name_utils.py \
+            scripts/audit_injury_data.py
+      - name: Run totals and injury audit unit tests
         run: |
           python -m pytest -q \
             tests/test_live_market_testbench.py \
-            tests/test_integrated_totals_lab.py
+            tests/test_integrated_totals_lab.py \
+            tests/test_injury_data_audit.py
+      - name: Audit public historical injury reports and player matching
+        run: |
+          python scripts/audit_injury_data.py \
+            --start-season 2019 \
+            --end-season 2027 \
+            --output-dir outputs/injury_data_audit
+      - name: Upload injury data audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-nba-injury-data-audit
+          path: |
+            outputs/injury_data_audit/injury_data_audit.json
+            outputs/injury_data_audit/injury_data_audit.md
+          if-no-files-found: error
       - name: Verify shared historical data
         run: |
           python - <<'PY'
