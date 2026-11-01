@@ -461,23 +461,59 @@ def fit_injury_adjustment_beta(
     maximum_beta: float = 1.5,
     ridge: float = 25.0,
 ) -> dict[str, float | int]:
-    """Fit a nonnegative through-origin multiplier on development residuals only."""
-    y = np.asarray(actual_minus_baseline, dtype=float)
-    loss = np.asarray(net_offensive_loss, dtype=float)
+    """Fit a nonnegative injury slope while allowing a baseline residual intercept.
+
+    The injury feature is centered on its development-sample mean. This prevents
+    the V5 baseline's average calibration bias from being mistaken for an injury
+    effect. The returned training mean must also be used when applying beta to
+    development and holdout predictions.
+    """
+    y = np.asarray(actual_minus_baseline, dtype=float).reshape(-1)
+    loss = np.asarray(net_offensive_loss, dtype=float).reshape(-1)
+    if y.shape != loss.shape:
+        raise ValueError("actual_minus_baseline and net_offensive_loss must have equal lengths.")
+    if maximum_beta < 0:
+        raise ValueError("maximum_beta must be nonnegative.")
+    if ridge < 0:
+        raise ValueError("ridge must be nonnegative.")
+
     valid = np.isfinite(y) & np.isfinite(loss)
     y = y[valid]
     loss = loss[valid]
-    x = -loss
-    denominator = float(np.dot(x, x) + max(0.0, ridge))
-    raw_beta = float(np.dot(x, y) / denominator) if denominator > 0 else 0.0
+    if len(y) == 0:
+        return {
+            "beta": 0.0,
+            "unclipped_beta": 0.0,
+            "rows_used": 0,
+            "rows_with_nonzero_injury_signal": 0,
+            "ridge": float(ridge),
+            "maximum_beta": float(maximum_beta),
+            "training_mean_net_offensive_loss": 0.0,
+            "training_mean_actual_minus_baseline": 0.0,
+            "residual_slope_per_point_of_injury_loss": 0.0,
+        }
+
+    feature_mean = float(loss.mean())
+    residual_mean = float(y.mean())
+    x_centered = loss - feature_mean
+    y_centered = y - residual_mean
+    denominator = float(np.dot(x_centered, x_centered) + ridge)
+    residual_slope = (
+        float(np.dot(x_centered, y_centered) / denominator)
+        if denominator > 0 else 0.0
+    )
+    raw_beta = -residual_slope
     beta = float(np.clip(raw_beta, 0.0, maximum_beta))
     return {
         "beta": beta,
         "unclipped_beta": raw_beta,
-        "rows_used": int(len(x)),
+        "rows_used": int(len(x_centered)),
         "rows_with_nonzero_injury_signal": int(np.sum(np.abs(loss) > 0.05)),
         "ridge": float(ridge),
         "maximum_beta": float(maximum_beta),
+        "training_mean_net_offensive_loss": feature_mean,
+        "training_mean_actual_minus_baseline": residual_mean,
+        "residual_slope_per_point_of_injury_loss": residual_slope,
     }
 
 
@@ -487,11 +523,13 @@ def apply_injury_adjustment(
     home_net_loss: float,
     away_net_loss: float,
     beta: float,
+    training_mean_total_net_loss: float = 0.0,
 ) -> dict[str, float]:
-    """Apply the fitted injury effect to home, away and combined points."""
+    """Apply the centered, development-fitted injury effect to team and game totals."""
     beta_value = float(np.clip(beta, 0.0, 1.5))
-    home_adjustment = -beta_value * float(home_net_loss)
-    away_adjustment = -beta_value * float(away_net_loss)
+    mean_team_loss = float(training_mean_total_net_loss) / 2.0
+    home_adjustment = -beta_value * (float(home_net_loss) - mean_team_loss)
+    away_adjustment = -beta_value * (float(away_net_loss) - mean_team_loss)
     home_points = float(baseline_home_points) + home_adjustment
     away_points = float(baseline_away_points) + away_adjustment
     return {

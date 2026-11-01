@@ -274,8 +274,12 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
         ridge=25.0,
     )
     beta = float(beta_model["beta"])
+    training_mean_injury_loss = float(
+        beta_model["training_mean_net_offensive_loss"]
+    )
     frame["injury_adjusted_total"] = (
-        frame["v5_raw_total"] - beta * frame["total_net_offensive_loss"]
+        frame["v5_raw_total"]
+        - beta * (frame["total_net_offensive_loss"] - training_mean_injury_loss)
     )
     train = frame.loc[frame["season_end_year"].between(2021, args.beta_train_end)].copy()
     test = frame.loc[frame["season_end_year"].between(args.test_start_season, args.end_season)].copy()
@@ -387,6 +391,7 @@ def main() -> None:
         "",
         f"Development beta: {report['injury_beta_model']['beta']:.4f} "
         f"(unclipped estimate {report['injury_beta_model']['unclipped_beta']:.4f})",
+        f"Development mean injury signal: {report['injury_beta_model']['training_mean_net_offensive_loss']:.4f}",
         f"Development games: {report['sample']['development_games_for_beta']:,}",
         f"Chronological test games: {report['sample']['chronological_test_games']:,}",
         f"Test games with usable injury signal: {report['sample']['test_games_with_usable_injury_signal']:,}",

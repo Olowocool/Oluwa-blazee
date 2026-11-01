@@ -116,3 +116,30 @@ def test_injury_beta_is_fitted_nonnegative_and_shrunk():
         ridge=0,
     )
     assert no_gain["beta"] == 0.0
+
+
+
+def test_injury_beta_is_not_confounded_by_baseline_residual_intercept():
+    model = fit_injury_adjustment_beta(
+        actual_minus_baseline=[15, 10, 5],
+        net_offensive_loss=[5, 10, 15],
+        ridge=0,
+    )
+    assert model["beta"] == pytest.approx(1.0)
+    assert model["training_mean_net_offensive_loss"] == pytest.approx(10.0)
+    assert model["training_mean_actual_minus_baseline"] == pytest.approx(10.0)
+
+
+def test_centered_injury_adjustment_is_zero_at_development_mean():
+    from injury_impact_engine import apply_injury_adjustment
+
+    result = apply_injury_adjustment(
+        baseline_home_points=110,
+        baseline_away_points=110,
+        home_net_loss=4,
+        away_net_loss=6,
+        beta=0.5,
+        training_mean_total_net_loss=10,
+    )
+    assert result["total_injury_adjustment"] == pytest.approx(0.0)
+    assert result["projected_total"] == pytest.approx(220.0)
