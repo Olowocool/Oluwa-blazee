@@ -320,6 +320,9 @@ def calculate_team_offensive_injury_impact(
     top_rotation_size: int = 5,
     replacement_rank_start: int = 6,
     replacement_rank_end: int = 12,
+    injury_candidate_statuses: tuple[str, ...] = (
+        "Out", "Doubtful", "Questionable", "Probable"
+    ),
 ) -> dict[str, Any]:
     """Estimate team scoring loss net of the team's recent replacement rotation.
 
@@ -359,15 +362,24 @@ def calculate_team_offensive_injury_impact(
     )
     status_by_player: dict[int, str] = {}
     absence_by_player: dict[int, float] = {}
+    injury_status_by_player: dict[int, str] = {}
+    candidate_statuses = {_normal_status(value) for value in injury_candidate_statuses}
     for row in snapshot.itertuples(index=False):
         pid = _as_int(getattr(row, "person_id"))
         if pid is None:
             continue
         status = _normal_status(getattr(row, "current_status"))
         status_by_player[pid] = status
-        absence_by_player[pid] = float(
-            probabilities.get(status, global_probability)
+        # "Available" means the player is medically available. A DNP can be
+        # caused by coaching/rotation choice and is not an injury absence.
+        # Keep available players in the replacement rotation at full availability.
+        absence_probability = (
+            0.0 if status == "Available"
+            else float(probabilities.get(status, global_probability))
         )
+        absence_by_player[pid] = absence_probability
+        if status in candidate_statuses:
+            injury_status_by_player[pid] = status
 
     rotation = player_history.get_team_rotation(
         tid, target_date, availability_by_player=absence_by_player
@@ -391,11 +403,10 @@ def calculate_team_offensive_injury_impact(
         ) / replacement_weight
         if replacement_weight > 0 else None
     )
-    injury_ids = set(status_by_player)
     players_used: list[dict[str, Any]] = []
     skipped_no_history = 0
     skipped_no_replacement = 0
-    for pid, status in status_by_player.items():
+    for pid, status in injury_status_by_player.items():
         absence_probability = absence_by_player[pid]
         if absence_probability <= 0.01:
             continue
@@ -431,6 +442,7 @@ def calculate_team_offensive_injury_impact(
         "expected_missing_points": float(sum(row["expected_missing_points"] for row in players_used)),
         "expected_replacement_points": float(sum(row["replacement_points"] for row in players_used)),
         "reported_players": int(len(status_by_player)),
+        "injury_candidate_players": int(len(injury_status_by_player)),
         "players_used": int(len(players_used)),
         "players_skipped_no_history": int(skipped_no_history),
         "players_skipped_no_replacement": int(skipped_no_replacement),
