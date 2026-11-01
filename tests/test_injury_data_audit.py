@@ -82,19 +82,28 @@ def test_pre_tip_snapshot_uses_latest_report_at_or_before_60_minute_cutoff():
         {**base, "report_datetime": "2024-10-22 18:45:00", "current_status": "Out"},
     ])
     schedule = pd.DataFrame([{
+        "id": 100,
         "game_date": "2024-10-22",
         "game_date_time": "2024-10-22T19:30:00-04:00",
-        "away_abbreviation": "BOS",
-        "home_abbreviation": "NYK",
+        # Deliberately use different abbreviations: crosswalk should still join.
+        "away_abbreviation": "GS",
+        "home_abbreviation": "NY",
         "time_valid": True,
     }])
+    crosswalk = pd.DataFrame([{
+        "nba_game_id": "0022400001",
+        "espn_game_id": 100,
+    }])
 
-    selected, metrics = build_pre_tip_snapshot(injury, schedule, cutoff_minutes=60)
+    selected, metrics = build_pre_tip_snapshot(
+        injury, schedule, cutoff_minutes=60, crosswalk=crosswalk
+    )
 
     assert len(selected) == 1
     assert selected.iloc[0]["current_status"] == "Doubtful"
     assert str(selected.iloc[0]["selected_report_datetime"]) == "2024-10-22 18:15:00"
     assert metrics["tipoff_match_coverage_pct"] == 100.0
+    assert metrics["report_games_matched_via_nba_espn_crosswalk"] == 1
     assert metrics["report_game_clock_matches_espn_pct"] == 100.0
     assert metrics["pre_tip_snapshot_coverage_pct"] == 100.0
 
