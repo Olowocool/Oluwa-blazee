@@ -148,6 +148,6 @@ def test_player_game_keys_are_joined_as_pairs_not_independent_non_null_lists():
 
     result = audit_frames(injury, box, schedule, roster)
 
-    assert result["join_coverage"]["player_id_matches_boxscores"]["eligible_rows"] == 2
-    assert result["join_coverage"]["player_id_matches_boxscores"]["matched_rows"] == 1
-    assert result["join_coverage"]["player_id_matches_boxscores"]["match_rate_pct"] == 50.0
+    assert result["join_coverage"]["player_game_report_rows_with_boxscore_record"]["eligible_rows"] == 2
+    assert result["join_coverage"]["player_game_report_rows_with_boxscore_record"]["matched_rows"] == 1
+    assert result["join_coverage"]["player_game_report_rows_with_boxscore_record"]["match_rate_pct"] == 50.0
