@@ -132,13 +132,24 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
         )
     ].copy()
 
-    # Status probabilities are learned only from the development-era reports.
-    status_train = snapshots.loc[
-        snapshots["season_end_year"].le(args.status_train_end)
+    # Status calibration is also point-in-time. Development-season features
+    # use only report/appearance outcomes from earlier seasons; the holdout
+    # uses one calibration frozen before the first test season.
+    test_status_end = min(args.status_train_end, args.test_start_season - 1)
+    test_status_train = snapshots.loc[
+        snapshots["season_end_year"].le(test_status_end)
     ].copy()
-    status_model = fit_status_absence_probabilities(
-        status_train, datasets["box"], prior_strength=50.0
+    test_status_model = fit_status_absence_probabilities(
+        test_status_train, datasets["box"], prior_strength=50.0
     )
+    train_status_models: dict[int, dict[str, Any]] = {}
+    for target_season in range(args.start_season, args.beta_train_end + 1):
+        prior_status_rows = snapshots.loc[
+            snapshots["season_end_year"].lt(target_season)
+        ].copy()
+        train_status_models[target_season] = fit_status_absence_probabilities(
+            prior_status_rows, datasets["box"], prior_strength=50.0
+        )
 
     # The player history index only returns the last ten appearances strictly
     # before the target date; same-day box scores cannot leak into the forecast.
@@ -178,6 +189,12 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
         away_snapshot = (
             snapshot.loc[pd.to_numeric(snapshot["team_id"], errors="coerce").eq(int(game.away_team_id))]
             if not snapshot.empty else snapshot
+        )
+        season_key = int(game.season_end_year)
+        status_model = (
+            train_status_models.get(season_key, test_status_model)
+            if season_key <= args.beta_train_end
+            else test_status_model
         )
         home_impact = calculate_team_offensive_injury_impact(
             game.home_team_id, target_date, home_snapshot, player_history, status_model
@@ -264,7 +281,10 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
     report = {
         "experiment": "V5 raw versus V5 plus point-in-time offensive injury challenger",
         "target_seasons_end_year": [args.start_season, args.end_season],
-        "status_probability_training_seasons_end_year": [2019, args.status_train_end],
+        "status_probability_holdout_training_seasons_end_year": [2019, test_status_end],
+        "development_status_probability_models": {
+            str(season): model for season, model in train_status_models.items()
+        },
         "injury_beta_training_seasons_end_year": [2021, args.beta_train_end],
         "chronological_test_seasons_end_year": [args.test_start_season, args.end_season],
         "injury_report_cutoff_minutes_before_tip": 60,
@@ -272,7 +292,7 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
         "minimum_prior_player_appearances": 5,
         "maximum_player_history_age_days": 60,
         "replacement_rotation_ranks": [6, 12],
-        "status_absence_model": status_model,
+        "status_absence_model_frozen_for_holdout": test_status_model,
         "injury_beta_model": beta_model,
         "sample": {
             "target_schedule_games_with_injury_reports": int(len(targets)),
@@ -315,7 +335,7 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
             "This is an offense-only challenger. It does not yet model defensive availability, assists-created scoring, pace effects or lineup interactions.",
             "Expected minutes and points per minute use the player's prior ten appearances for the same team, require at least five prior appearances, and require a prior appearance within 60 days.",
             "Replacement scoring is proxied by the team's historical 6th–12th rotation players; it does not know the coach's actual minute redistribution.",
-            "Status absence probabilities are fitted on 2019–2023 only. The final injury multiplier is fitted on 2021–2023 only and frozen for 2024–2026.",
+            "Development status probabilities expand by season using only earlier seasons. The holdout status model is frozen through 2023; the final injury multiplier is fitted on 2021–2023 only and frozen for 2024–2026.",
             "Players not listed in the official report receive no injury penalty; absence of a listing is not proof of health.",
             "This evaluates point prediction error only. It does not establish market value or betting profitability.",
         ],
@@ -397,7 +417,8 @@ def main() -> None:
         "report_json": str(json_path),
         "report_markdown": str(md_path),
         "sample": report["sample"],
-        "status_absence_model": report["status_absence_model"],
+        "status_absence_model_frozen_for_holdout": report["status_absence_model_frozen_for_holdout"],
+        "development_status_probability_models": report["development_status_probability_models"],
         "injury_beta_model": report["injury_beta_model"],
         "development_metrics": report["development_metrics"],
         "test_metrics_all_games": report["test_metrics_all_games"],
