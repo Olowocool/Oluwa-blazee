@@ -178,9 +178,21 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
     v5_cache: dict[str, Any] = {"v3": {}, "v4": {}}
     predictions: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    current_prediction_date: pd.Timestamp | None = None
     for game in targets.itertuples(index=False):
         game_id = str(game.game_id)
         target_date = pd.Timestamp(game.game_date).normalize()
+        if current_prediction_date is not None and target_date != current_prediction_date:
+            # V3 stores a full prior-history slice in each date cache. It is
+            # reused for all games on that date, then released before the next
+            # date to prevent multi-season cache growth. Keep V4's one shared
+            # cleaned-history entry while dropping its date-specific fits.
+            v5_cache["v3"].clear()
+            v4_clean_history = v5_cache["v4"].get("__v4_clean_history__")
+            v5_cache["v4"].clear()
+            if v4_clean_history is not None:
+                v5_cache["v4"]["__v4_clean_history__"] = v4_clean_history
+        current_prediction_date = target_date
         snapshot = snapshot_by_game.get(game_id, pd.DataFrame())
         home_snapshot = (
             snapshot.loc[pd.to_numeric(snapshot["team_id"], errors="coerce").eq(int(game.home_team_id))]
