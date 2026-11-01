@@ -157,6 +157,9 @@ def build_pre_tip_snapshot(
             "cutoff_minutes": cutoff_minutes,
         }
 
+    injury = injury.copy()
+    injury["game_date"] = pd.to_datetime(injury["game_date"], errors="coerce")
+    injury["report_datetime"] = pd.to_datetime(injury["report_datetime"], errors="coerce")
     sched = espn_schedule.copy()
     sched["game_date_key"] = pd.to_datetime(sched["game_date"], errors="coerce").dt.strftime("%Y-%m-%d")
     sched["away_key"] = sched["away_abbreviation"].astype("string").str.upper().str.strip()
