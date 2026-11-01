@@ -74,6 +74,11 @@ def test_offensive_injury_impact_nets_missing_scoring_against_bench_rate():
         "person_id": 100,
         "current_status": "Out",
         "match_method": "exact",
+    }, {
+        "team_id": 1,
+        "person_id": 105,
+        "current_status": "Available",
+        "match_method": "exact",
     }])
     status_model = {
         "probabilities": {
@@ -87,6 +92,8 @@ def test_offensive_injury_impact_nets_missing_scoring_against_bench_rate():
         1, target_date, snapshot, index, status_model
     )
 
+    assert result["reported_players"] == 2
+    assert result["injury_candidate_players"] == 1
     assert result["players_used"] == 1
     assert result["replacement_pool_size"] == 3
     assert result["replacement_ppm"] == pytest.approx(0.5)
