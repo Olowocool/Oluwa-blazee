@@ -491,8 +491,11 @@ def audit_frames(
             "report_game_id_boxscore_coverage_pct": round(len(report_games & box_games) / len(report_games) * 100, 2) if report_games else None,
             "report_game_ids_found_in_schedule": len(report_games & schedule_games),
             "report_game_id_schedule_coverage_pct": round(len(report_games & schedule_games) / len(report_games) * 100, 2) if report_games else None,
-            "player_id_matches_boxscores": key_coverage(players, box_player_keys, "person_id"),
-            "player_id_matches_game_rosters": key_coverage(players, roster_player_keys, "person_id"),
+            # These are row-to-game/player record joins across repeated report
+            # versions, not identity match rates. Missing boxscore/roster rows
+            # are expected for players who did not appear or were not rostered.
+            "player_game_report_rows_with_boxscore_record": key_coverage(players, box_player_keys, "person_id"),
+            "player_game_report_rows_with_game_roster_record": key_coverage(players, roster_player_keys, "person_id"),
         },
         "match_method_counts": match_methods_summary,
         "status_counts_all_rows": {str(k): int(v) for k, v in status_counts.items()},
@@ -507,10 +510,11 @@ def audit_frames(
         "game_roster_columns": list(roster.columns),
         "per_season": per_season,
         "limitations": [
-            "Status-to-boxscore check above uses the last archived status per game/player, not a validated 60-minute pre-tip snapshot.",
+            "The appearance diagnostic is conditional on a player having a matching boxscore record; it is not a direct estimate of the probability of playing.",
+            "Status changes after the 60-minute cutoff can explain some players who appeared despite an Out or Doubtful pre-tip status.",
             "No missing player was classified as healthy; only listed report rows were audited.",
-            "A non-null person_id is not automatically proof of a correct match; the game/player key joins are measured separately.",
-            "The fixed 60-minute cutoff uses the timezone-aware ESPN schedule timestamp; games without a matching valid tip time are excluded from cutoff selection.",
+            "A non-null person_id is not automatically proof of a correct match; source match methods and actual paired joins are tracked separately.",
+            "The fixed 60-minute cutoff uses the timezone-aware ESPN schedule timestamp; games without a matched valid tip time are excluded.",
             "The report's printed HH:MM time omits AM/PM; its clock was cross-checked against ESPN's timezone-aware local tip time before cutoff use.",
         ],
     }
@@ -568,9 +572,20 @@ def main() -> None:
         f"Report rows: {report['totals']['injury_report_rows_including_placeholders']:,}",
         f"Player listing rows: {report['totals']['player_listing_rows']:,}",
         f"Unique report games: {report['totals']['unique_games_in_reports']:,}",
-        f"Player ID match coverage to boxscores: {report['join_coverage']['player_id_matches_boxscores'].get('match_rate_pct')}%",
+        f"Player listings with matched person_id: {report['totals']['player_listings_with_person_id_pct']}%",
+        f"Player listings with game_id: {report['totals']['player_listings_with_game_id_pct']}%",
         f"Game ID coverage to boxscores: {report['join_coverage']['report_game_id_boxscore_coverage_pct']}%",
-        f"Game ID coverage to schedule: {report['join_coverage']['report_game_id_schedule_coverage_pct']}%",
+        f"Game ID coverage to NBA Stats schedule: {report['join_coverage']['report_game_id_schedule_coverage_pct']}%",
+        f"Player-game report rows with a boxscore record: {report['join_coverage']['player_game_report_rows_with_boxscore_record'].get('match_rate_pct')}%",
+        f"Player-game report rows with a game-roster record: {report['join_coverage']['player_game_report_rows_with_game_roster_record'].get('match_rate_pct')}%",
+        "",
+        "## Pre-tip schedule and snapshot coverage",
+        "",
+        f"Report games linked to ESPN tip times: {report['tipoff_cutoff_audit'].get('report_games_matched_to_espn_tipoff'):,} / {report['tipoff_cutoff_audit'].get('report_game_ids'):,} ({report['tipoff_cutoff_audit'].get('tipoff_match_coverage_pct')}%)",
+        f"Matched by NBA-to-ESPN game ID crosswalk: {report['tipoff_cutoff_audit'].get('report_games_matched_via_nba_espn_crosswalk'):,}",
+        f"Printed injury-report game clock agreed with ESPN: {report['tipoff_cutoff_audit'].get('report_game_clock_matches_espn_pct')}%",
+        f"Games with a report snapshot at least 60 minutes pre-tip: {report['tipoff_cutoff_audit'].get('games_with_at_least_one_report_snapshot_before_cutoff'):,} ({report['tipoff_cutoff_audit'].get('pre_tip_snapshot_coverage_pct')}% of time-matched games)",
+        f"Selected snapshot player entries with person_id: {report['tipoff_cutoff_audit'].get('selected_snapshot_player_rows_with_person_id'):,}",
         "",
         "## Per-season coverage",
         "",
@@ -593,7 +608,7 @@ def main() -> None:
         f"Games with a report available at least 60 minutes before tip: {report['tipoff_cutoff_audit'].get('games_with_at_least_one_report_snapshot_before_cutoff')}",
         f"Pre-tip snapshot coverage of time-matched games: {report['tipoff_cutoff_audit'].get('pre_tip_snapshot_coverage_pct')}%",
         "",
-        "| Report status | Players in selected snapshot | Boxscore row found | Appeared | Appeared % |",
+        "| Report status | Players in selected snapshot | Boxscore row found | Appeared | Appeared % among boxscore-linked players |",
         "|---|---:|---:|---:|---:|",
     ]
     for row in report["status_vs_boxscore_at_60m_pre_tip"]:
@@ -601,7 +616,7 @@ def main() -> None:
             f"| {row['status_normalized']} | {row['report_players']} | "
             f"{row['boxscore_rows_found']} | {row['appeared']} | {row['appeared_pct']} |"
         )
-    md_lines += ["", "## Cutoff limitations", ""]
+    md_lines += ["", "## Interpretation and limitations", ""]
     md_lines.extend(f"- {item}" for item in report["limitations"])
     md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
     print(json.dumps({
