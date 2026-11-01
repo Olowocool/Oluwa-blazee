@@ -12,6 +12,11 @@ import numpy as np
 import pandas as pd
 import requests
 
+from defensive_injury_impact_engine import (
+    calculate_team_defensive_injury_impact,
+    fit_defensive_adjustment_beta,
+    fit_matchup_defensive_rapm,
+)
 from injury_impact_engine import (
     PlayerHistoryIndex,
     calculate_team_offensive_injury_impact,
@@ -23,8 +28,10 @@ from points_engine_v5 import calculate_matchup_points_v5
 from scripts.audit_injury_data import (
     RELEASES,
     build_pre_tip_snapshot,
+    download_asset,
     download_season_assets,
     read_frames,
+    release_assets,
 )
 from team_name_utils import normalize_team_name
 
@@ -161,6 +168,28 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
         max_stale_days=60,
     )
 
+    # Defensive player value is estimated from the completed prior season only.
+    # The matchup table is season-aggregated (not game-level); using T-1 avoids
+    # target-season/future leakage. Missing prior-season data is not imputed.
+    matchup_assets = release_assets(session, "nba_stats_matchups")
+    defensive_scores_by_target_season: dict[int, dict[int, float]] = {}
+    matchup_downloaded: list[dict[str, Any]] = []
+    for target_season in range(args.start_season, args.end_season + 1):
+        prior_season = target_season - 1
+        asset_name = (
+            f"leagueseasonmatchups_regular-season_totals_{prior_season}.parquet"
+        )
+        asset = matchup_assets.get(asset_name)
+        if asset is None:
+            continue
+        matchup_path = download_dir / "nba_stats_matchups" / asset_name
+        matchup_downloaded.append(download_asset(session, asset, matchup_path))
+        prior_matchups = pd.read_parquet(matchup_path)
+        fitted = fit_matchup_defensive_rapm(prior_matchups)
+        defensive_scores_by_target_season[target_season] = fitted["scores"]
+    if not defensive_scores_by_target_season:
+        raise RuntimeError("No prior-season defensive matchup metrics were available.")
+
     snapshot_by_game = {
         str(game_id): group.copy()
         for game_id, group in snapshots.groupby("game_id", sort=False)
@@ -214,6 +243,15 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
         away_impact = calculate_team_offensive_injury_impact(
             game.away_team_id, target_date, away_snapshot, player_history, status_model
         )
+        season_defensive_scores = defensive_scores_by_target_season.get(season_key, {})
+        home_defensive_impact = calculate_team_defensive_injury_impact(
+            game.home_team_id, target_date, home_snapshot, player_history,
+            status_model, season_defensive_scores,
+        )
+        away_defensive_impact = calculate_team_defensive_injury_impact(
+            game.away_team_id, target_date, away_snapshot, player_history,
+            status_model, season_defensive_scores,
+        )
         try:
             v5 = calculate_matchup_points_v5(
                 game.home_team, game.away_team, score_history,
@@ -232,6 +270,8 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
 
         home_loss = float(home_impact["net_offensive_loss"])
         away_loss = float(away_impact["net_offensive_loss"])
+        home_defensive_loss = float(home_defensive_impact["net_defensive_loss"])
+        away_defensive_loss = float(away_defensive_impact["net_defensive_loss"])
         predictions.append({
             "game_id": game_id,
             "game_date": target_date.date().isoformat(),
@@ -247,6 +287,13 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
             "home_net_offensive_loss": home_loss,
             "away_net_offensive_loss": away_loss,
             "total_net_offensive_loss": home_loss + away_loss,
+            "home_net_defensive_loss": home_defensive_loss,
+            "away_net_defensive_loss": away_defensive_loss,
+            "total_net_defensive_loss": home_defensive_loss + away_defensive_loss,
+            "home_defensive_players_used": int(home_defensive_impact.get("players_used", 0)),
+            "away_defensive_players_used": int(away_defensive_impact.get("players_used", 0)),
+            "home_defensive_feature_reason": str(home_defensive_impact.get("reason", "")),
+            "away_defensive_feature_reason": str(away_defensive_impact.get("reason", "")),
             "home_reported_players": int(home_impact.get("reported_players", 0)),
             "away_reported_players": int(away_impact.get("reported_players", 0)),
             "home_players_used": int(home_impact.get("players_used", 0)),
@@ -281,6 +328,22 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
         frame["v5_raw_total"]
         - beta * (frame["total_net_offensive_loss"] - training_mean_injury_loss)
     )
+    defensive_beta_model = fit_defensive_adjustment_beta(
+        train["actual_total"].to_numpy() - train["v5_raw_total"].to_numpy(),
+        train["total_net_defensive_loss"].to_numpy(),
+        maximum_beta=1.5,
+        ridge=25.0,
+    )
+    defensive_beta = float(defensive_beta_model["beta"])
+    training_mean_defensive_loss = float(
+        defensive_beta_model["training_mean_net_defensive_loss"]
+    )
+    frame["defensive_injury_adjusted_total"] = (
+        frame["v5_raw_total"]
+        + defensive_beta * (
+            frame["total_net_defensive_loss"] - training_mean_defensive_loss
+        )
+    )
     train = frame.loc[frame["season_end_year"].between(2021, args.beta_train_end)].copy()
     test = frame.loc[frame["season_end_year"].between(args.test_start_season, args.end_season)].copy()
     test_signal = test.loc[test["total_net_offensive_loss"].abs().ge(0.10)].copy()
@@ -290,12 +353,13 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
         by_season[str(int(season))] = {
             "baseline_v5": metrics(part, "v5_raw_total"),
             "v5_plus_injury": metrics(part, "injury_adjusted_total"),
+            "v5_plus_defensive_injury": metrics(part, "defensive_injury_adjusted_total"),
             "games_with_usable_injury_signal": int(
                 part["total_net_offensive_loss"].abs().ge(0.10).sum()
             ),
         }
     report = {
-        "experiment": "V5 raw versus V5 plus point-in-time offensive injury challenger",
+        "experiment": "V5 raw versus separate point-in-time offensive and defensive injury challengers",
         "target_seasons_end_year": [args.start_season, args.end_season],
         "status_probability_holdout_training_seasons_end_year": [2019, test_status_end],
         "development_status_probability_models": {
@@ -310,6 +374,15 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
         "replacement_rotation_ranks": [6, 12],
         "status_absence_model_frozen_for_holdout": test_status_model,
         "injury_beta_model": beta_model,
+        "defensive_matchup_metric_source": "SportsDataverse nba_stats_matchups regular-season totals; target season uses prior completed season",
+        "defensive_beta_model": defensive_beta_model,
+        "defensive_matchup_models": {
+            str(season): {
+                "prior_season_end_year": season - 1,
+                "defenders_with_scores": len(scores),
+            }
+            for season, scores in defensive_scores_by_target_season.items()
+        },
         "sample": {
             "target_schedule_games_with_injury_reports": int(len(targets)),
             "v5_predictions_completed": int(len(frame)),
@@ -326,29 +399,35 @@ def run_backtest(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]
             "pre_tip_snapshot_coverage_pct": cutoff_meta.get("pre_tip_snapshot_coverage_pct"),
             "player_game_appearance_rows": player_history.appearance_rows,
             "missing_source_assets": missing_assets,
-            "downloaded_source_bytes": int(sum(
-                item["size_bytes"]
-                for group in downloaded.values()
-                for item in group
-            )),
+            "defensive_matchup_assets_downloaded": len(matchup_downloaded),
+            "defensive_matchup_source_bytes": int(sum(item["size_bytes"] for item in matchup_downloaded)),
+            "downloaded_source_bytes": int(
+                sum(item["size_bytes"] for group in downloaded.values() for item in group)
+                + sum(item["size_bytes"] for item in matchup_downloaded)
+            ),
         },
         "development_metrics": {
             "baseline_v5": metrics(train, "v5_raw_total"),
             "v5_plus_injury": metrics(train, "injury_adjusted_total"),
+            "v5_plus_defensive_injury": metrics(train, "defensive_injury_adjusted_total"),
         },
         "test_metrics_all_games": {
             "baseline_v5": metrics(test, "v5_raw_total"),
             "v5_plus_injury": metrics(test, "injury_adjusted_total"),
+            "v5_plus_defensive_injury": metrics(test, "defensive_injury_adjusted_total"),
         },
         "test_metrics_games_with_usable_injury_signal": {
             "baseline_v5": metrics(test_signal, "v5_raw_total"),
             "v5_plus_injury": metrics(test_signal, "injury_adjusted_total"),
+            "v5_plus_defensive_injury": metrics(test_signal, "defensive_injury_adjusted_total"),
         },
         "test_by_season": by_season,
         "prediction_errors_sample": errors[:100],
         "cutoff_audit": cutoff_meta,
         "limitations": [
-            "This is an offense-only challenger. It does not yet model defensive availability, assists-created scoring, pace effects or lineup interactions.",
+            "The defensive challenger uses prior-season season-aggregated matchup effects, not game-level matchup data; it does not yet model lineup interactions or current-season defensive role changes.",
+            "The defensive RAPM metric controls for offensive matchup player effects and is frozen from the prior completed regular season for each target season.",
+            "Defensive and offensive injury challengers are evaluated separately; their coefficients are not combined or stacked in this phase.",
             "Expected minutes and points per minute use the player's prior ten appearances for the same team, require at least five prior appearances, and require a prior appearance within 60 days.",
             "Replacement scoring is proxied by the team's historical 6th–12th rotation players; it does not know the coach's actual minute redistribution.",
             "Development status probabilities expand by season using only earlier seasons. The holdout status model is frozen through 2023; the final injury multiplier is fitted on 2021–2023 only and frozen for 2024–2026.",
@@ -402,6 +481,7 @@ def main() -> None:
         "|---|---:|---:|---:|---:|",
         row("V5 raw baseline", report["test_metrics_all_games"]["baseline_v5"]),
         row("V5 + offensive injury", report["test_metrics_all_games"]["v5_plus_injury"]),
+        row("V5 + defensive injury", report["test_metrics_all_games"]["v5_plus_defensive_injury"]),
         "",
         "## Test games with a usable injury signal",
         "",
@@ -409,6 +489,7 @@ def main() -> None:
         "|---|---:|---:|---:|---:|",
         row("V5 raw baseline", report["test_metrics_games_with_usable_injury_signal"]["baseline_v5"]),
         row("V5 + offensive injury", report["test_metrics_games_with_usable_injury_signal"]["v5_plus_injury"]),
+        row("V5 + defensive injury", report["test_metrics_games_with_usable_injury_signal"]["v5_plus_defensive_injury"]),
         "",
         "## Per-season test results",
         "",
@@ -437,6 +518,7 @@ def main() -> None:
         "status_absence_model_frozen_for_holdout": report["status_absence_model_frozen_for_holdout"],
         "development_status_probability_models": report["development_status_probability_models"],
         "injury_beta_model": report["injury_beta_model"],
+        "defensive_beta_model": report["defensive_beta_model"],
         "development_metrics": report["development_metrics"],
         "test_metrics_all_games": report["test_metrics_all_games"],
         "test_metrics_games_with_usable_injury_signal": report["test_metrics_games_with_usable_injury_signal"],
