@@ -54,7 +54,7 @@ def test_audit_frames_profiles_ids_and_statuses():
     assert result["totals"]["player_listing_rows"] == 2
     assert result["totals"]["unique_games_in_reports"] == 1
     assert result["join_coverage"]["player_id_matches_boxscores"]["match_rate_pct"] == 100.0
-    assert "game_datetime_est" in result["schedule_time_columns_for_cutoff_audit"]
+    assert result["join_coverage"]["report_game_id_schedule_coverage_pct"] == 100.0
 
 
 
