@@ -5,3 +5,4 @@ requests
 duckdb
 pytest
 pyarrow
+scikit-learn
