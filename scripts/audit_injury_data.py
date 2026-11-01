@@ -21,6 +21,7 @@ RELEASES = {
     "injury": "nba_stats_injury_report",
     "box": "nba_stats_player_boxscores",
     "schedule": "nba_stats_schedules",
+    "espn_schedule": "espn_nba_schedules",
     "roster": "nba_stats_game_rosters",
 }
 REQUIRED_INJURY = {
@@ -74,6 +75,7 @@ def download_season_assets(
         "injury": "injury_report",
         "box": "player_boxscores",
         "schedule": "nba_schedule",
+        "espn_schedule": "nba_schedule",
         "roster": "game_rosters",
     }
     for season in seasons:
@@ -125,11 +127,179 @@ def _normal_status(series: pd.Series) -> pd.Series:
     return series.fillna("<NULL>").astype(str).str.strip().str.title()
 
 
+def build_pre_tip_snapshot(
+    injury: pd.DataFrame,
+    espn_schedule: pd.DataFrame | None,
+    cutoff_minutes: int = 60,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Select each game's latest archived injury report at least N minutes pre-tip.
+
+    ESPN's schedule release supplies a timezone-aware Eastern tip timestamp.
+    Injury report publication timestamps are documented as naive US/Eastern,
+    so both are compared on the same naive Eastern clock after explicit conversion.
+    """
+    required = {"game_date", "away_team_abbr", "home_team_abbr", "report_matchup",
+                "game_id", "report_datetime", "game_time", "is_submission_placeholder"}
+    schedule_required = {"game_date", "game_date_time", "away_abbreviation", "home_abbreviation"}
+    if espn_schedule is None or espn_schedule.empty:
+        return pd.DataFrame(), {
+            "status": "unavailable",
+            "reason": "ESPN schedule with timezone-aware tip times was not supplied.",
+            "cutoff_minutes": cutoff_minutes,
+        }
+    missing_report = sorted(required.difference(injury.columns))
+    missing_schedule = sorted(schedule_required.difference(espn_schedule.columns))
+    if missing_report or missing_schedule:
+        return pd.DataFrame(), {
+            "status": "schema_incomplete",
+            "missing_injury_columns": missing_report,
+            "missing_schedule_columns": missing_schedule,
+            "cutoff_minutes": cutoff_minutes,
+        }
+
+    sched = espn_schedule.copy()
+    sched["game_date_key"] = pd.to_datetime(sched["game_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    sched["away_key"] = sched["away_abbreviation"].astype("string").str.upper().str.strip()
+    sched["home_key"] = sched["home_abbreviation"].astype("string").str.upper().str.strip()
+    parsed_tip = pd.to_datetime(sched["game_date_time"], errors="coerce", utc=True)
+    sched["tipoff_et_naive"] = parsed_tip.dt.tz_convert("America/New_York").dt.tz_localize(None)
+    if "time_valid" in sched.columns:
+        sched = sched.loc[sched["time_valid"].fillna(False).astype(bool)].copy()
+    sched = sched.dropna(subset=["game_date_key", "away_key", "home_key", "tipoff_et_naive"])
+    sched = sched.drop_duplicates(["game_date_key", "away_key", "home_key"], keep="last")
+
+    report_games = (
+        injury.dropna(subset=["game_id", "game_date", "away_team_abbr", "home_team_abbr"])
+        [["game_id", "game_date", "away_team_abbr", "home_team_abbr", "game_time"]]
+        .drop_duplicates("game_id")
+        .copy()
+    )
+    report_games["game_date_key"] = pd.to_datetime(report_games["game_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    report_games["away_key"] = report_games["away_team_abbr"].astype("string").str.upper().str.strip()
+    report_games["home_key"] = report_games["home_team_abbr"].astype("string").str.upper().str.strip()
+    time_map = report_games.merge(
+        sched[["game_date_key", "away_key", "home_key", "tipoff_et_naive"]],
+        on=["game_date_key", "away_key", "home_key"],
+        how="left",
+        validate="many_to_one",
+    )
+
+    def display_time(value: Any) -> str | None:
+        match = re.search(r"(\d{1,2}):(\d{2})", str(value or ""))
+        if not match:
+            return None
+        hour = int(match.group(1)) % 12 or 12
+        return f"{hour:02d}:{match.group(2)}"
+
+    time_map["report_clock"] = time_map["game_time"].map(display_time)
+    time_map["espn_clock"] = pd.to_datetime(
+        time_map["tipoff_et_naive"], errors="coerce"
+    ).dt.strftime("%I:%M")
+    time_map["reported_time_matches_espn"] = (
+        time_map["report_clock"].notna()
+        & time_map["espn_clock"].notna()
+        & time_map["report_clock"].eq(time_map["espn_clock"])
+    )
+
+    enriched = injury.merge(
+        time_map[["game_id", "tipoff_et_naive"]],
+        on="game_id",
+        how="inner",
+        validate="many_to_one",
+    )
+    enriched["cutoff_et_naive"] = enriched["tipoff_et_naive"] - pd.Timedelta(minutes=cutoff_minutes)
+    eligible = enriched.loc[
+        enriched["report_datetime"].notna()
+        & enriched["tipoff_et_naive"].notna()
+        & (enriched["report_datetime"] <= enriched["cutoff_et_naive"])
+    ].copy()
+    latest_times = eligible.groupby("game_id")["report_datetime"].max()
+    snapshot = eligible.merge(
+        latest_times.rename("selected_report_datetime"),
+        on="game_id",
+        how="inner",
+        validate="many_to_one",
+    )
+    snapshot = snapshot.loc[
+        snapshot["report_datetime"].eq(snapshot["selected_report_datetime"])
+    ].copy()
+    latest_players = snapshot.loc[
+        ~snapshot["is_submission_placeholder"]
+        & snapshot["person_id"].notna()
+    ].sort_values("report_datetime").drop_duplicates(
+        ["game_id", "person_id"], keep="last"
+    ).copy()
+
+    games_with_valid_tip = int(time_map["tipoff_et_naive"].notna().sum())
+    games_with_cutoff_report = int(latest_times.index.nunique())
+    time_matches = time_map.loc[time_map["tipoff_et_naive"].notna(), "reported_time_matches_espn"]
+    metrics = {
+        "status": "ok",
+        "cutoff_minutes_before_tip": cutoff_minutes,
+        "report_game_ids": int(len(report_games)),
+        "report_games_matched_to_espn_tipoff": games_with_valid_tip,
+        "tipoff_match_coverage_pct": round(
+            games_with_valid_tip / len(report_games) * 100, 2
+        ) if len(report_games) else None,
+        "report_game_clock_matches_espn_pct": round(
+            float(time_matches.mean() * 100), 2
+        ) if len(time_matches) else None,
+        "games_with_at_least_one_report_snapshot_before_cutoff": games_with_cutoff_report,
+        "pre_tip_snapshot_coverage_pct": round(
+            games_with_cutoff_report / games_with_valid_tip * 100, 2
+        ) if games_with_valid_tip else None,
+        "selected_snapshot_report_rows": int(len(snapshot)),
+        "selected_snapshot_player_rows_with_person_id": int(len(latest_players)),
+        "median_archived_report_versions_before_cutoff": round(
+            float(eligible.groupby("game_id")["report_datetime"].nunique().median()), 2
+        ) if not eligible.empty else None,
+        "unmatched_report_game_ids": report_games.loc[
+            report_games["game_id"].astype(str).isin(
+                set(time_map.loc[time_map["tipoff_et_naive"].isna(), "game_id"].astype(str))
+            ), "game_id"
+        ].astype(str).tolist()[:50],
+    }
+    return latest_players, metrics
+
+
+def summarize_status_vs_boxscore(latest: pd.DataFrame, box: pd.DataFrame) -> list[dict[str, Any]]:
+    if latest.empty or not {"game_id", "person_id", "minutes"}.issubset(box.columns):
+        return []
+    box_check = box[["game_id", "person_id", "minutes"]].dropna(
+        subset=["game_id", "person_id"]
+    ).copy()
+    box_check["game_id"] = box_check["game_id"].astype(str)
+    box_check["person_id"] = pd.to_numeric(box_check["person_id"], errors="coerce").astype("Int64")
+    box_check["minutes_numeric"] = box_check["minutes"].map(parse_minutes)
+    box_check["appeared"] = box_check["minutes_numeric"].fillna(0).gt(0)
+    box_check = box_check.drop_duplicates(["game_id", "person_id"], keep="last")
+    checked = latest.copy()
+    checked["game_id"] = checked["game_id"].astype(str)
+    checked["person_id"] = pd.to_numeric(checked["person_id"], errors="coerce").astype("Int64")
+    checked = checked.merge(
+        box_check[["game_id", "person_id", "appeared", "minutes_numeric"]],
+        on=["game_id", "person_id"], how="left", validate="many_to_one",
+    )
+    checked["boxscore_player_row_found"] = checked["appeared"].notna()
+    status = (
+        checked.groupby("status_normalized", dropna=False)
+        .agg(
+            report_players=("person_id", "size"),
+            boxscore_rows_found=("boxscore_player_row_found", "sum"),
+            appeared=("appeared", "sum"),
+            appeared_pct=("appeared", "mean"),
+        ).reset_index()
+    )
+    status["appeared_pct"] = (status["appeared_pct"] * 100).round(2)
+    return status.replace({pd.NA: None}).to_dict("records")
+
+
 def audit_frames(
     injury: pd.DataFrame,
     box: pd.DataFrame,
     schedule: pd.DataFrame,
     roster: pd.DataFrame,
+    espn_schedule: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     missing_columns = sorted(REQUIRED_INJURY.difference(injury.columns))
     if missing_columns:
@@ -215,42 +385,19 @@ def audit_frames(
             "max_game_date": str(part["game_date"].max().date()) if part["game_date"].notna().any() else None,
         })
 
-    # Status-to-actual-appearance check using the final archived report version
-    # for each game/player. This is a data consistency diagnostic, not a
-    # pre-tip 60-minute validation; tip-time semantics are audited separately.
+    # Compare the last archived status with participation, then repeat the
+    # same check using the latest report available at a fixed pre-tip cutoff.
     latest = players.sort_values("report_datetime").drop_duplicates(
         ["game_id", "person_id"], keep="last"
     )
-    if {"game_id", "person_id", "minutes"}.issubset(box.columns):
-        box_check = box[["game_id", "person_id", "minutes"]].copy()
-        box_check["minutes_numeric"] = box_check["minutes"].map(parse_minutes)
-        box_check["appeared"] = box_check["minutes_numeric"].fillna(0).gt(0)
-        box_check = box_check.drop_duplicates(["game_id", "person_id"], keep="last")
-        latest = latest.merge(
-            box_check[["game_id", "person_id", "appeared", "minutes_numeric"]],
-            on=["game_id", "person_id"], how="left", validate="many_to_one",
-        )
-        latest["boxscore_player_row_found"] = latest["appeared"].notna()
-        status_check = (
-            latest.groupby("status_normalized", dropna=False)
-            .agg(
-                latest_report_players=("person_id", "size"),
-                boxscore_rows_found=("boxscore_player_row_found", "sum"),
-                appeared=("appeared", "sum"),
-                appeared_pct=("appeared", "mean"),
-            )
-            .reset_index()
-        )
-        status_check["appeared_pct"] = (status_check["appeared_pct"] * 100).round(2)
-        status_check = status_check.replace({pd.NA: None}).to_dict("records")
-    else:
-        status_check = []
-        latest = latest.copy()
+    status_check = summarize_status_vs_boxscore(latest, box)
+    cutoff_latest_players, cutoff_metrics = build_pre_tip_snapshot(
+        injury, espn_schedule, cutoff_minutes=60
+    )
+    cutoff_status_check = summarize_status_vs_boxscore(cutoff_latest_players, box)
 
-    # Inspect available schedule time columns; this tells us whether a strict
-    # 60-minute report cutoff can be reconstructed without guessing AM/PM.
     time_columns = [
-        column for column in schedule.columns
+        column for column in (espn_schedule.columns if espn_schedule is not None else [])
         if re.search(r"(time|datetime|date_time|commence)", column, re.I)
     ]
     report_time_range = {
@@ -297,8 +444,11 @@ def audit_frames(
         "match_method_counts": match_methods_summary,
         "status_counts_all_rows": {str(k): int(v) for k, v in status_counts.items()},
         "status_vs_boxscore_latest_archived_listing": status_check,
+        "status_vs_boxscore_at_60m_pre_tip": cutoff_status_check,
+        "tipoff_cutoff_audit": cutoff_metrics,
         "schedule_time_columns_for_cutoff_audit": time_columns,
         "schedule_columns": list(schedule.columns),
+        "espn_schedule_columns": list(espn_schedule.columns) if espn_schedule is not None else [],
         "injury_columns": list(injury.columns),
         "player_boxscore_columns": list(box.columns),
         "game_roster_columns": list(roster.columns),
@@ -307,7 +457,8 @@ def audit_frames(
             "Status-to-boxscore check above uses the last archived status per game/player, not a validated 60-minute pre-tip snapshot.",
             "No missing player was classified as healthy; only listed report rows were audited.",
             "A non-null person_id is not automatically proof of a correct match; the game/player key joins are measured separately.",
-            "Schedule time columns must be interpreted and validated before enforcing the fixed pre-tip cutoff.",
+            "The fixed 60-minute cutoff uses the timezone-aware ESPN schedule timestamp; games without a matching valid tip time are excluded from cutoff selection.",
+            "The report's printed HH:MM time omits AM/PM; its clock was cross-checked against ESPN's timezone-aware local tip time before cutoff use.",
         ],
     }
 
@@ -337,7 +488,8 @@ def main() -> None:
         datasets[kind] = read_frames(paths, kind)
 
     report = audit_frames(
-        datasets["injury"], datasets["box"], datasets["schedule"], datasets["roster"]
+        datasets["injury"], datasets["box"], datasets["schedule"], datasets["roster"],
+        datasets["espn_schedule"],
     )
     report["audit_metadata"] = {
         "source_repository": "sportsdataverse/sportsdataverse-data",
@@ -381,14 +533,19 @@ def main() -> None:
         )
     md_lines += [
         "",
-        "## Status versus appearance check",
+        "## 60-minute pre-tip snapshot audit",
         "",
-        "| Report status | Players | Boxscore row found | Appeared | Appeared % |",
+        f"Tip-time match coverage: {report['tipoff_cutoff_audit'].get('tipoff_match_coverage_pct')}%",
+        f"Printed game-clock agreement with ESPN: {report['tipoff_cutoff_audit'].get('report_game_clock_matches_espn_pct')}%",
+        f"Games with a report available at least 60 minutes before tip: {report['tipoff_cutoff_audit'].get('games_with_at_least_one_report_snapshot_before_cutoff')}",
+        f"Pre-tip snapshot coverage of time-matched games: {report['tipoff_cutoff_audit'].get('pre_tip_snapshot_coverage_pct')}%",
+        "",
+        "| Report status | Players in selected snapshot | Boxscore row found | Appeared | Appeared % |",
         "|---|---:|---:|---:|---:|",
     ]
-    for row in report["status_vs_boxscore_latest_archived_listing"]:
+    for row in report["status_vs_boxscore_at_60m_pre_tip"]:
         md_lines.append(
-            f"| {row['status_normalized']} | {row['latest_report_players']} | "
+            f"| {row['status_normalized']} | {row['report_players']} | "
             f"{row['boxscore_rows_found']} | {row['appeared']} | {row['appeared_pct']} |"
         )
     md_lines += ["", "## Cutoff limitations", ""]
@@ -403,6 +560,8 @@ def main() -> None:
         "match_method_counts": report["match_method_counts"],
         "status_vs_boxscore_latest_archived_listing": report["status_vs_boxscore_latest_archived_listing"],
         "schedule_time_columns_for_cutoff_audit": report["schedule_time_columns_for_cutoff_audit"],
+        "tipoff_cutoff_audit": report["tipoff_cutoff_audit"],
+        "status_vs_boxscore_at_60m_pre_tip": report["status_vs_boxscore_at_60m_pre_tip"],
         "per_season": report["per_season"],
         "missing_assets": missing_assets,
         "downloaded_bytes": report["audit_metadata"]["total_downloaded_bytes"],
