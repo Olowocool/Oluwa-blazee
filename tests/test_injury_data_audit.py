@@ -53,7 +53,7 @@ def test_audit_frames_profiles_ids_and_statuses():
     assert result["totals"]["injury_report_rows_including_placeholders"] == 2
     assert result["totals"]["player_listing_rows"] == 2
     assert result["totals"]["unique_games_in_reports"] == 1
-    assert result["join_coverage"]["player_id_matches_boxscores"]["match_rate_pct"] == 100.0
+    assert result["join_coverage"]["player_game_report_rows_with_boxscore_record"]["match_rate_pct"] == 100.0
     assert result["join_coverage"]["report_game_id_schedule_coverage_pct"] == 100.0
 
 
