@@ -73,7 +73,8 @@ def test_join_rejects_duplicate_game_keys():
         "game_date": ["2026-01-01", "2026-01-01"],
         "commence_time_utc": ["2026-01-01T23:00:00Z"] * 2,
         "home_team": ["Home", "Home"], "away_team": ["Away", "Away"],
-        "entry_total": [220.5, 220.5], "decision": ["Over", "Over"],
+        "entry_total": [220.5, 220.5], "entry_over_odds_decimal": [1.91, 1.91],
+        "entry_under_odds_decimal": [1.91, 1.91], "decision": ["Over", "Over"],
         "stake_units": [1.0, 1.0], "evaluation_split": ["reserved_holdout"] * 2,
     })
     with pytest.raises(ValueError, match="Duplicate game keys"):
@@ -93,7 +94,8 @@ def test_failed_objective6_gate_cannot_be_used_to_evaluate_active_bets():
         "game_date": ["2026-01-01"],
         "commence_time_utc": ["2026-01-01T23:00:00Z"],
         "home_team": ["Home"], "away_team": ["Away"],
-        "entry_total": [220.5], "decision": ["Over"],
+        "entry_total": [220.5], "entry_over_odds_decimal": [1.91],
+        "entry_under_odds_decimal": [1.91], "decision": ["Over"],
         "stake_units": [1.0], "evaluation_split": ["reserved_holdout"],
     })
     with pytest.raises(ValueError, match="gate failed"):
