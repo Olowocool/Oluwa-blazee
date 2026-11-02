@@ -36,7 +36,8 @@ def _validate_inputs(games: pd.DataFrame, decisions: pd.DataFrame, summary6: dic
     required_games = {
         "game_date", "commence_time_utc", "home_team", "away_team", "entry_total",
         "actual_total", "last_observed_total", "entry_over_odds_decimal",
-        "entry_under_odds_decimal",
+        "entry_under_odds_decimal", "over_probability_no_vig",
+        "under_probability_no_vig",
     }
     required_decisions = {
         "game_date", "commence_time_utc", "home_team", "away_team", "entry_total",
@@ -98,8 +99,16 @@ def settle_decisions(frame: pd.DataFrame) -> pd.DataFrame:
     d["actual_total"] = pd.to_numeric(d["actual_total"], errors="coerce")
     d["entry_over_odds_decimal"] = pd.to_numeric(d["entry_over_odds_decimal"], errors="coerce")
     d["entry_under_odds_decimal"] = pd.to_numeric(d["entry_under_odds_decimal"], errors="coerce")
-    if d[["stake_units", "actual_total", "entry_over_odds_decimal", "entry_under_odds_decimal"]].isna().any().any():
+    d["over_probability_no_vig"] = pd.to_numeric(d["over_probability_no_vig"], errors="coerce")
+    d["under_probability_no_vig"] = pd.to_numeric(d["under_probability_no_vig"], errors="coerce")
+    if d[["stake_units", "actual_total", "entry_over_odds_decimal", "entry_under_odds_decimal",
+          "over_probability_no_vig", "under_probability_no_vig"]].isna().any().any():
         raise ValueError("Settlement inputs contain missing numeric values.")
+    market_probabilities = d[["over_probability_no_vig", "under_probability_no_vig"]].to_numpy(float)
+    if (market_probabilities < 0).any() or (market_probabilities > 1).any() or not np.allclose(
+        market_probabilities.sum(axis=1), 1.0, atol=1e-6
+    ):
+        raise ValueError("Entry no-vig Over/Under probabilities must be in [0,1] and sum to one.")
     if (d["stake_units"] < 0).any() or not np.isfinite(d["stake_units"]).all():
         raise ValueError("Stake units must be finite and non-negative.")
     invalid_side = ~d["decision"].isin(["Over", "Under", "No Bet"])
@@ -134,6 +143,30 @@ def settle_decisions(frame: pd.DataFrame) -> pd.DataFrame:
     d["profit_per_unit"] = profit_per_unit
     d["risked_units"] = np.where(active, stake, 0.0)
     d["net_profit_units"] = stake * profit_per_unit
+    # Matched baseline: on the exact same candidate bet opportunities and
+    # stakes, settle the side favoured by the entry-time no-vig market.
+    p_over = d["over_probability_no_vig"].to_numpy(float)
+    p_under = d["under_probability_no_vig"].to_numpy(float)
+    market_side = np.where(p_over > p_under, "Over", np.where(p_under > p_over, "Under", "No Bet"))
+    market_odds = np.where(
+        market_side == "Over", d["entry_over_odds_decimal"],
+        np.where(market_side == "Under", d["entry_under_odds_decimal"], 1.0),
+    ).astype(float)
+    market_profit_per_unit = np.zeros(len(d), dtype=float)
+    for i in range(len(d)):
+        if not active[i] or market_side[i] == "No Bet":
+            continue
+        if actual[i] == line[i]:
+            continue
+        if (market_side[i] == "Over" and actual[i] > line[i]) or (
+            market_side[i] == "Under" and actual[i] < line[i]
+        ):
+            market_profit_per_unit[i] = market_odds[i] - 1.0
+        else:
+            market_profit_per_unit[i] = -1.0
+    d["market_favorite_side"] = market_side
+    d["market_favorite_profit_per_unit"] = market_profit_per_unit
+    d["market_favorite_net_profit_units"] = stake * market_profit_per_unit
     d["roi_contribution"] = np.where(active, d["net_profit_units"], np.nan)
     d["line_clv_points"] = np.where(
         (side == "Over") & pd.to_numeric(d["last_observed_total"], errors="coerce").notna(),
@@ -174,6 +207,34 @@ def _cluster_bootstrap_roi(frame: pd.DataFrame, n_resamples: int = BOOTSTRAP_RES
             "interpretation": "ROI lower bound above zero is evidence of positive returns in this evaluated sample; it is not a guarantee of future profit."}
 
 
+def _cluster_bootstrap_roi_difference(frame: pd.DataFrame, n_resamples: int = BOOTSTRAP_RESAMPLES,
+                                      seed: int = BOOTSTRAP_SEED) -> dict[str, Any]:
+    active = frame.loc[frame["risked_units"] > 0].copy()
+    if active.empty:
+        return {"game_dates": 0, "ci_95": None, "resamples": n_resamples}
+    clusters = [
+        (float(g["net_profit_units"].sum() - g["market_favorite_net_profit_units"].sum()),
+         float(g["risked_units"].sum()))
+        for _, g in active.groupby("game_date", sort=True)
+    ]
+    if len(clusters) < 2:
+        return {"game_dates": len(clusters), "ci_95": None, "resamples": n_resamples}
+    values = np.asarray(clusters, dtype=float)
+    rng = np.random.default_rng(seed)
+    boot = np.empty(n_resamples, dtype=float)
+    for i in range(n_resamples):
+        selected = values[rng.integers(0, len(values), size=len(values))]
+        risk = selected[:, 1].sum()
+        boot[i] = selected[:, 0].sum() / risk if risk > 0 else np.nan
+    boot = boot[np.isfinite(boot)]
+    if not len(boot):
+        return {"game_dates": len(clusters), "ci_95": None, "resamples": n_resamples}
+    lo, hi = np.quantile(boot, [0.025, 0.975])
+    return {"game_dates": len(clusters), "ci_95": [float(lo), float(hi)],
+            "resamples": n_resamples, "seed": seed,
+            "interpretation": "Positive candidate-minus-market ROI favours the candidate on identical bets and stakes."}
+
+
 def build_summary(frame: pd.DataFrame) -> dict[str, Any]:
     active = frame.loc[frame["risked_units"] > 0].copy()
     bets = int(len(active))
@@ -185,6 +246,8 @@ def build_summary(frame: pd.DataFrame) -> dict[str, Any]:
     pushes = int(active["settlement"].eq("Push").sum()) if bets else 0
     resolved = wins + losses
     roi = profit / risked if risked > 0 else None
+    market_profit = float(active["market_favorite_net_profit_units"].sum()) if bets else 0.0
+    market_roi = market_profit / risked if risked > 0 else None
     ordered = active.sort_values(["commence_time_utc", "game_date"])
     cumulative = ordered["net_profit_units"].cumsum()
     drawdown = cumulative - cumulative.cummax()
@@ -207,6 +270,14 @@ def build_summary(frame: pd.DataFrame) -> dict[str, Any]:
         "stake_risked_units": risked,
         "net_profit_units": profit,
         "realized_roi": roi,
+        "matched_entry_market_favorite_benchmark": {
+            "same_candidate_bet_opportunities_and_stakes": True,
+            "market_favorite_net_profit_units": market_profit,
+            "market_favorite_roi": market_roi,
+            "candidate_minus_market_profit_units": profit - market_profit,
+            "candidate_minus_market_roi": (roi - market_roi) if roi is not None and market_roi is not None else None,
+            "date_cluster_bootstrap_candidate_minus_market_roi": _cluster_bootstrap_roi_difference(frame),
+        },
         "maximum_drawdown_units": float(-drawdown.min()) if len(drawdown) else 0.0,
         "date_cluster_bootstrap_roi": bootstrap,
         "line_clv": {
