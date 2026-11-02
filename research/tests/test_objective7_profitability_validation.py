@@ -100,3 +100,48 @@ def test_failed_objective6_gate_cannot_be_used_to_evaluate_active_bets():
     })
     with pytest.raises(ValueError, match="gate failed"):
         _validate_inputs(games, decisions, {"development_gate": {"passed": False}})
+
+
+
+def test_empty_reserved_holdout_is_reported_as_insufficient_not_crashed():
+    games = pd.DataFrame({
+        "game_date": ["2026-01-01"],
+        "commence_time_utc": ["2026-01-01T23:00:00Z"],
+        "home_team": ["home"], "away_team": ["away"],
+        "entry_total": [220.5], "actual_total": [221.0],
+        "last_observed_total": [220.0],
+        "entry_over_odds_decimal": [1.91], "entry_under_odds_decimal": [1.91],
+    })
+    decisions = pd.DataFrame(columns=[
+        "game_date", "commence_time_utc", "home_team", "away_team", "entry_total",
+        "entry_over_odds_decimal", "entry_under_odds_decimal", "decision",
+        "stake_units", "evaluation_split",
+    ])
+    merged = _validate_inputs(
+        games, decisions, {"development_gate": {"passed": False}}
+    )
+    result = build_summary(settle_decisions(merged))
+    assert result["settled_bets"] == 0
+    assert result["realized_roi"] is None
+    assert result["status"] == "insufficient_profitability_sample"
+
+
+def test_objective6_entry_prices_must_match_objective5_source_prices():
+    games = pd.DataFrame({
+        "game_date": ["2026-01-01"],
+        "commence_time_utc": ["2026-01-01T23:00:00Z"],
+        "home_team": ["Home"], "away_team": ["Away"],
+        "entry_total": [220.5], "actual_total": [221.0],
+        "last_observed_total": [220.0],
+        "entry_over_odds_decimal": [1.91], "entry_under_odds_decimal": [1.91],
+    })
+    decisions = pd.DataFrame({
+        "game_date": ["2026-01-01"],
+        "commence_time_utc": ["2026-01-01T23:00:00Z"],
+        "home_team": ["Home"], "away_team": ["Away"],
+        "entry_total": [220.5], "entry_over_odds_decimal": [1.80],
+        "entry_under_odds_decimal": [1.91], "decision": ["No Bet"],
+        "stake_units": [0.0], "evaluation_split": ["reserved_holdout"],
+    })
+    with pytest.raises(ValueError, match="entry prices do not match"):
+        _validate_inputs(games, decisions, {"development_gate": {"passed": False}})
