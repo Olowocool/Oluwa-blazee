@@ -109,7 +109,7 @@ def probability_metrics(frame: pd.DataFrame, probability_col: str) -> dict[str, 
     outcome = (sample["actual_total"].to_numpy(float) > sample["entry_total"].to_numpy(float)).astype(float)
     p = sample[probability_col].to_numpy(float)
     push_col = probability_col.replace("_over_probability", "_push_probability")
-    if push_col in sample.columns:
+    if probability_col in {"residual_model_over_probability", "v5_over_probability"} and push_col in sample.columns:
         push = sample[push_col].to_numpy(float)
         non_push = 1.0 - push
         p = np.divide(p, non_push, out=np.full_like(p, np.nan), where=non_push > 0)
