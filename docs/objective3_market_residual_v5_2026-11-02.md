@@ -90,7 +90,13 @@ The evaluator is:
 
 `research/objective3_v5_market_residual.py`
 
-From the repository root, with the private archive present at its default ignored location:
+With the private archive present at its default ignored location, double-click:
+
+```
+research\\run_objective3_v5_market_residual.bat
+```
+
+The batch launcher checks for the archive, installs the required Python packages only if missing, runs the evaluator and prints the locations of the aggregate summary and data-quality JSON. It does not upload or commit raw prices. The equivalent direct commands from the repository root are:
 
 ```powershell
 py -3 -m pip install numpy pandas scikit-learn
