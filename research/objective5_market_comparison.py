@@ -425,7 +425,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     games, score_diag = build_game_dataset(selected, args.scores_file, [str(p) for p in patches])
     readiness = market_sample_readiness(games, args.min_train_games, args.min_calibration_games)
     if readiness["unique_game_dates"] < 3:
-        scored = pd.DataFrame()
+        # Preserve the matched game rows and a stable schema so downstream
+        # Objective 6/7 runners can fail closed without an empty-CSV crash.
+        scored = games.copy()
+        scored["evaluation_split"] = "insufficient_sample"
+        scored["residual_model_status"] = "insufficient_market_sample"
+        for col in (
+            "residual_model_total", "predicted_market_residual",
+            "residual_model_over_probability", "residual_model_under_probability",
+            "residual_model_push_probability", "v5_over_probability",
+            "v5_under_probability", "v5_push_probability",
+        ):
+            scored[col] = np.nan
         summary = {
             "status": "insufficient_market_sample",
             "holdout_market_games": readiness["reserved_holdout_games"],
