@@ -46,8 +46,10 @@ def _validate_inputs(games: pd.DataFrame, decisions: pd.DataFrame, summary6: dic
     missing_d = required_decisions - set(decisions.columns)
     if missing_g or missing_d:
         raise ValueError(f"Missing fields; games={sorted(missing_g)}, decisions={sorted(missing_d)}")
-    if games.empty or decisions.empty:
-        raise ValueError("Objective 5 games and Objective 6 decisions must both be non-empty.")
+    if games.empty:
+        raise ValueError("Objective 5 must contain matched game records.")
+    # A header-only Objective 6 file is valid when no reserved holdout exists.
+    # It produces an explicit zero-bet/insufficient-sample report below.
     g = games.copy()
     d = decisions.copy()
     g["commence_time_utc"] = _utc(g["commence_time_utc"], "Objective 5 commence_time_utc")
