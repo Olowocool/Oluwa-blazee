@@ -22,6 +22,8 @@ def settled_fixture():
         "actual_total": [221.0, 221.0, 220.0, 219.0],
         "entry_over_odds_decimal": [1.91, 1.91, 1.91, 1.91],
         "entry_under_odds_decimal": [1.91, 1.91, 1.91, 1.91],
+        "over_probability_no_vig": [0.51, 0.51, 0.51, 0.51],
+        "under_probability_no_vig": [0.49, 0.49, 0.49, 0.49],
         "last_observed_total": [220.0, 221.0, 219.5, 220.0],
     })
 
@@ -68,6 +70,7 @@ def test_join_rejects_duplicate_game_keys():
         "entry_total": [220.5], "actual_total": [221.0],
         "last_observed_total": [220.0],
         "entry_over_odds_decimal": [1.91], "entry_under_odds_decimal": [1.91],
+        "over_probability_no_vig": [0.51], "under_probability_no_vig": [0.49],
     })
     decisions = pd.DataFrame({
         "game_date": ["2026-01-01", "2026-01-01"],
