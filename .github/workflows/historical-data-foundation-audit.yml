@@ -1,0 +1,39 @@
+name: Historical data foundation audit
+on:
+  push:
+    branches: ["research/integrated-totals-lab"]
+    paths:
+      - "research/historical_data_foundation_audit.py"
+      - ".github/workflows/historical-data-foundation-audit.yml"
+      - "data/historical_nba_scores.csv"
+      - "data/game.csv"
+      - "data/nba_games.csv"
+      - "outputs/training_dataset.parquet"
+      - "research/data/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  historical-data-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/integrated-totals-lab
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install audit dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas numpy pyarrow
+      - name: Run historical data foundation audit
+        run: python research/historical_data_foundation_audit.py
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-data-foundation-audit
+          path: outputs/research/historical_data_foundation/
+          if-no-files-found: error
+          retention-days: 90
