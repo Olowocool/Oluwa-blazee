@@ -108,6 +108,13 @@ def probability_metrics(frame: pd.DataFrame, probability_col: str) -> dict[str, 
                 "observed_over_rate": None}
     outcome = (sample["actual_total"].to_numpy(float) > sample["entry_total"].to_numpy(float)).astype(float)
     p = sample[probability_col].to_numpy(float)
+    push_col = probability_col.replace("_over_probability", "_push_probability")
+    if push_col in sample.columns:
+        push = sample[push_col].to_numpy(float)
+        non_push = 1.0 - push
+        p = np.divide(p, non_push, out=np.full_like(p, np.nan), where=non_push > 0)
+        keep = np.isfinite(p)
+        p, outcome = p[keep], outcome[keep]
     return {
         "games": int(len(sample)),
         "brier": float(np.mean((p - outcome) ** 2)),
@@ -264,7 +271,10 @@ def walk_forward_market_probabilities(
                 under_col if side == "over" else over_col
             ]
             market_probability_col = "over_probability_no_vig" if side == "over" else "under_probability_no_vig"
-            result[edge_col] = result[probability_col] - result[market_probability_col]
+            conditional_probability = result[probability_col] / (
+            result[over_col] + result[under_col]
+        ).replace(0, np.nan)
+        result[edge_col] = conditional_probability - result[market_probability_col]
     return result
 
 
@@ -287,7 +297,10 @@ def build_summary(frame: pd.DataFrame) -> dict[str, Any]:
     # Entry-market point forecast is a benchmark only; the probability benchmark
     # is the no-vig Over probability from the same entry row.
     return {
-        "status": "completed" if len(eligible) else "insufficient_market_sample",
+        "status": (
+            "completed" if eligible.residual_model_over_probability.notna().any()
+            else "insufficient_calibration_sample"
+        ),
         "holdout_start_date": str(holdout.game_date.min().date()) if len(holdout) else None,
         "holdout_market_games": int(len(holdout)),
         "holdout_residual_model_games": int(len(eligible)),
