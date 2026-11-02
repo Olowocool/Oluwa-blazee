@@ -162,7 +162,7 @@ def score_engines(frame, score_history):
     h["_home_key"] = h.home_team.map(lambda x:normalize_team_name(x).casefold())
     h["_away_key"] = h.away_team.map(lambda x:normalize_team_name(x).casefold())
     cache = {"v3":{},"v4":{}}
-    v2s, v5s, v2max = [],[],[]
+    v2s, v5s, v2max, v5cutoffs = [],[],[],[]
     for r in frame.itertuples(index=False):
         day = pd.Timestamp(r.game_date).normalize()
         prior = v2_subset(h,day,r.home_team,r.away_team)
@@ -172,8 +172,12 @@ def score_engines(frame, score_history):
         p5 = calculate_matchup_points_v5(r.home_team,r.away_team,history_df=h,game_date=day,_prepared_cache=cache)
         v2s.append(float(p2["projected_total"]))
         v5s.append(float(p5["raw_total"]))
+        cutoff = pd.to_datetime(p5.get("history_cutoff"), errors="coerce")
+        if pd.isna(cutoff) or cutoff.normalize() != day:
+            raise AssertionError(f"V5 history cutoff mismatch for game {r.game_id}.")
+        v5cutoffs.append(cutoff.normalize())
         v2max.append(pd.to_datetime(prior.game_date).max() if not prior.empty else pd.NaT)
-    out=frame.copy(); out["v2"]=v2s; out["v5_raw"]=v5s; out["v2_max_history_date"]=v2max
+    out=frame.copy(); out["v2"]=v2s; out["v5_raw"]=v5s; out["v2_max_history_date"]=v2max; out["v5_history_cutoff"]=v5cutoffs
     if out[["v2","v5_raw"]].isna().any().any() or not np.isfinite(out[["v2","v5_raw"]].to_numpy(float)).all():
         raise ValueError("Scoring engine returned missing/non-finite predictions.")
     if out.v2_max_history_date.isna().any() or not (pd.to_datetime(out.v2_max_history_date)<pd.to_datetime(out.game_date)).all():
@@ -181,6 +185,25 @@ def score_engines(frame, score_history):
     if out.rapm_snapshot_date.isna().any() or (pd.to_datetime(out.rapm_snapshot_date)>pd.to_datetime(out.game_date)).any():
         raise AssertionError("RAPM snapshot occurs after the target game date.")
     return out
+
+def validate_v2_subset_parity(scored, full_history, sample_size=12):
+    """Confirm optimized two-team history slices equal full-history V2."""
+    if scored.empty:
+        raise ValueError("Cannot validate V2 history slicing on an empty frame.")
+    positions = np.unique(np.linspace(0, len(scored)-1, min(sample_size,len(scored)), dtype=int))
+    differences = []
+    for pos in positions:
+        row = scored.iloc[int(pos)]
+        full = calculate_matchup_points(
+            row.home_team, row.away_team, history_df=full_history,
+            game_date=pd.Timestamp(row.game_date).normalize()
+        )
+        differences.append(abs(float(full["projected_total"])-float(row.v2)))
+    maximum = float(max(differences)) if differences else 0.0
+    if maximum > 0.01:
+        raise AssertionError(f"V2 history subset changed predictions; max delta={maximum:.5f}")
+    return {"checks":int(len(differences)),"max_abs_difference_points":maximum,"tolerance_points":0.01}
+
 
 def metric_rows(frame, split):
     return [{"split":split,"model":name,**metrics(frame.actual_total,frame[name])}
@@ -208,6 +231,7 @@ def run(injury_path=DEFAULT_INJURY, output_dir=OUT):
     history["game_date"]=pd.to_datetime(history.game_date,errors="coerce").dt.normalize()
     reconciliation=reconcile_scores(ref,history)
     scored=score_engines(ref,history)
+    v2_parity=validate_v2_subset_parity(scored,history)
     val=scored.loc[scored.season.eq(2025)].copy()
     hold=scored.loc[scored.season.eq(2026)].copy()
     if val.empty or hold.empty or val.game_date.max()>=hold.game_date.min():
@@ -242,13 +266,13 @@ def run(injury_path=DEFAULT_INJURY, output_dir=OUT):
         "holdout_date_range":[str(hold.game_date.min().date()),str(hold.game_date.max().date())],
         "score_history_rows":int(len(history)),
         "score_history_latest_date":str(history.game_date.max().date()),
-        "score_reconciliation":reconciliation,
+        "score_reconciliation":reconciliation,"v2_history_subset_parity":v2_parity,
         "blend_fit_on_validation_only":fit,
         "validation_metrics":val_metrics.to_dict(orient="records"),
         "holdout_metrics":hold_metrics.to_dict(orient="records"),
         "season_metrics":season_rows,
         "paired_date_cluster_bootstrap":boot,
-        "point_in_time":{"v2_history_strictly_prior":True,"v5_history_strictly_prior":True,
+        "point_in_time":{"v2_history_strictly_prior":True,"v5_history_cutoff_matches_target_date":True,
                          "rapm_snapshot_not_after_target_date":True,"rapm_fit_history_strictly_before_snapshot":True,
                          "rapm_snapshot_policy":"latest pregame snapshot at or before 10:00 a.m. ET; artifact stores date but not intraday timestamp","same_date_games_batch_isolated":True,
                          "holdout_used_to_fit_blend":False},
