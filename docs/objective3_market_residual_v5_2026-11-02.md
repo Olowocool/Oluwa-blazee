@@ -149,3 +149,28 @@ The 2025-26 scoring-engine holdout was previously examined and is not relabelled
 - No model promotion or deployment is part of Objective 3.
 
 **Current decision:** keep V5 frozen; continue prospective market capture; do not make a profitability claim until the specified sample and holdout gates pass.
+
+
+## 8. Read-only archive readiness gate (added 2026-11-02)
+
+The local archive is gitignored and cannot be read by GitHub Actions. To avoid repeatedly running the small-sample backtest, a separate readiness-only check is now available:
+
+- Script: `research/objective3_readiness.py`
+- Windows launcher: `research/check_objective3_readiness.bat`
+- It applies the same DraftKings, T−120, 240-minute freshness and timestamp validation.
+- It matches eligible entries to final scores and verifies home/away orientation.
+- It reserves the final 20% chronological date block before counting development games.
+- It reports whether at least 150 earlier development games and a non-empty holdout exist.
+- It includes the default dated score-history patches.
+- It emits aggregate counts only; it does not print prices/game-level rows, fit a model, write files, or modify the archive.
+
+The readiness gate has synthetic unit tests for the 150-game development threshold, reserved holdout, missing final scores and home/away mismatch handling. It does not establish that the private local archive is ready; that can only be determined by running the check against the user's current local archive.
+
+Latest research CI run: https://github.com/Olowocool/Oluwa-blazee/actions/runs/41484067568
+
+Verified on that run:
+- Python compilation passed.
+- V5 evaluator tests: 11 passed.
+- Readiness-gate tests: 2 passed.
+- Public odds collector tests: 8 passed.
+- Public odds-board check-only smoke test passed; 54 scheduled games were seen, 75 bookmaker rows parsed across 15 games, and no rows were saved. This is a parser/source-health check, not an archive-size or model-performance result.
