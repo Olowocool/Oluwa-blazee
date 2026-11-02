@@ -63,7 +63,7 @@ def test_walk_forward_calibration_uses_only_prior_game_dates_and_frozen_holdout(
     result = walk_forward_market_probabilities(
         games, min_train_games=150, min_calibration_games=100, alpha=25.0
     )
-    day_16 = result.loc[result.game_date.eq(pd.Timestamp("2026-01-17"))]
+    day_16 = result.loc[result.game_date.eq(pd.Timestamp("2026-01-16"))]
     assert len(day_16) == 10
     assert set(day_16.residual_training_games) == {150}
     assert set(day_16.residual_model_status) == {"walk_forward_scored"}
