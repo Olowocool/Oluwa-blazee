@@ -104,8 +104,12 @@ def settle_decisions(frame: pd.DataFrame) -> pd.DataFrame:
     if d[["stake_units", "actual_total", "entry_over_odds_decimal", "entry_under_odds_decimal",
           "over_probability_no_vig", "under_probability_no_vig"]].isna().any().any():
         raise ValueError("Settlement inputs contain missing numeric values.")
+    settlement_numeric = d[["actual_total", "entry_total", "entry_over_odds_decimal",
+                            "entry_under_odds_decimal"]].to_numpy(float)
+    if not np.isfinite(settlement_numeric).all():
+        raise ValueError("Scores, entry totals and entry odds must be finite.")
     market_probabilities = d[["over_probability_no_vig", "under_probability_no_vig"]].to_numpy(float)
-    if (market_probabilities < 0).any() or (market_probabilities > 1).any() or not np.allclose(
+    if not np.isfinite(market_probabilities).all() or (market_probabilities < 0).any() or (market_probabilities > 1).any() or not np.allclose(
         market_probabilities.sum(axis=1), 1.0, atol=1e-6
     ):
         raise ValueError("Entry no-vig Over/Under probabilities must be in [0,1] and sum to one.")
