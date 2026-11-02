@@ -63,6 +63,7 @@ def main():
        "distinct_scores":int((g.pts_home.astype(str)+"|"+g.pts_away.astype(str)).nunique())})
     duplicate_game_id_summary={
       "duplicate_id_rows":len(dup),"duplicate_id_groups":int(dup.game_id.nunique()),
+      "exact_duplicate_full_rows":int(game.duplicated().sum()),
       "groups_with_multiple_dates":sum(x["distinct_dates"]>1 for x in dup_groups),
       "groups_with_multiple_matchups":sum(x["distinct_home_away"]>1 for x in dup_groups),
       "groups_with_multiple_score_pairs":sum(x["distinct_scores"]>1 for x in dup_groups),
@@ -84,6 +85,21 @@ def main():
     ).reset_index()
     season["possession_coverage_pct"]=(100*season.possession_complete_rows/season.game_rows).round(2)
     season.to_csv(OUT/"game_csv_season_coverage.csv",index=False)
+    regular=game.loc[game["season_type"].astype("string").str.contains("regular",case=False,na=False)].copy()
+    regular_season=regular.groupby(season_col,dropna=False).agg(
+      game_rows=("game_id","size"),unique_game_ids=("game_id","nunique"),
+      possession_complete_rows=("both_team_possessions_available","sum"),
+      plausible_both_possessions=("both_poss_est_valid","sum"),
+      first_date=("game_date","min"),last_date=("game_date","max")
+    ).reset_index()
+    regular_season["possession_coverage_pct"]=(100*regular_season.possession_complete_rows/regular_season.game_rows).round(2)
+    regular_season.to_csv(OUT/"regular_season_possession_coverage.csv",index=False)
+    season_type=game.groupby("season_type",dropna=False).agg(
+      rows=("game_id","size"),unique_game_ids=("game_id","nunique"),
+      possession_complete_rows=("both_team_possessions_available","sum")
+    ).reset_index()
+    season_type["possession_coverage_pct"]=(100*season_type.possession_complete_rows/season_type.rows).round(2)
+    season_type.to_csv(OUT/"game_csv_season_type_coverage.csv",index=False)
     # Critical stat missingness.
     critical=["fga_home","fta_home","oreb_home","tov_home","fga_away","fta_away","oreb_away","tov_away",
       "pts_home","pts_away","fgm_home","fgm_away","fg3m_home","fg3m_away","ast_home","ast_away","reb_home","reb_away"]
@@ -116,6 +132,9 @@ def main():
     nba_map=score_map(nba.rename(columns={"date":"game_date","home_team_name":"home_team","away_team_name":"away_team"}),"game_date","home_team","away_team","home_score","away_score")
     tr_common=tr_map.index.intersection(nba_map.index)
     train_nba_score_mismatch=int(((tr_map.loc[tr_common].values!=nba_map.loc[tr_common].values).any(axis=1)).sum())
+    nba_unmatched=nba.loc[~keyed(nba,"date","home_team_name","away_team_name").isin(set(tr_map.index))].copy()
+    nba_unmatched_by_season=nba_unmatched.groupby("season",dropna=False).size().to_dict() if "season" in nba_unmatched else {}
+    nba_unmatched_by_year=pd.to_datetime(nba_unmatched["date"],errors="coerce").dt.year.value_counts().sort_index().to_dict()
     # Market archive rows can be checked against score history.
     market_map=score_map(market,"game_date","home_team","away_team","actual_home_points","actual_away_points")
     market_common=market_map.index.intersection(score_source.index)
@@ -123,6 +142,9 @@ def main():
     result={
       "score_history_plus_patch":combined_patch,
       "game_csv_duplicate_game_ids":duplicate_game_id_summary,
+      "game_csv_season_type_coverage_csv":"game_csv_season_type_coverage.csv",
+      "regular_season_possession_coverage_csv":"regular_season_possession_coverage.csv",
+      "nba_games_not_in_training_dataset":{"rows":len(nba_unmatched),"by_season":nba_unmatched_by_season,"by_calendar_year":nba_unmatched_by_year},
       "game_csv_possession_coverage":{
         "rows":len(game),"both_team_formula_inputs":int(game.both_team_possessions_available.sum()),
         "both_team_plausible_estimates":int(game.both_poss_est_valid.sum()),
@@ -145,6 +167,7 @@ def main():
       "## Score-history extension",json.dumps(combined_patch,indent=2),"",
       "## Duplicate game IDs in game.csv",json.dumps(duplicate_game_id_summary,indent=2),"",
       "## Possession availability",json.dumps(result["game_csv_possession_coverage"],indent=2),"",
+      "## Season-type coverage","See game_csv_season_type_coverage.csv.","## Regular-season possession coverage","See regular_season_possession_coverage.csv.","## NBA games excluded from training dataset",json.dumps(result["nba_games_not_in_training_dataset"],indent=2),"",
       "## Cross-source matchability",json.dumps(comparisons,indent=2),"",
       "## Score consistency",json.dumps(result["score_consistency"],indent=2),"",
       "## Critical field coverage","See game_csv_critical_field_coverage.csv.",
