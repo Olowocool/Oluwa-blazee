@@ -240,7 +240,8 @@ def run(injury_path=DEFAULT_INJURY, output_dir=OUT):
         "season_metrics":season_rows,
         "paired_date_cluster_bootstrap":boot,
         "point_in_time":{"v2_history_strictly_prior":True,"v5_history_strictly_prior":True,
-                         "rapm_snapshot_not_after_target_date":True,"rapm_fit_history_strictly_before_snapshot":True,\n                         "rapm_snapshot_policy":"latest pregame snapshot at or before 10:00 a.m. ET; artifact stores date but not intraday timestamp","same_date_games_batch_isolated":True,
+                         "rapm_snapshot_not_after_target_date":True,"rapm_fit_history_strictly_before_snapshot":True,
+                         "rapm_snapshot_policy":"latest pregame snapshot at or before 10:00 a.m. ET; artifact stores date but not intraday timestamp","same_date_games_batch_isolated":True,
                          "holdout_used_to_fit_blend":False},
         "limitations":[
             "The 2025-26 holdout was previously examined in separate V4 and V5 research; this is a paired re-evaluation, not a fresh confirmatory holdout.",
