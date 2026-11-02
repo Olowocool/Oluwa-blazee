@@ -123,3 +123,22 @@ def test_summary_never_claims_roi_or_profitability():
     assert summary["status"] == "completed"
     assert summary["interpretation"]["roi_claim"] is False
     assert "no bet selection" in summary["market_residual_probability_ev_diagnostics"]["note"].lower()
+
+
+def test_readiness_requires_150_prior_games_and_100_prior_oos_calibration_errors():
+    enough = market_sample_readiness(synthetic_games())
+    assert enough["ready_for_holdout_probability_test"] is True
+    assert enough["development_games"] == 320
+    assert enough["reserved_holdout_games"] == 80
+    assert enough["development_walk_forward_predictions"] >= 150
+
+    small = market_sample_readiness(synthetic_games(days=25, games_per_day=10))
+    assert small["ready_for_holdout_probability_test"] is False
+    assert small["development_walk_forward_predictions"] < 100
+
+
+def test_readiness_fails_closed_for_one_date():
+    result = market_sample_readiness(synthetic_games(days=1, games_per_day=10))
+    assert result["ready_for_holdout_probability_test"] is False
+    assert result["unique_game_dates"] == 1
+    assert "three distinct" in result["reason"]
