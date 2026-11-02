@@ -35,7 +35,8 @@ The validator requires at least 100 settled bets across at least 30 distinct bet
 Statuses:
 - `insufficient_profitability_sample`: fewer than 100 bets or 30 dates.
 - `positive_roi_not_established`: sample-size gate passed, but the 95% ROI lower bound is not above zero.
-- `positive_roi_evidence_in_holdout`: both sample-size gates passed and the 95% ROI lower bound is above zero.
+- `positive_roi_evidence_market_outperformance_unconfirmed`: positive ROI is supported, but outperformance over the matched entry-market favourite is not established.
+- `positive_roi_and_market_outperformance_evidence`: sample-size gates passed, the 95% ROI lower bound is above zero, and the 95% candidate-minus-market ROI lower bound is also above zero.
 
 This is evidence on the evaluated frozen holdout, not a guarantee of future profit. The holdout is not reused for model tuning.
 
