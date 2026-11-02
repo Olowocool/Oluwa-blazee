@@ -1,0 +1,35 @@
+name: Objective 5 market probability comparison
+
+on:
+  push:
+    branches:
+      - "research/integrated-totals-lab"
+    paths:
+      - "research/objective5_market_comparison.py"
+      - "research/tests/test_objective5_market_comparison.py"
+      - "research/objective3_v5_market_residual.py"
+      - ".github/workflows/objective5-market-comparison.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  objective5-research-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/integrated-totals-lab
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install research dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy pandas scikit-learn pytest
+      - name: Compile Objective 5 evaluator
+        run: python -m py_compile research/objective5_market_comparison.py
+      - name: Run probability, calibration and chronological integrity tests
+        run: python -m pytest -q research/tests/test_objective5_market_comparison.py
