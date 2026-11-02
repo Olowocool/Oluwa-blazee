@@ -39,7 +39,7 @@ For every settled market-entry game:
 4. Define `baseline_edge = V5 total - entry_total`.
 5. Define the residual label as `actual_total - entry_total`.
 
-The V5 history passed into the engine is already restricted to prior dates. Same-day results cannot enter the forecast. Score history is loaded in memory from the base archive plus dated `research/data/score_history_patch_*.csv` files; conflicting duplicate game scores fail closed.
+The V5 history passed into the engine is already restricted to prior dates. Same-day results cannot enter the forecast. Score history is loaded in memory from the base archive plus dated `research/data/score_history_patch_*.csv` files; conflicting duplicate game scores fail closed. This is a retrospective reconstruction from the current historical score archive, not a preserved forecast log or historical data-vintage snapshot. Prospective forecasts should continue to be timestamped and frozen when generated.
 
 ## 4. Residual model fixed before evaluation
 
@@ -142,7 +142,8 @@ The 2025-26 scoring-engine holdout was previously examined and is not relabelled
 ## 10. Safety boundary
 
 - Research branch only: `research/integrated-totals-lab`.
-- No changes to `main`, production Streamlit/FastAPI services, Render deployment, live recommendations, paper-trading ledger or production database are intended.
+- No production files remain changed on `main`; its current tree was compared with the pre-Objective-3 tree and has zero file differences. A temporary research-only file was accidentally created on `main` during an initial connector write and immediately deleted; the branch history contains the corrective add/remove commits. All Objective 3 implementation files are on `research/integrated-totals-lab`.
+- Production Streamlit/FastAPI services, Render deployment, live recommendations, paper-trading ledger and production database were not changed.
 - No paid DunkAPI credits are required for public-board collection or this local evaluator.
 - No raw bookmaker prices are committed to Git.
 - No model promotion or deployment is part of Objective 3.
