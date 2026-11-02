@@ -369,27 +369,35 @@ def v5_predictions_for_evaluation(
         _id_key(row.team_id): str(row.full_name)
         for row in teams.itertuples(index=False)
     }
-    frame = evaluation_rows.merge(
-        orientation, on=["season", "game_id"], how="inner", validate="one_to_one"
+    frame = evaluation_rows.copy().reset_index(drop=True)
+    frame["_evaluation_index"] = np.arange(len(frame))
+    frame["game_id"] = frame["game_id"].astype(str)
+    frame = frame.merge(
+        orientation, on=["season", "game_id"], how="left", validate="one_to_one"
     )
     frame["home_team"] = frame["home_team_id"].map(team_names)
     frame["away_team"] = frame["away_team_id"].map(team_names)
-    if frame[["home_team", "away_team"]].isna().any().any():
-        raise ValueError("Current team ID lookup failed for V5 holdout comparison.")
+    valid = frame[["home_team", "away_team", "actual_home", "actual_away"]].notna().all(axis=1)
+    valid_frame = frame.loc[valid].copy()
+    if valid_frame.empty:
+        raise ValueError("No games have valid home/away orientation for V5 comparison.")
     if not np.allclose(
-        frame["actual_home"].to_numpy(dtype=float)
-        + frame["actual_away"].to_numpy(dtype=float),
-        frame["actual_total_source"].to_numpy(dtype=float),
+        valid_frame["actual_home"].to_numpy(dtype=float)
+        + valid_frame["actual_away"].to_numpy(dtype=float),
+        valid_frame["actual_total_source"].to_numpy(dtype=float),
         atol=0.01,
     ):
         raise ValueError("V5 comparison scores do not reconcile to NBA Stats feature targets.")
-    if len(frame) != len(evaluation_rows):
-        raise ValueError(
-            f"V5 comparison coverage is incomplete: {len(frame)}/{len(evaluation_rows)} games."
-        )
-    prediction = score_v5_matchups(frame, score_history)
-    return prediction, {
-        "games": int(len(frame)),
+    valid_frame["game_date"] = pd.to_datetime(valid_frame["game_date"]).dt.normalize()
+    prediction = score_v5_matchups(valid_frame, score_history)
+    aligned = np.full(len(frame), np.nan, dtype=float)
+    aligned[valid_frame["_evaluation_index"].to_numpy(dtype=int)] = prediction
+    return aligned, {
+        "games": int(valid.sum()),
+        "requested_games": int(len(frame)),
+        "excluded_games": int((~valid).sum()),
+        "coverage_pct": float(valid.mean() * 100.0),
+        "exclusion_reason": "NBA Stats home/away flag did not identify exactly one home and one away team for the game.",
         "home_away_orientation_source": "NBA Stats team_game_logs home flag",
         "team_names_source": "NBA Stats team_seasons current team map",
         "strict_prior_date_cutoff": True,
@@ -476,47 +484,61 @@ def run(output_dir: str | Path) -> dict[str, Any]:
     )
     v5_validation = v5_evaluation[:len(validation)]
     v5_holdout = v5_evaluation[len(validation):]
-    candidates["v5_raw"] = None
-    validation_scores["v5_raw"] = {
-        "metrics": regression_metrics(
-            validation["actual_total_source"].to_numpy(dtype=float), v5_validation
+    validation_mask = np.isfinite(v5_validation)
+    holdout_mask = np.isfinite(v5_holdout)
+    if validation_mask.sum() < 200 or holdout_mask.sum() < 200:
+        raise RuntimeError("Insufficient same-game overlap for a fair V5 comparison.")
+    validation_common = validation.loc[validation_mask].copy()
+    holdout_common = holdout.loc[holdout_mask].copy()
+    v5_validation_common = v5_validation[validation_mask]
+    v5_holdout_common = v5_holdout[holdout_mask]
+    validation_actual_common = validation_common["actual_total_source"].to_numpy(dtype=float)
+    holdout_actual_common = holdout_common["actual_total_source"].to_numpy(dtype=float)
+    # Re-score every challenger on precisely the games for which V5 has a valid
+    # home/away orientation. This prevents an unfair different-sample comparison.
+    validation_common_scores = {
+        "structural_formula": regression_metrics(
+            validation_actual_common, validation_common["formula_total"]
         ),
-        "method": "existing V5 raw engine, evaluated on the identical games and strict prior-date score history",
+        **{
+            name: regression_metrics(
+                validation_actual_common, model.predict(validation_common[FEATURES])
+            )
+            for name, model in candidates.items()
+        },
+        "v5_raw": regression_metrics(validation_actual_common, v5_validation_common),
     }
+    for name, metrics in validation_common_scores.items():
+        validation_scores[name]["same_game_comparison_metrics"] = metrics
+    candidates["v5_raw"] = None
     selected_name = min(
-        validation_scores,
-        key=lambda name: validation_scores[name]["metrics"]["mae"]
+        validation_common_scores,
+        key=lambda name: validation_common_scores[name]["mae"]
     )
     selected_model = candidates.get(selected_name)
     if selected_name == "structural_formula":
-        validation_prediction = validation["formula_total"].to_numpy(dtype=float)
+        validation_prediction = validation_common["formula_total"].to_numpy(dtype=float)
     elif selected_name == "v5_raw":
-        validation_prediction = v5_validation
+        validation_prediction = v5_validation_common
     else:
-        validation_prediction = selected_model.predict(validation[FEATURES])
-    calibration_residuals = (
-        validation["actual_total_source"].to_numpy(dtype=float)
-        - validation_prediction
-    )
+        validation_prediction = selected_model.predict(validation_common[FEATURES])
+    calibration_residuals = validation_actual_common - validation_prediction
     if len(calibration_residuals) < 200:
         raise RuntimeError("Too few independent validation residuals for probability calibration.")
 
-    holdout_actual = holdout["actual_total_source"].to_numpy(dtype=float)
+    holdout_actual = holdout_common["actual_total_source"].to_numpy(dtype=float)
     holdout_predictions = {
-        "structural_formula": holdout["formula_total"].to_numpy(dtype=float),
-        "v5_raw": v5_holdout,
+        "structural_formula": holdout_common["formula_total"].to_numpy(dtype=float),
+        "v5_raw": v5_holdout_common,
         **{
-            name: model.predict(holdout[FEATURES])
+            name: model.predict(holdout_common[FEATURES])
             for name, model in candidates.items()
             if model is not None
         },
     }
     holdout_metrics = {
-        "structural_formula": regression_metrics(holdout_actual, holdout["formula_total"]),
-        **{
-            name: regression_metrics(holdout_actual, prediction)
-            for name, prediction in holdout_predictions.items()
-        },
+        name: regression_metrics(holdout_actual, prediction)
+        for name, prediction in holdout_predictions.items()
     }
     holdout_metrics["selected_model"] = selected_name
     holdout_metrics["selected_model_metrics"] = holdout_metrics[selected_name]
@@ -580,6 +602,13 @@ def run(output_dir: str | Path) -> dict[str, Any]:
         },
         "selected_model": selected_name,
         "v5_same_game_coverage": v5_coverage,
+        "same_game_comparison": {
+            "validation_games": int(validation_mask.sum()),
+            "holdout_games": int(holdout_mask.sum()),
+            "validation_excluded": int((~validation_mask).sum()),
+            "holdout_excluded": int((~holdout_mask).sum()),
+            "all_models_scored_on_identical_rows": True,
+        },
         "market_archive_diagnostic": archive,
         "guardrails": {
             "all_feature_history_dates_strictly_prior": True,
