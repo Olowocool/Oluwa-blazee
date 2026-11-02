@@ -4,6 +4,7 @@ on:
     branches: ["research/integrated-totals-lab"]
     paths:
       - "research/historical_data_foundation_audit.py"
+      - "research/historical_data_foundation_deep_checks.py"
       - ".github/workflows/historical-data-foundation-audit.yml"
       - "data/historical_nba_scores.csv"
       - "data/game.csv"
@@ -30,6 +31,8 @@ jobs:
           python -m pip install pandas numpy pyarrow
       - name: Run historical data foundation audit
         run: python research/historical_data_foundation_audit.py
+      - name: Run reconciliation and season-level coverage checks
+        run: python research/historical_data_foundation_deep_checks.py
       - name: Upload audit report
         uses: actions/upload-artifact@v4
         with:
