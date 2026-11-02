@@ -134,7 +134,15 @@ def _date_cluster_bootstrap_brier(
     if d.empty:
         return {"games": 0, "game_dates": 0, "difference_candidate_minus_market": None, "ci_95": None}
     d["outcome"] = (d["actual_total"] > d["entry_total"]).astype(float)
-    d["loss_diff"] = (d[candidate_col] - d.outcome) ** 2 - (d[market_col] - d.outcome) ** 2
+    candidate_probability = d[candidate_col].to_numpy(float)
+    push_col = candidate_col.replace("_over_probability", "_push_probability")
+    if push_col in d.columns:
+        candidate_probability = candidate_probability / np.maximum(
+            1.0 - d[push_col].to_numpy(float), 1e-12
+        )
+    d["loss_diff"] = (candidate_probability - d.outcome.to_numpy(float)) ** 2 - (
+        d[market_col].to_numpy(float) - d.outcome.to_numpy(float)
+    ) ** 2
     clusters = [g.loss_diff.to_numpy(float) for _, g in d.groupby("game_date", sort=True)]
     observed = float(d.loss_diff.mean())
     rng = np.random.default_rng(seed)
