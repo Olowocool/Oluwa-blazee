@@ -252,10 +252,15 @@ def build_summary(frame: pd.DataFrame) -> dict[str, Any]:
     cumulative = ordered["net_profit_units"].cumsum()
     drawdown = cumulative - cumulative.cummax()
     bootstrap = _cluster_bootstrap_roi(frame)
+    market_difference = _cluster_bootstrap_roi_difference(frame)
+    positive_roi = bool(bootstrap["ci_95"] and bootstrap["ci_95"][0] > 0)
+    beats_market = bool(market_difference["ci_95"] and market_difference["ci_95"][0] > 0)
     if bets < MIN_SETTLED_BETS or dates < MIN_SETTLED_DATES:
         status = "insufficient_profitability_sample"
-    elif bootstrap["ci_95"] is not None and bootstrap["ci_95"][0] > 0:
-        status = "positive_roi_evidence_in_holdout"
+    elif positive_roi and beats_market:
+        status = "positive_roi_and_market_outperformance_evidence"
+    elif positive_roi:
+        status = "positive_roi_evidence_market_outperformance_unconfirmed"
     else:
         status = "positive_roi_not_established"
     clv = pd.to_numeric(active["line_clv_points"], errors="coerce").dropna()
@@ -276,7 +281,7 @@ def build_summary(frame: pd.DataFrame) -> dict[str, Any]:
             "market_favorite_roi": market_roi,
             "candidate_minus_market_profit_units": profit - market_profit,
             "candidate_minus_market_roi": (roi - market_roi) if roi is not None and market_roi is not None else None,
-            "date_cluster_bootstrap_candidate_minus_market_roi": _cluster_bootstrap_roi_difference(frame),
+            "date_cluster_bootstrap_candidate_minus_market_roi": market_difference,
         },
         "maximum_drawdown_units": float(-drawdown.min()) if len(drawdown) else 0.0,
         "date_cluster_bootstrap_roi": bootstrap,
@@ -289,7 +294,8 @@ def build_summary(frame: pd.DataFrame) -> dict[str, Any]:
             "minimum_distinct_bet_dates": MIN_SETTLED_DATES,
             "bets_gate_passed": bets >= MIN_SETTLED_BETS,
             "dates_gate_passed": dates >= MIN_SETTLED_DATES,
-            "positive_roi_ci_gate_passed": bool(bootstrap["ci_95"] and bootstrap["ci_95"][0] > 0),
+            "positive_roi_ci_gate_passed": positive_roi,
+            "market_outperformance_ci_gate_passed": beats_market,
         },
         "interpretation": {
             "roi_is_realized_on_frozen_holdout_decisions": True,
