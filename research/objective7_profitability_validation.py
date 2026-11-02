@@ -41,6 +41,7 @@ def _validate_inputs(games: pd.DataFrame, decisions: pd.DataFrame, summary6: dic
     required_decisions = {
         "game_date", "commence_time_utc", "home_team", "away_team", "entry_total",
         "decision", "stake_units", "evaluation_split",
+        "entry_over_odds_decimal", "entry_under_odds_decimal",
     }
     missing_g = required_games - set(games.columns)
     missing_d = required_decisions - set(decisions.columns)
@@ -72,6 +73,16 @@ def _validate_inputs(games: pd.DataFrame, decisions: pd.DataFrame, summary6: dic
     if not merged["_merge"].eq("both").all():
         raise ValueError(f"{int((merged['_merge'] != 'both').sum())} candidate decisions do not match Objective 5 games.")
     merged = merged.drop(columns="_merge")
+    for side in ("over", "under"):
+        decision_price = pd.to_numeric(merged[f"entry_{side}_odds_decimal_decision"], errors="coerce")
+        game_price = pd.to_numeric(merged[f"entry_{side}_odds_decimal_game"], errors="coerce")
+        if not np.allclose(decision_price.to_numpy(float), game_price.to_numpy(float), rtol=0, atol=1e-9):
+            raise ValueError(f"Objective 6 {side} entry prices do not match Objective 5 source rows.")
+        merged[f"entry_{side}_odds_decimal"] = game_price
+    merged = merged.drop(columns=[
+        "entry_over_odds_decimal_decision", "entry_under_odds_decimal_decision",
+        "entry_over_odds_decimal_game", "entry_under_odds_decimal_game",
+    ])
     if not merged["actual_total"].notna().all():
         raise ValueError("Objective 7 requires final scores for every holdout decision.")
     if summary6.get("development_gate", {}).get("passed") is not True:
