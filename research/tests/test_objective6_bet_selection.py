@@ -55,3 +55,13 @@ def test_daily_exposure_and_per_game_caps():
     decisions=select_holdout_bets(frame,gate,160,bankroll_units=100)
     assert (decisions.groupby("game_date").stake_units.sum()<=2.0+1e-9).all()
     assert (decisions.groupby("game_date").stake_units.max()<=0.5+1e-9).all()
+
+
+
+def test_empty_holdout_returns_stable_columns():
+    frame = fixture().iloc[0:0].copy()
+    frame["evaluation_split"] = "development"
+    gate = development_gate(frame, {"status": "insufficient_market_sample", "readiness": {}})
+    decisions = select_holdout_bets(frame, gate, 0)
+    assert decisions.empty
+    assert {"decision", "stake_units", "entry_over_odds_decimal", "entry_under_odds_decimal"}.issubset(decisions.columns)
