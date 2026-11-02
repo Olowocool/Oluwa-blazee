@@ -88,7 +88,7 @@ with tab_live:
         )
 
     st.divider()
-    st.subheader("Frozen V5 projections and Over/Under signals")
+    st.subheader("Prediction stack: V5 baseline, market probabilities and evidence-gated decision")
     score_upload_live = st.file_uploader("Upload historical NBA scores CSV to calculate V5 projections", type=["csv"], key="score_live")
     if score_upload_live is not None and not captured.empty:
         try:
@@ -122,6 +122,23 @@ with tab_live:
                     rest_mode="off", v5_cache=cache,
                 )
                 market_median = float(np.median([q["total_line"] for q in quotes]))
+                # Fair market probabilities are calculated only from paired Over/Under
+                # prices at the same most-common total line. They are market estimates,
+                # not probabilities generated or calibrated by our model.
+                line_counts = pd.Series([q["total_line"] for q in quotes]).value_counts()
+                consensus_line = float(sorted(
+                    line_counts[line_counts == line_counts.max()].index.tolist()
+                )[0])
+                same_line_quotes = [
+                    q for q in quotes if np.isclose(float(q["total_line"]), consensus_line)
+                ]
+                fair_over = []
+                for q in same_line_quotes:
+                    inv_over = 1.0 / float(q["over_odds_decimal"])
+                    inv_under = 1.0 / float(q["under_odds_decimal"])
+                    fair_over.append(inv_over / (inv_over + inv_under))
+                market_fair_over = float(np.median(fair_over)) if fair_over else np.nan
+                market_fair_under = 1.0 - market_fair_over if np.isfinite(market_fair_over) else np.nan
                 difference = float(prediction["raw_total"] - market_median)
                 if difference >= 5.0:
                     signal = "Strong Over"
@@ -141,7 +158,14 @@ with tab_live:
                     "Projected home": round(float(v5["projected_home_points"]), 1),
                     "V5 projected total": round(float(prediction["raw_total"]), 1),
                     "Market median": round(market_median, 1),
+                    "Consensus price line": consensus_line,
+                    "Market fair Over %": round(100.0 * market_fair_over, 1) if np.isfinite(market_fair_over) else None,
+                    "Market fair Under %": round(100.0 * market_fair_under, 1) if np.isfinite(market_fair_under) else None,
+                    "Books at price line": len(same_line_quotes),
                     "V5 − market": round(difference, 1),
+                    "V5 model probability": "Not calibrated",
+                    "Residual-adjusted total": "Unavailable — Objective 5 gate",
+                    "Bet decision": "No Bet — evidence gate",
                     "Model signal": signal,
                     "Books": len(quotes),
                 })
@@ -156,7 +180,13 @@ with tab_live:
                     mime="text/csv",
                     use_container_width=True,
                 )
-            st.info("These are real matchup projections and directional model signals—not calibrated probabilities or validated bet recommendations. The market-residual probability layer remains gated until enough timestamped historical entry data passes Objective 5.")
+            st.info(
+                "Prediction-layer status: V5 is the validated point-prediction baseline. "
+                "Market fair Over/Under percentages are derived from paired bookmaker prices at the consensus line; "
+                "they are not our model probabilities. The residual-adjusted total, calibrated model probabilities, "
+                "expected value and staking decision remain disabled because Objective 5 has not passed its "
+                "timestamped historical-entry-data gate. The safe decision is No Bet until those gates pass."
+            )
         except Exception as exc:
             st.error(f"V5 projection could not be calculated: {type(exc).__name__}: {exc}")
     elif score_upload_live is None:
