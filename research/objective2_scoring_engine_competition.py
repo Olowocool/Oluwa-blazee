@@ -78,6 +78,12 @@ def date_cluster_bootstrap(frame, candidate, baseline="v5_raw", reps=BOOTSTRAP_R
             "bootstrap_95pct_interval":[float(low),float(high)],
             "bootstrap_replicates":int(reps),"game_dates":int(len(g)),"games":int(len(d))}
 
+def id_key(value):
+    try:
+        return str(int(float(value)))
+    except (TypeError, ValueError, OverflowError):
+        return str(value).strip()
+
 def read_reference(path):
     d = pd.read_csv(path)
     req = {"season","game_id","game_date","home_team_id","away_team_id","v4_phase1_total",
@@ -85,7 +91,7 @@ def read_reference(path):
     missing = sorted(req-set(d.columns))
     if missing: raise ValueError(f"Phase 2 artifact missing columns: {missing}")
     d["season"] = pd.to_numeric(d.season,errors="raise").astype(int)
-    d["game_id"] = d.game_id.astype(str)
+    d["game_id"] = d.game_id.map(id_key)
     for c in ("game_date","rapm_snapshot_date"):
         d[c] = pd.to_datetime(d[c],errors="coerce").dt.normalize()
     for c in ("v4_phase1_total","actual_total","injury_adjusted_total","injury_model_train_games"):
@@ -112,7 +118,7 @@ def load_game_context():
         "hive_partitioning=true, union_by_name=true) WHERE is_nba=TRUE").fetchdf()
     con.close()
     games["season"] = pd.to_numeric(games.season,errors="raise").astype(int)
-    games["game_id"] = games.game_id.astype(str)
+    games["game_id"] = games.game_id.map(id_key)
     games["neutral_site"] = games.neutral_site.fillna(False).astype(bool)
     if games.duplicated(["season","game_id"]).any(): raise ValueError("Duplicate NBA Stats game IDs.")
     teams["team_id"] = teams.team_id.astype(str)
@@ -189,7 +195,9 @@ def run(injury_path=DEFAULT_INJURY, output_dir=OUT):
         raise ValueError(f"Unexpected Phase 2 artifact counts: {counts}")
     games, team_map=load_game_context()
     ref=ref.merge(games,on=["season","game_id"],how="left",validate="one_to_one")
-    if ref.neutral_site.isna().any(): raise ValueError("Missing neutral-site status.")
+    if ref.neutral_site.isna().any():
+        unmatched = ref.loc[ref.neutral_site.isna(), ["season","game_id"]].head(8).to_dict("records")
+        raise ValueError(f"Missing neutral-site status for {int(ref.neutral_site.isna().sum())} games; sample={unmatched}; context seasons={sorted(games.season.unique().tolist())}")
     neutral_excluded=int(ref.neutral_site.sum())
     ref=ref.loc[~ref.neutral_site].copy()
     ref["home_team"]=ref.home_team_id.map(team_map); ref["away_team"]=ref.away_team_id.map(team_map)
