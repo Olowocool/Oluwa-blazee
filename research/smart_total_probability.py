@@ -43,6 +43,8 @@ from research.advanced_totals_experiment import (
     make_team_lookup,
     team_key,
 )
+from points_engine_v5 import calculate_matchup_points_v5
+from live_market_testbench_engine import load_score_history
 
 TRAIN_END = pd.Timestamp("2024-10-01")
 VALIDATION_END = pd.Timestamp("2025-10-01")
@@ -289,6 +291,111 @@ def fit_quantile_models(
     return models, diagnostics
 
 
+def _id_key(value: Any) -> str:
+    try:
+        return str(int(float(value)))
+    except (TypeError, ValueError, OverflowError):
+        return str(value).strip()
+
+
+def _home_flag(value: Any) -> bool | None:
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    text = str(value).strip().casefold()
+    if text in {"true", "1", "1.0", "home", "h"}:
+        return True
+    if text in {"false", "0", "0.0", "away", "a"}:
+        return False
+    return None
+
+
+def score_v5_matchups(
+    rows: pd.DataFrame, score_history: pd.DataFrame,
+    home_column: str = "home_team", away_column: str = "away_team",
+) -> np.ndarray:
+    cache: dict[str, Any] = {"v3": {}, "v4": {}}
+    predictions = []
+    ordered = rows.sort_values(["game_date"]).copy()
+    for row in ordered.itertuples(index=False):
+        values = row._asdict()
+        prediction = calculate_matchup_points_v5(
+            home_team=str(values[home_column]),
+            away_team=str(values[away_column]),
+            history_df=score_history,
+            game_date=values["game_date"],
+            _prepared_cache=cache,
+        )
+        predictions.append((values["game_date"], str(values[home_column]),
+                            str(values[away_column]), float(prediction["raw_total"])))
+    lookup = {
+        (pd.Timestamp(day), home, away): total
+        for day, home, away, total in predictions
+    }
+    return np.asarray([
+        lookup[(pd.Timestamp(row.game_date), str(getattr(row, home_column)),
+                str(getattr(row, away_column)))]
+        for row in rows.itertuples(index=False)
+    ], dtype=float)
+
+
+def v5_predictions_for_evaluation(
+    evaluation_rows: pd.DataFrame, raw: pd.DataFrame,
+    teams: pd.DataFrame, score_history: pd.DataFrame,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    required = {"season", "game_id", "team_id", "home", "pts"}
+    missing = required.difference(raw.columns)
+    if missing:
+        raise ValueError(f"Raw team-game data missing V5 orientation fields: {sorted(missing)}")
+    orientation_rows = []
+    for (season, game_id), group in raw.groupby(["season", "game_id"], sort=False):
+        flags = group["home"].map(_home_flag)
+        home_rows = group.loc[flags.eq(True)]
+        away_rows = group.loc[flags.eq(False)]
+        if len(home_rows) != 1 or len(away_rows) != 1:
+            continue
+        home_row, away_row = home_rows.iloc[0], away_rows.iloc[0]
+        orientation_rows.append({
+            "season": int(season),
+            "game_id": str(game_id),
+            "home_team_id": _id_key(home_row["team_id"]),
+            "away_team_id": _id_key(away_row["team_id"]),
+            "actual_home": float(home_row["pts"]),
+            "actual_away": float(away_row["pts"]),
+        })
+    orientation = pd.DataFrame(orientation_rows)
+    if orientation.empty or orientation.duplicated(["season", "game_id"]).any():
+        raise ValueError("Could not build unique home/away game orientation for V5 comparison.")
+    team_names = {
+        _id_key(row.team_id): str(row.full_name)
+        for row in teams.itertuples(index=False)
+    }
+    frame = evaluation_rows.merge(
+        orientation, on=["season", "game_id"], how="inner", validate="one_to_one"
+    )
+    frame["home_team"] = frame["home_team_id"].map(team_names)
+    frame["away_team"] = frame["away_team_id"].map(team_names)
+    if frame[["home_team", "away_team"]].isna().any().any():
+        raise ValueError("Current team ID lookup failed for V5 holdout comparison.")
+    if not np.allclose(
+        frame["actual_home"].to_numpy(dtype=float)
+        + frame["actual_away"].to_numpy(dtype=float),
+        frame["actual_total_source"].to_numpy(dtype=float),
+        atol=0.01,
+    ):
+        raise ValueError("V5 comparison scores do not reconcile to NBA Stats feature targets.")
+    if len(frame) != len(evaluation_rows):
+        raise ValueError(
+            f"V5 comparison coverage is incomplete: {len(frame)}/{len(evaluation_rows)} games."
+        )
+    prediction = score_v5_matchups(frame, score_history)
+    return prediction, {
+        "games": int(len(frame)),
+        "home_away_orientation_source": "NBA Stats team_game_logs home flag",
+        "team_names_source": "NBA Stats team_seasons current team map",
+        "strict_prior_date_cutoff": True,
+    }
+
+
 def market_archive_diagnostic(
     features: pd.DataFrame, teams: pd.DataFrame, model: Any,
     model_name: str, calibration_residuals: np.ndarray,
@@ -322,11 +429,13 @@ def market_archive_diagnostic(
     joined = market.merge(source, on="pair_key", how="inner", validate="one_to_one")
     if joined.empty:
         return {"status": "unavailable", "reason": "No market archive games matched features."}
-    prediction = (
-        joined["formula_total"].to_numpy(dtype=float)
-        if model_name == "structural_formula"
-        else model.predict(joined[FEATURES])
-    )
+    if model_name == "structural_formula":
+        prediction = joined["formula_total"].to_numpy(dtype=float)
+    elif model_name == "v5_raw":
+        score_history = load_score_history()
+        prediction = score_v5_matchups(joined, score_history)
+    else:
+        prediction = model.predict(joined[FEATURES])
     line = joined["total_close"].to_numpy(dtype=float)
     actual = joined["actual_total"].to_numpy(dtype=float)
     probability = empirical_over_probability(prediction, line, calibration_residuals)
@@ -360,16 +469,31 @@ def run(output_dir: str | Path) -> dict[str, Any]:
         raise RuntimeError("Point-in-time feature history check failed.")
     train, validation, holdout = chronological_splits(features)
     candidates, validation_scores = choose_models(train, validation)
+    score_history = load_score_history()
+    evaluation_rows = pd.concat([validation, holdout], ignore_index=True)
+    v5_evaluation, v5_coverage = v5_predictions_for_evaluation(
+        evaluation_rows, raw, teams, score_history
+    )
+    v5_validation = v5_evaluation[:len(validation)]
+    v5_holdout = v5_evaluation[len(validation):]
+    candidates["v5_raw"] = None
+    validation_scores["v5_raw"] = {
+        "metrics": regression_metrics(
+            validation["actual_total_source"].to_numpy(dtype=float), v5_validation
+        ),
+        "method": "existing V5 raw engine, evaluated on the identical games and strict prior-date score history",
+    }
     selected_name = min(
         validation_scores,
         key=lambda name: validation_scores[name]["metrics"]["mae"]
     )
     selected_model = candidates.get(selected_name)
-    validation_prediction = (
-        validation["formula_total"].to_numpy(dtype=float)
-        if selected_name == "structural_formula"
-        else selected_model.predict(validation[FEATURES])
-    )
+    if selected_name == "structural_formula":
+        validation_prediction = validation["formula_total"].to_numpy(dtype=float)
+    elif selected_name == "v5_raw":
+        validation_prediction = v5_validation
+    else:
+        validation_prediction = selected_model.predict(validation[FEATURES])
     calibration_residuals = (
         validation["actual_total_source"].to_numpy(dtype=float)
         - validation_prediction
@@ -380,9 +504,11 @@ def run(output_dir: str | Path) -> dict[str, Any]:
     holdout_actual = holdout["actual_total_source"].to_numpy(dtype=float)
     holdout_predictions = {
         "structural_formula": holdout["formula_total"].to_numpy(dtype=float),
+        "v5_raw": v5_holdout,
         **{
             name: model.predict(holdout[FEATURES])
             for name, model in candidates.items()
+            if model is not None
         },
     }
     holdout_metrics = {
@@ -453,6 +579,7 @@ def run(output_dir: str | Path) -> dict[str, Any]:
             "prediction_interval": interval_diagnostics,
         },
         "selected_model": selected_name,
+        "v5_same_game_coverage": v5_coverage,
         "market_archive_diagnostic": archive,
         "guardrails": {
             "all_feature_history_dates_strictly_prior": True,
@@ -517,7 +644,7 @@ def render_report(result: dict[str, Any]) -> str:
         "|---|---:|---:|---:|---:|---:|",
     ]
     metrics = result["holdout"]["metrics"]
-    for name in ("structural_formula", "ridge", "extra_trees", "hist_gradient_boosting"):
+    for name in ("structural_formula", "v5_raw", "ridge", "extra_trees", "hist_gradient_boosting"):
         row = metrics[name]
         lines.append(
             f"| {name} | {row['games']} | {row['mae']:.3f} | {row['rmse']:.3f} | "
