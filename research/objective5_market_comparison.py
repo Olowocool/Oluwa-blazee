@@ -196,6 +196,8 @@ def walk_forward_market_probabilities(
         row = today.copy()
         row["residual_training_games"] = len(train)
         row["residual_model_status"] = "warmup"
+        d.loc[today.index, "residual_training_games"] = len(train)
+        d.loc[today.index, "residual_model_status"] = "warmup"
         if len(train) >= min_train_games:
             model = make_pipeline(StandardScaler(), Ridge(alpha=alpha))
             model.fit(train[FEATURES], train.market_residual_target)
@@ -204,6 +206,9 @@ def walk_forward_market_probabilities(
             row["predicted_market_residual"] = pred_residual
             row["residual_model_total"] = pred_total
             row["residual_model_status"] = "walk_forward_scored"
+            d.loc[today.index, "predicted_market_residual"] = pred_residual
+            d.loc[today.index, "residual_model_total"] = pred_total
+            d.loc[today.index, "residual_model_status"] = "walk_forward_scored"
             if len(residual_calibration) >= min_calibration_games:
                 for idx, prediction in zip(row.index, pred_total):
                     p_over, p_under, p_push = empirical_total_probabilities(
