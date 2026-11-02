@@ -286,7 +286,7 @@ def fit_quantile_models(
 
 def market_archive_diagnostic(
     features: pd.DataFrame, teams: pd.DataFrame, model: Any,
-    calibration_residuals: np.ndarray,
+    model_name: str, calibration_residuals: np.ndarray,
 ) -> dict[str, Any] | None:
     archive_path = Path(ARCHIVE)
     if not archive_path.exists():
@@ -299,6 +299,8 @@ def market_archive_diagnostic(
         return {"status": "unavailable", "reason": "Market archive schema is incomplete."}
     lookup = make_team_lookup(teams)
     market["game_date"] = pd.to_datetime(market["game_date"], errors="coerce").dt.normalize()
+    for column in ("total_close", "actual_total"):
+        market[column] = pd.to_numeric(market[column], errors="coerce")
     market["home_id"] = market["home_team"].map(lambda value: lookup.get(team_key(value)))
     market["away_id"] = market["away_team"].map(lambda value: lookup.get(team_key(value)))
     market = market.dropna(subset=["game_date", "home_id", "away_id", "total_close", "actual_total"]).copy()
@@ -315,9 +317,13 @@ def market_archive_diagnostic(
     joined = market.merge(source, on="pair_key", how="inner", validate="one_to_one")
     if joined.empty:
         return {"status": "unavailable", "reason": "No market archive games matched features."}
-    prediction = model.predict(joined[FEATURES])
-    line = pd.to_numeric(joined["total_close"], errors="coerce").to_numpy(dtype=float)
-    actual = pd.to_numeric(joined["actual_total"], errors="coerce").to_numpy(dtype=float)
+    prediction = (
+        joined["formula_total"].to_numpy(dtype=float)
+        if model_name == "structural_formula"
+        else model.predict(joined[FEATURES])
+    )
+    line = joined["total_close"].to_numpy(dtype=float)
+    actual = joined["actual_total"].to_numpy(dtype=float)
     probability = empirical_over_probability(prediction, line, calibration_residuals)
     outcome = (actual > line).astype(float)
     return {
@@ -350,20 +356,29 @@ def run(output_dir: str | Path) -> dict[str, Any]:
     train, validation, holdout = chronological_splits(features)
     candidates, validation_scores = choose_models(train, validation)
     selected_name = min(
-        candidates,
+        validation_scores,
         key=lambda name: validation_scores[name]["metrics"]["mae"]
     )
-    selected_model = candidates[selected_name]
+    selected_model = candidates.get(selected_name)
+    validation_prediction = (
+        validation["formula_total"].to_numpy(dtype=float)
+        if selected_name == "structural_formula"
+        else selected_model.predict(validation[FEATURES])
+    )
     calibration_residuals = (
         validation["actual_total_source"].to_numpy(dtype=float)
-        - selected_model.predict(validation[FEATURES])
+        - validation_prediction
     )
     if len(calibration_residuals) < 200:
         raise RuntimeError("Too few independent validation residuals for probability calibration.")
 
     holdout_actual = holdout["actual_total_source"].to_numpy(dtype=float)
     holdout_predictions = {
-        name: model.predict(holdout[FEATURES]) for name, model in candidates.items()
+        "structural_formula": holdout["formula_total"].to_numpy(dtype=float),
+        **{
+            name: model.predict(holdout[FEATURES])
+            for name, model in candidates.items()
+        },
     }
     holdout_metrics = {
         "structural_formula": regression_metrics(holdout_actual, holdout["formula_total"]),
@@ -394,7 +409,7 @@ def run(output_dir: str | Path) -> dict[str, Any]:
     ))
 
     archive = market_archive_diagnostic(
-        features, teams, selected_model, calibration_residuals
+        features, teams, selected_model, selected_name, calibration_residuals
     )
     result = {
         "status": "completed",
