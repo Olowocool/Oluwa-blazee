@@ -631,11 +631,11 @@ def run(output_dir: str | Path) -> dict[str, Any]:
         render_report(result), encoding="utf-8"
     )
     (output / "holdout_predictions.csv").write_text(
-        holdout.assign(
+        holdout_common.assign(
             selected_prediction=holdout_predictions[selected_name],
             calibration_residual=holdout_actual - holdout_predictions[selected_name],
-            q10=quantile_models_holdout["q10"] - correction,
-            q90=quantile_models_holdout["q90"] + correction,
+            q10=quantile_models_holdout["q10"][holdout_mask] - correction,
+            q90=quantile_models_holdout["q90"][holdout_mask] + correction,
         ).to_csv(index=False),
         encoding="utf-8",
     )
