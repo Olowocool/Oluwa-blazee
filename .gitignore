@@ -138,3 +138,6 @@ outputs/research/objective3_v5_market_residual/
 # Local-only Phase 3B capture diagnostics (timestamps/matchups; no prices).
 outputs/research/phase3_capture_audit/
 outputs/research/market_capture/
+
+# Local/private Objective 5 market comparison outputs.
+outputs/research/objective5_market_comparison/
