@@ -110,7 +110,7 @@ def main() -> None:
     raw = pd.read_csv(snapshots_path)
     clean, snapshot_diag = prepare_snapshots(raw)
     selected, entry_diag = select_entry_and_last(clean)
-    scores, score_diag = load_combined_score_history(args.scores, args.score_patch or [])
+    scores, score_diag = load_combined_score_history(args.scores, args.score_patch if args.score_patch else None)
     result = assess_readiness(selected, scores)
     result["archive_rows"] = int(len(raw))
     result["draftkings_rows_after_validation"] = int(len(clean))
