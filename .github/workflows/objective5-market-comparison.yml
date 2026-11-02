@@ -8,6 +8,12 @@ on:
       - "research/objective5_market_comparison.py"
       - "research/tests/test_objective5_market_comparison.py"
       - "research/objective3_v5_market_residual.py"
+      - "points_engine_v5.py"
+      - "points_engine_v4.py"
+      - "points_engine_v3.py"
+      - "totals_betting_backtest.py"
+      - "totals_model.py"
+      - "team_name_utils.py"
       - ".github/workflows/objective5-market-comparison.yml"
   workflow_dispatch:
 
@@ -32,4 +38,6 @@ jobs:
       - name: Compile Objective 5 evaluator
         run: python -m py_compile research/objective5_market_comparison.py
       - name: Run probability, calibration and chronological integrity tests
-        run: python -m pytest -q research/tests/test_objective5_market_comparison.py
+        run: |
+          python -m pytest -q research/tests/test_objective5_market_comparison.py
+          python -m pytest -q research/tests/test_objective3_v5_market_residual.py
