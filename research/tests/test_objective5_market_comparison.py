@@ -15,8 +15,8 @@ def test_empirical_probabilities_sum_to_one_and_half_point_has_no_push():
     over, under, push = empirical_total_probabilities(220.0, 220.5, [-10, -5, 0, 5, 10])
     assert over + under + push == pytest.approx(1.0)
     assert push == 0.0
-    assert over == pytest.approx(4 / 7)
-    assert under == pytest.approx(3 / 7)
+    assert over == pytest.approx(3 / 7)
+    assert under == pytest.approx(4 / 7)
 
 
 def test_integer_line_allocates_push_probability():
@@ -45,6 +45,7 @@ def synthetic_games(days=40, games_per_day=10):
                 "home_spread": spread,
                 "move_from_first_observed": move,
                 "over_probability_no_vig": 0.51 + (idx % 3) * 0.01,
+                "under_probability_no_vig": 0.49 - (idx % 3) * 0.01,
                 "market_overround": 0.04,
                 "entry_over_odds_decimal": 1.91,
                 "entry_under_odds_decimal": 1.91,
