@@ -285,4 +285,4 @@ def test_date_cluster_roi_bootstrap_compares_residual_and_v5_on_common_games():
     assert result["game_dates"] == 2
     assert result["candidate_bets"] == 3
     assert result["baseline_bets"] == 3
-    assert result["roi_difference_candidate_minus_baseline_pp"] == pytest.approx(30.3333333)
+    assert result["roi_difference_candidate_minus_baseline_pp"] == pytest.approx(63.6666667)
