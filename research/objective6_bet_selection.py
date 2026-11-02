@@ -89,8 +89,9 @@ def _candidate_side(row:pd.Series,calibration_n:int,min_ev:float)->dict[str,Any]
     if nonpush<=0: return {"side":"No Bet","reason":"No non-push probability mass."}
     choices=[]
     for side,pwin,odds in (("Over",po/nonpush,oo),("Under",pu/nonpush,uo)):
-        lower=wilson_lower_bound(pwin,calibration_n)
-        conservative_ev=lower*odds-1
+        effective_n=max(1,int(np.floor(calibration_n*nonpush)))
+        lower=wilson_lower_bound(pwin,effective_n)
+        conservative_ev=nonpush*(lower*odds-1)
         b=odds-1
         kelly=max(0.0,(b*lower-(1-lower))/b)
         choices.append({"side":side,"conditional_win_probability":pwin,
