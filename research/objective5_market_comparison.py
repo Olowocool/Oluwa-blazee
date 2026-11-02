@@ -115,12 +115,26 @@ def probability_metrics(frame: pd.DataFrame, probability_col: str) -> dict[str, 
         p = np.divide(p, non_push, out=np.full_like(p, np.nan), where=non_push > 0)
         keep = np.isfinite(p)
         p, outcome = p[keep], outcome[keep]
+    reliability = []
+    edges = np.linspace(0.0, 1.0, 6)
+    for i in range(len(edges) - 1):
+        mask = (p >= edges[i]) & (
+            (p < edges[i + 1]) if i < len(edges) - 2 else (p <= edges[i + 1])
+        )
+        if mask.any():
+            reliability.append({
+                "probability_bin": f"{edges[i]:.1f}-{edges[i + 1]:.1f}",
+                "games": int(mask.sum()),
+                "mean_predicted_over": float(p[mask].mean()),
+                "observed_over_rate": float(outcome[mask].mean()),
+            })
     return {
         "games": int(len(sample)),
         "brier": float(np.mean((p - outcome) ** 2)),
         "log_loss": _log_loss(p, outcome),
         "mean_probability": float(p.mean()),
         "observed_over_rate": float(outcome.mean()),
+        "reliability_bins": reliability,
     }
 
 
