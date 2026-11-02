@@ -510,8 +510,9 @@ def run(output_dir: str | Path) -> dict[str, Any]:
         },
         "v5_raw": regression_metrics(validation_actual_common, v5_validation_common),
     }
+    validation_scores["v5_raw"] = {"metrics": validation_common_scores["v5_raw"]}
     for name, metrics in validation_common_scores.items():
-        validation_scores[name]["same_game_comparison_metrics"] = metrics
+        validation_scores.setdefault(name, {})["same_game_comparison_metrics"] = metrics
     candidates["v5_raw"] = None
     selected_name = min(
         validation_common_scores,
