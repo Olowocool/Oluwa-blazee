@@ -127,7 +127,16 @@ def select_holdout_bets(frame:pd.DataFrame,gate:dict[str,Any],calibration_n:int,
             "stake_fraction_of_bankroll":frac,"stake_units_before_daily_cap":frac*bankroll_units})
         output.append(base)
     result=pd.DataFrame(output)
-    if result.empty: return result
+    if result.empty:
+        # Keep a header-only CSV so Objective 7 can report an empty holdout
+        # as insufficient evidence instead of failing to parse an empty file.
+        return pd.DataFrame(columns=[
+            "game_date","commence_time_utc","home_team","away_team","entry_total",
+            "entry_over_odds_decimal","entry_under_odds_decimal","evaluation_split",
+            "decision","decision_reason","conditional_win_probability",
+            "wilson_lower_probability","conservative_ev_per_unit",
+            "stake_fraction_of_bankroll","stake_units_before_daily_cap","stake_units",
+        ])
     result["stake_units"]=0.0
     for _,indexes in result.groupby("game_date",sort=True).groups.items():
         ranked=result.loc[list(indexes)].sort_values("conservative_ev_per_unit",ascending=False,na_position="last")
