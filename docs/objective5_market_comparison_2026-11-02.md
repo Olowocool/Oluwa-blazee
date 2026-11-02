@@ -8,7 +8,9 @@
 
 ## Current status
 
-**Evaluator implemented; empirical market validation is pending the private timestamped DraftKings archive meeting the frozen sample gates. Objective 5 is not yet complete.**
+**Evaluator implemented and synthetic/chronological safeguards validated; empirical market validation is pending the private timestamped DraftKings archive meeting the frozen sample gates. Objective 5 is not yet complete.**
+
+Latest CI: [Objective 5 validation run 41493146490](https://github.com/Olowocool/Oluwa-blazee/actions/runs/41493146490) — Python compilation passed, Objective 5 tests **8 passed**, and frozen Objective 3 evaluator regression tests **11 passed**. This is synthetic/code validation, not a real-market backtest.
 
 The old 181-game market archive is not admissible for the primary evaluation because it lacks verified T−120 entry timestamps and entry-side prices. The private public-board snapshot archive is gitignored and not accessible to GitHub Actions. No ROI, market advantage, or profitability claim is made.
 
