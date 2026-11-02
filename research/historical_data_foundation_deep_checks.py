@@ -67,6 +67,7 @@ def main():
       "groups_with_multiple_dates":sum(x["distinct_dates"]>1 for x in dup_groups),
       "groups_with_multiple_matchups":sum(x["distinct_home_away"]>1 for x in dup_groups),
       "groups_with_multiple_score_pairs":sum(x["distinct_scores"]>1 for x in dup_groups),
+      "groups_with_varying_columns":{k:int(sum(k in g.columns and g[k].nunique(dropna=False)>1 for _,g in dup.groupby("game_id"))) for k in game.columns if dup.groupby("game_id")[k].nunique(dropna=False).gt(1).any()},
       "sample_groups":dup_groups[:15],
     }
     # Box-score availability by season and possession formula.
@@ -94,6 +95,11 @@ def main():
     ).reset_index()
     regular_season["possession_coverage_pct"]=(100*regular_season.possession_complete_rows/regular_season.game_rows).round(2)
     regular_season.to_csv(OUT/"regular_season_possession_coverage.csv",index=False)
+    regular_season["season_start_year"]=pd.to_numeric(regular_season[season_col].astype(str).str[-4:],errors="coerce")
+    regular_season["era"]=pd.cut(regular_season["season_start_year"],bins=[0,1980,1984,2030],labels=["through_1980","1981_to_1984","1985_onward"])
+    era=regular_season.groupby("era",observed=False).agg(game_rows=("game_rows","sum"),possession_complete_rows=("possession_complete_rows","sum")).reset_index()
+    era["possession_coverage_pct"]=(100*era.possession_complete_rows/era.game_rows).round(2)
+    era.to_csv(OUT/"regular_season_possession_coverage_by_era.csv",index=False)
     season_type=game.groupby("season_type",dropna=False).agg(
       rows=("game_id","size"),unique_game_ids=("game_id","nunique"),
       possession_complete_rows=("both_team_possessions_available","sum")
@@ -135,15 +141,21 @@ def main():
     nba_unmatched=nba.loc[~keyed(nba,"date","home_team_name","away_team_name").isin(set(tr_map.index))].copy()
     nba_unmatched_by_season=nba_unmatched.groupby("season",dropna=False).size().to_dict() if "season" in nba_unmatched else {}
     nba_unmatched_by_year=pd.to_datetime(nba_unmatched["date"],errors="coerce").dt.year.value_counts().sort_index().to_dict()
+    nba_unmatched.to_csv(OUT/"nba_games_excluded_from_training.csv",index=False)
     # Market archive rows can be checked against score history.
     market_map=score_map(market,"game_date","home_team","away_team","actual_home_points","actual_away_points")
     market_common=market_map.index.intersection(score_source.index)
     market_score_mismatch=int(((market_map.loc[market_common].values!=score_source.loc[market_common].values).any(axis=1)).sum())
+    market_unmatched=market.loc[~keyed(market,"game_date","home_team","away_team").isin(set(score_source.index))].copy()
+    market_unmatched.to_csv(OUT/"market_archive_unmatched_score_keys.csv",index=False)
     result={
       "score_history_plus_patch":combined_patch,
       "game_csv_duplicate_game_ids":duplicate_game_id_summary,
       "game_csv_season_type_coverage_csv":"game_csv_season_type_coverage.csv",
       "regular_season_possession_coverage_csv":"regular_season_possession_coverage.csv",
+      "regular_season_possession_coverage_by_era_csv":"regular_season_possession_coverage_by_era.csv",
+      "training_dataset_exclusions_csv":"nba_games_excluded_from_training.csv",
+      "market_unmatched_rows_csv":"market_archive_unmatched_score_keys.csv",
       "nba_games_not_in_training_dataset":{"rows":len(nba_unmatched),"by_season":nba_unmatched_by_season,"by_calendar_year":nba_unmatched_by_year},
       "game_csv_possession_coverage":{
         "rows":len(game),"both_team_formula_inputs":int(game.both_team_possessions_available.sum()),
