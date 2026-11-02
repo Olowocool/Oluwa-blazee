@@ -65,7 +65,7 @@ def connect():
 def load_data(con):
     games = con.execute("""
         SELECT t.season, t.game_id, t.game_date, t.team_id, t.opp_team_id,
-               t.pts, t.poss, t.pace, t.off_rating, t.def_rating,
+               t.home, t.pts, t.poss, t.pace, t.off_rating, t.def_rating,
                g.game_type, g.neutral_site
         FROM team_game_logs t JOIN games g USING (season, game_id)
         WHERE g.game_type IN ('regular_season', 'cup_final')
