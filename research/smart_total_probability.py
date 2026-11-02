@@ -441,7 +441,9 @@ def market_archive_diagnostic(
         prediction = joined["formula_total"].to_numpy(dtype=float)
     elif model_name == "v5_raw":
         score_history = load_score_history()
-        prediction = score_v5_matchups(joined, score_history)
+        prediction = score_v5_matchups(
+            joined, score_history, home_column="home_team", away_column="away_team"
+        )
     else:
         prediction = model.predict(joined[FEATURES])
     line = joined["total_close"].to_numpy(dtype=float)
