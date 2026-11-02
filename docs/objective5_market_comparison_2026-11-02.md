@@ -75,6 +75,7 @@ The holdout report compares:
 - Brier score and log loss for V5-derived probabilities.
 - Brier score and log loss for residual-model probabilities.
 - Mean predicted probability versus observed Over rate.
+- Five-bin reliability tables for holdout Over probabilities.
 - Date-cluster bootstrap differences in Brier score.
 - Point MAE, RMSE and bias for the entry market, V5 and residual-model total forecasts.
 - Expected value per unit at the actual entry Over and Under prices, using model probabilities and accounting for push probability.
@@ -106,6 +107,8 @@ Automated synthetic tests check:
 - Frozen holdout predictions are invariant to changes in holdout outcomes.
 - Conditional probability scoring excludes push outcomes correctly.
 - The report does not claim ROI or profitability.
+
+The evaluator first runs an aggregate readiness gate. It handles fewer than three eligible game dates without crashing, reports the missing sample gates, and does not weaken the frozen thresholds.
 
 The empirical market evaluation can be considered complete only after the private archive provides:
 1. At least 150 earlier eligible development games for residual-model training.
