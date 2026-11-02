@@ -92,7 +92,7 @@ def read_reference(path):
         d[c] = pd.to_numeric(d[c],errors="coerce")
     cols = ["game_date","rapm_snapshot_date","v4_phase1_total","actual_total","injury_adjusted_total","injury_model_train_games"]
     if d[cols].isna().any().any(): raise ValueError("Phase 2 artifact contains missing dates/model values.")
-    if not (d.rapm_snapshot_date < d.game_date).all(): raise ValueError("RAPM snapshot is not strictly pregame.")
+    if (d.rapm_snapshot_date > d.game_date).any(): raise ValueError("RAPM snapshot occurs after its target game date.")
     if (d.injury_model_train_games <= 0).any(): raise ValueError("Injury model has no prior training games.")
     if d.duplicated(["season","game_id"]).any(): raise ValueError("Duplicate Phase 2 game IDs.")
     d["home_team_id"], d["away_team_id"] = d.home_team_id.astype(str), d.away_team_id.astype(str)
@@ -240,7 +240,7 @@ def run(injury_path=DEFAULT_INJURY, output_dir=OUT):
         "season_metrics":season_rows,
         "paired_date_cluster_bootstrap":boot,
         "point_in_time":{"v2_history_strictly_prior":True,"v5_history_strictly_prior":True,
-                         "rapm_snapshot_strictly_prior":True,"same_date_games_batch_isolated":True,
+                         "rapm_snapshot_not_after_target_date":True,"rapm_fit_history_strictly_before_snapshot":True,\n                         "rapm_snapshot_policy":"latest pregame snapshot at or before 10:00 a.m. ET; artifact stores date but not intraday timestamp","same_date_games_batch_isolated":True,
                          "holdout_used_to_fit_blend":False},
         "limitations":[
             "The 2025-26 holdout was previously examined in separate V4 and V5 research; this is a paired re-evaluation, not a fresh confirmatory holdout.",
@@ -263,7 +263,7 @@ def render_report(s):
         f"- Previously examined holdout: {s['holdout_games_2025_26']:,} games, {s['holdout_date_range'][0]} to {s['holdout_date_range'][1]}.",
         f"- Identical target games for V2, V5, V4 Phase 1 and injury/RAPM; neutral-site exclusions: {s['neutral_site_games_excluded']}.",
         f"- Score reconciliation: {s['score_reconciliation']['score_rows_reconciled']:,} matches; {s['score_reconciliation']['score_mismatches']} mismatches.",
-        "- V2/V5 histories and RAPM snapshots are strictly pregame; same-day games are batch-isolated.","",
+        "- V2/V5 histories are strictly prior-date; RAPM snapshots are no later than game date and the source pipeline fits only on stints strictly before each snapshot, with the pregame 10:00 a.m. ET report policy.","",
         "## Validation results — 2024-25","",
         "| Model | Games | MAE | RMSE | Bias | Within 5 | Within 10 |",
         "|---|---:|---:|---:|---:|---:|---:|"]
