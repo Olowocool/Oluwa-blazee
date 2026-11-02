@@ -158,10 +158,34 @@ def run(args:argparse.Namespace)->dict[str,Any]:
     qp=inp/"objective5_market_comparison_data_quality.json"
     missing=[str(p) for p in (gp,sp,qp) if not p.exists()]
     if missing: raise FileNotFoundError("Run Objective 5 first; missing: "+", ".join(missing))
-    frame=pd.read_csv(gp); summary=json.loads(sp.read_text(encoding="utf-8"))
+    summary=json.loads(sp.read_text(encoding="utf-8"))
     quality=json.loads(qp.read_text(encoding="utf-8"))
-    gate=development_gate(frame,quality); n=gate["calibration_errors_available"]
-    decisions=select_holdout_bets(frame,gate,n,args.bankroll_units,args.minimum_ev)
+    if summary.get("status") != "completed" or gp.stat().st_size == 0:
+        # Fail closed before parsing an empty/insufficient Objective 5 output.
+        # A header-only decisions file allows Objective 7 to report zero bets cleanly.
+        gate={
+            "passed":False,
+            "reasons":[
+                f"Objective 5 status is {summary.get('status')!r}; no candidate bets may be generated."
+            ],
+            "calibration_errors_available":int(
+                quality.get("readiness",{}).get("development_walk_forward_predictions",0) or 0
+            ),
+            "development_probability_games":0,
+            "development_probability_dates":0,
+            "development_brier_vs_market":{"games":0,"game_dates":0,"difference":None,"ci_95":None},
+        }
+        decisions=pd.DataFrame(columns=[
+            "game_date","commence_time_utc","home_team","away_team","entry_total",
+            "entry_over_odds_decimal","entry_under_odds_decimal","evaluation_split",
+            "decision","decision_reason","conditional_win_probability",
+            "wilson_lower_probability","conservative_ev_per_unit",
+            "stake_fraction_of_bankroll","stake_units_before_daily_cap","stake_units",
+        ])
+    else:
+        frame=pd.read_csv(gp)
+        gate=development_gate(frame,quality); n=gate["calibration_errors_available"]
+        decisions=select_holdout_bets(frame,gate,n,args.bankroll_units,args.minimum_ev)
     out=Path(args.output_dir); out.mkdir(parents=True,exist_ok=True)
     dp=out/"objective6_candidate_decisions.csv"; rp=out/"objective6_bet_selection_summary.json"
     decisions.to_csv(dp,index=False)
