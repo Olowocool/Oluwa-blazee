@@ -176,9 +176,10 @@ def score_engines(frame, score_history):
     out=frame.copy(); out["v2"]=v2s; out["v5_raw"]=v5s; out["v2_max_history_date"]=v2max
     if out[["v2","v5_raw"]].isna().any().any() or not np.isfinite(out[["v2","v5_raw"]].to_numpy(float)).all():
         raise ValueError("Scoring engine returned missing/non-finite predictions.")
-    for c in ("v2_max_history_date","rapm_snapshot_date"):
-        if out[c].isna().any() or not (pd.to_datetime(out[c])<pd.to_datetime(out.game_date)).all():
-            raise AssertionError(f"Point-in-time cutoff failed: {c}")
+    if out.v2_max_history_date.isna().any() or not (pd.to_datetime(out.v2_max_history_date)<pd.to_datetime(out.game_date)).all():
+        raise AssertionError("V2 history includes a same-day or future game.")
+    if out.rapm_snapshot_date.isna().any() or (pd.to_datetime(out.rapm_snapshot_date)>pd.to_datetime(out.game_date)).any():
+        raise AssertionError("RAPM snapshot occurs after the target game date.")
     return out
 
 def metric_rows(frame, split):
