@@ -115,7 +115,7 @@ with tab_live:
                         "last_update_utc": str(q["published_as_of_utc"]),
                     })
                 commence = pd.to_datetime(first["commence_time_utc"], utc=True)
-                target_date = commence.tz_convert("Africa/Lagos").date().isoformat()
+                target_date = commence.tz_convert("America/New_York").date().isoformat()
                 prediction = calculate_game_components(
                     str(first["home_team"]), str(first["away_team"]), target_date,
                     history, None, team_map, use_pace=False, h2h_mode="off",
