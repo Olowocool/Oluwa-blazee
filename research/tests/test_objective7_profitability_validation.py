@@ -143,6 +143,7 @@ def test_objective6_entry_prices_must_match_objective5_source_prices():
         "entry_total": [220.5], "actual_total": [221.0],
         "last_observed_total": [220.0],
         "entry_over_odds_decimal": [1.91], "entry_under_odds_decimal": [1.91],
+        "over_probability_no_vig": [0.51], "under_probability_no_vig": [0.49],
     })
     decisions = pd.DataFrame({
         "game_date": ["2026-01-01"],
