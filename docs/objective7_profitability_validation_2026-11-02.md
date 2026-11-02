@@ -15,7 +15,7 @@ Independently settle the frozen Objective 6 candidate decisions against the fina
 - Objective 6 `objective6_candidate_decisions.csv`
 - Objective 6 `objective6_bet_selection_summary.json`
 
-The evaluator requires one-to-one game-key joins, final scores, entry totals and the same-row entry prices. It rejects duplicate or ambiguous joins. It also rejects active stakes if the Objective 6 development evidence gate did not pass.
+The evaluator requires one-to-one game-key joins, final scores, entry totals, same-row entry prices and entry no-vig market probabilities. A header-only Objective 6 file is valid when the chronological sample has not yet produced a reserved holdout; the evaluator then writes an explicit zero-bet/insufficient-sample report. It rejects duplicate or ambiguous joins. It also rejects active stakes if the Objective 6 development evidence gate did not pass.
 
 ## Settlement and reporting
 
@@ -24,6 +24,8 @@ The evaluator requires one-to-one game-key joins, final scores, entry totals and
 - Wins use the selected side's entry decimal price; losses lose the full stake.
 - ROI is net profit divided by total stake risked.
 - Reports wins, losses, pushes, no-bets, total risk, net profit, ROI, drawdown and favourable/adverse movement in the later observed total line.
+- Compares the frozen candidate bets against the entry-time no-vig market-favourite side on the exact same bet opportunities and stakes; reports candidate-minus-market ROI and a date-cluster interval.
+- Verifies Objective 6's stored entry prices match the original Objective 5 source rows.
 - Date-cluster bootstrap resamples whole game dates to estimate a 95% ROI interval.
 
 ## Evidence gate
