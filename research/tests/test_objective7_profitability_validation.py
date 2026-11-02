@@ -44,6 +44,10 @@ def test_summary_reports_realized_roi_and_keeps_sample_gate_separate():
     assert result["stake_risked_units"] == pytest.approx(2.5)
     assert result["net_profit_units"] == pytest.approx(-0.09)
     assert result["realized_roi"] == pytest.approx(-0.036)
+    benchmark = result["matched_entry_market_favorite_benchmark"]
+    assert benchmark["market_favorite_net_profit_units"] == pytest.approx(1.82)
+    assert benchmark["market_favorite_roi"] == pytest.approx(0.728)
+    assert benchmark["candidate_minus_market_roi"] == pytest.approx(-0.764)
     assert result["status"] == "insufficient_profitability_sample"
     assert result["interpretation"]["holdout_outcomes_used_to_select_or_change_bets"] is False
 
