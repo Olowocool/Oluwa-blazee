@@ -1,6 +1,7 @@
 import pandas as pd
 
 from research.objective3_readiness import assess_readiness
+from totals_betting_backtest import game_key
 
 
 def test_readiness_requires_150_development_games_and_a_reserved_holdout():
@@ -8,7 +9,7 @@ def test_readiness_requires_150_development_games_and_a_reserved_holdout():
     scores = []
     for day in range(1, 201):
         date = pd.Timestamp("2026-01-01") + pd.Timedelta(days=day - 1)
-        key = f"game-{day}"
+        key = game_key(date, "Washington Wizards", "Charlotte Hornets")
         rows.append({
             "game_date": date,
             "game_key": key,
@@ -31,18 +32,21 @@ def test_readiness_requires_150_development_games_and_a_reserved_holdout():
 
 
 def test_readiness_does_not_count_missing_or_wrong_orientation_scores():
+    good = game_key("2026-01-01", "Washington Wizards", "Charlotte Hornets")
+    wrong = game_key("2026-01-02", "Washington Wizards", "Charlotte Hornets")
+    missing = game_key("2026-01-03", "Washington Wizards", "Charlotte Hornets")
     selected = pd.DataFrame([
-        {"game_date": pd.Timestamp("2026-01-01"), "game_key": "good",
+        {"game_date": pd.Timestamp("2026-01-01"), "game_key": good,
          "home_team": "Washington Wizards", "away_team": "Charlotte Hornets"},
-        {"game_date": pd.Timestamp("2026-01-02"), "game_key": "wrong",
+        {"game_date": pd.Timestamp("2026-01-02"), "game_key": wrong,
          "home_team": "Washington Wizards", "away_team": "Charlotte Hornets"},
-        {"game_date": pd.Timestamp("2026-01-03"), "game_key": "missing",
+        {"game_date": pd.Timestamp("2026-01-03"), "game_key": missing,
          "home_team": "Washington Wizards", "away_team": "Charlotte Hornets"},
     ])
     scores = pd.DataFrame([
-        {"_game_key": "good", "home_team": "Washington Wizards",
+        {"_game_key": good, "home_team": "Washington Wizards",
          "away_team": "Charlotte Hornets", "actual_total": 220.0},
-        {"_game_key": "wrong", "home_team": "Charlotte Hornets",
+        {"_game_key": wrong, "home_team": "Charlotte Hornets",
          "away_team": "Washington Wizards", "actual_total": 221.0},
     ])
     result = assess_readiness(selected, scores)
