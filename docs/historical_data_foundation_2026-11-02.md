@@ -108,7 +108,15 @@ It does not support:
 
 The prospective public-board collector is designed to record both the provider's page publication time and the local observation time. The raw archive is deliberately gitignored and was not accessible in this repository audit. It must remain private and must not be force-added to this public repository. The existing collector's observation timestamp, not a guessed bookmaker publication time, is the conservative availability timestamp.
 
-## 7. Point-in-time and join rules for downstream modelling
+## 7. Research PostgreSQL persistence status
+
+The Render workspace already contains a database named oluwa-blazee-totals-research (instance dpg-dbhurhajnfac73cdui40-a). It is available on the free plan and currently reports an expiry date of 2026-11-29. Its IP allowlist contains only 35.230.127.150/32.
+
+The repository's durable-storage design uses a single nba_totals_records table with JSONB payloads for market_snapshot, totals_pick and prediction_audit records. This makes the existing database a plausible destination for private prospective market observations; it is not proof that those rows have actually been written.
+
+A read-only query through the connected Render interface failed because the database requires SSL/TLS and the connector's source IP is not on the allowlist. No allowlist changes, database writes, schema changes or new paid resources were made. Therefore the database's table contents and stored market-snapshot row count remain **unverified**. Do not assume the local private archive is durably mirrored until a read-back is confirmed. Preserve/export the research database before its reported 2026-11-29 expiry.
+
+## 8. Point-in-time and join rules for downstream modelling
 
 1. Keep final scores as targets only; never use target-game box-score statistics as predictors.
 2. Construct all rolling team features from games strictly earlier than the target date. Games on the same date must not enter one another's histories.
@@ -118,9 +126,9 @@ The prospective public-board collector is designed to record both the provider's
 6. Apply possession/efficiency features only where the required inputs are present. Do not impute historical possessions for seasons where the box-score inputs do not exist.
 7. Keep retrospective historical stat reconstruction distinct from truly timestamped pregame market/injury observations.
 
-## 8. Objective 1 completion and handoff
+## 9. Objective 1 completion and handoff
 
-**Objective 1 is complete as an inventory, reconciliation and coverage audit.** The core score history is consistent on the common game population and extends through 2026-10-30 after the verified patches. Modern team-level possession and efficiency data is available, but coverage differs by source and era. Injury data is useful but incomplete. The historical market archive is not an entry-price archive.
+**Objective 1 is complete for repository-accessible historical sources as an inventory, reconciliation and coverage audit.** The core score history is consistent on the common game population and extends through 2026-10-30 after the verified patches. Modern team-level possession and efficiency data is available, but coverage differs by source and era. Injury data is useful but incomplete. The historical market archive is not an entry-price archive. Verification of the existing Render research database's stored snapshot rows remains outstanding because its network access does not currently permit a read-only query from this connector.
 
 The next modelling work should consume this documented foundation rather than repeat the inventory:
 - score-only baseline: use the reconciled score history;
