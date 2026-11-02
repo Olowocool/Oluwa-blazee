@@ -111,7 +111,20 @@ Default output folder (local/private and ignored by Git):
 
 The evaluator writes paired game-level predictions, an aggregate summary and a data-quality JSON. Do not commit or upload the raw odds archive or game-level raw price rows. Aggregate findings can be documented separately after the run is validated.
 
-## 8. Promotion gate
+## 8. Automated validation completed
+
+GitHub Actions workflow: [Objective 3 V5 market residual validation](https://github.com/Olowocool/Oluwa-blazee/actions/runs/41479900907)
+
+- V5 evaluator, collector and V5 engine compilation: passed.
+- Objective 3 V5 evaluator tests: **11 passed**.
+- Public odds collector tests: **8 passed**.
+- Public odds-board check-only smoke test: passed on 2026-11-02.
+- Smoke-test board: 54 scheduled games seen; 75 bookmaker rows parsed across 15 games; 39 scheduled games had no odds table.
+- Smoke-test mode saved no rows and emitted no market prices.
+
+This is code, rule and source-parser validation. The workflow did not run a market-residual backtest because the actual odds archive is local/private and is not included in GitHub Actions. No market-advantage, MAE or ROI result is claimed from this workflow.
+
+## 9. Promotion gate
 
 Do not claim market advantage or profitability until all of the following are true:
 
@@ -126,7 +139,7 @@ Do not claim market advantage or profitability until all of the following are tr
 
 The 2025-26 scoring-engine holdout was previously examined and is not relabelled as untouched. Continue prospective 2026-27 collection and settlement.
 
-## 9. Safety boundary
+## 10. Safety boundary
 
 - Research branch only: `research/integrated-totals-lab`.
 - No changes to `main`, production Streamlit/FastAPI services, Render deployment, live recommendations, paper-trading ledger or production database are intended.
