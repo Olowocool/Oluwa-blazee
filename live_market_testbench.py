@@ -17,8 +17,8 @@ from research.objective7_profitability_validation import run as run_objective7
 from live_market_testbench_engine import calculate_game_components, load_score_history, load_team_id_map
 
 st.set_page_config(page_title="NBA Totals Research Test Bench", page_icon="🏀", layout="wide")
-st.title("NBA Totals — Integrated Research Test Bench")
-st.caption("Live market observation + frozen V5 baseline + Objectives 5, 6 and 7. Research only.")
+st.title("NBA Totals — Real-Game Prediction & Research Bench")
+st.caption("Upcoming NBA game projections using frozen V5 scoring, live sportsbook totals, and chronological validation. Research only.")
 st.warning(
     "No wagers are placed. No production model, live app, or paper-trading ledger is changed. "
     "A live market quote is not automatically an eligible T−120 entry price, and this bench does not claim profitability."
@@ -63,7 +63,8 @@ if capture:
 tab_live, tab_validation, tab_guide = st.tabs(["Live market test", "Objectives 5–7 validation", "How to use this bench"])
 
 with tab_live:
-    st.subheader("Latest observed market")
+    st.subheader("Upcoming game predictions")
+    st.write("Capture the current public odds board and upload the historical score file to project each listed matchup. The sportsbook total is a comparison baseline, not a substitute for our prediction.")
     captured = pd.DataFrame(st.session_state.captured_market_rows)
     if captured.empty:
         st.info("No observations captured in this session yet. Use “Capture current market snapshot” in the sidebar.")
@@ -87,7 +88,7 @@ with tab_live:
         )
 
     st.divider()
-    st.subheader("V5 live matchup projections")
+    st.subheader("Frozen V5 projections and Over/Under signals")
     score_upload_live = st.file_uploader("Upload historical NBA scores CSV to calculate V5 projections", type=["csv"], key="score_live")
     if score_upload_live is not None and not captured.empty:
         try:
@@ -121,20 +122,45 @@ with tab_live:
                     rest_mode="off", v5_cache=cache,
                 )
                 market_median = float(np.median([q["total_line"] for q in quotes]))
+                difference = float(prediction["raw_total"] - market_median)
+                if difference >= 5.0:
+                    signal = "Strong Over"
+                elif difference >= 2.5:
+                    signal = "Lean Over"
+                elif difference <= -5.0:
+                    signal = "Strong Under"
+                elif difference <= -2.5:
+                    signal = "Lean Under"
+                else:
+                    signal = "No clear edge"
+                v5 = prediction["v5"]
                 projections.append({
-                    "Game": f'{first["away_team"]} @ {first["home_team"]}',
+                    "Game": str(first["away_team"]) + " @ " + str(first["home_team"]),
                     "Tip (Lagos)": commence.tz_convert("Africa/Lagos").strftime("%d %b %H:%M"),
+                    "Projected away": round(float(v5["projected_away_points"]), 1),
+                    "Projected home": round(float(v5["projected_home_points"]), 1),
+                    "V5 projected total": round(float(prediction["raw_total"]), 1),
                     "Market median": round(market_median, 1),
+                    "V5 − market": round(difference, 1),
+                    "Model signal": signal,
                     "Books": len(quotes),
-                    "V5 raw total": round(float(prediction["raw_total"]), 2),
-                    "V5 − market": round(float(prediction["raw_total"] - market_median), 2),
                 })
-            st.dataframe(pd.DataFrame(projections), use_container_width=True, hide_index=True)
-            st.caption("V5 is the frozen raw baseline. Pace, H2H and rest adjustments are deliberately off in this comparison.")
+            result_frame = pd.DataFrame(projections)
+            if not result_frame.empty:
+                result_frame = result_frame.sort_values("V5 − market", ascending=False)
+                st.dataframe(result_frame, use_container_width=True, hide_index=True)
+                st.download_button(
+                    "Download prediction sheet (CSV)",
+                    data=result_frame.to_csv(index=False).encode("utf-8"),
+                    file_name="nba_real_game_predictions.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+            st.info("These are real matchup projections and directional model signals—not calibrated probabilities or validated bet recommendations. The market-residual probability layer remains gated until enough timestamped historical entry data passes Objective 5.")
         except Exception as exc:
             st.error(f"V5 projection could not be calculated: {type(exc).__name__}: {exc}")
     elif score_upload_live is None:
-        st.caption("Upload the score history file to compare frozen V5 projections with the captured live market.")
+        st.caption("Upload the historical score file and capture the current odds board to generate projected team scores, total points, market differences, and directional Over/Under signals for upcoming games.")
 
 with tab_validation:
     st.subheader("Run the complete historical validation")
@@ -230,7 +256,7 @@ with tab_guide:
     st.subheader("Operating instructions")
     st.markdown(
         """
-        1. Open Live market test and capture the public odds board periodically. Capture at least one observation no later than 120 minutes before each game, then capture again later before tip.
+        1. Open Real game predictions and capture the public odds board periodically. Capture at least one observation no later than 120 minutes before each game, then capture again later before tip.
         2. Download the market archive after each session. Keep your own copy because the free web service may restart and clear session data.
         3. Upload your historical NBA score CSV and the combined market archive under Objectives 5–7 validation.
         4. Run the three objectives together. Objective 5 enforces DraftKings, T−120, the 240-minute maximum entry age, 150 prior training games and 100 prior out-of-sample calibration errors.
