@@ -366,6 +366,55 @@ def build_summary(frame: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def market_sample_readiness(
+    games: pd.DataFrame,
+    min_train_games: int = MIN_TRAIN_GAMES,
+    min_calibration_games: int = MIN_CALIBRATION_GAMES,
+) -> dict[str, Any]:
+    dates = sorted(pd.to_datetime(games.game_date, errors="coerce").dt.normalize().dropna().unique())
+    if len(dates) < 3:
+        return {
+            "ready_for_holdout_probability_test": False,
+            "unique_game_dates": int(len(dates)),
+            "development_games": 0,
+            "reserved_holdout_games": 0,
+            "development_walk_forward_predictions": 0,
+            "development_probability_predictions": 0,
+            "reason": "At least three distinct eligible game dates are required.",
+        }
+    holdout_start = pd.Timestamp(dates[max(1, int(np.floor(len(dates) * 0.8)))])
+    development = games.loc[pd.to_datetime(games.game_date).dt.normalize() < holdout_start]
+    holdout = games.loc[pd.to_datetime(games.game_date).dt.normalize() >= holdout_start]
+    train_count = 0
+    calibration_count = 0
+    walk_forward_predictions = 0
+    probability_predictions = 0
+    for day, today in development.groupby(pd.to_datetime(development.game_date).dt.normalize(), sort=True):
+        if train_count >= min_train_games:
+            walk_forward_predictions += len(today)
+            if calibration_count >= min_calibration_games:
+                probability_predictions += len(today)
+            calibration_count += len(today)
+        train_count += len(today)
+    ready = (
+        len(development) >= min_train_games
+        and walk_forward_predictions >= min_calibration_games
+        and len(holdout) > 0
+        and calibration_count >= min_calibration_games
+    )
+    return {
+        "ready_for_holdout_probability_test": bool(ready),
+        "unique_game_dates": int(len(dates)),
+        "development_games": int(len(development)),
+        "reserved_holdout_games": int(len(holdout)),
+        "development_walk_forward_predictions": int(walk_forward_predictions),
+        "development_probability_predictions": int(probability_predictions),
+        "minimum_prior_training_games": int(min_train_games),
+        "minimum_prior_oos_calibration_games": int(min_calibration_games),
+        "reason": None if ready else "Development history has not yet produced the required earlier training and out-of-sample calibration samples.",
+    }
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     raw = pd.read_csv(args.snapshots_file)
     snapshots, snapshot_diag = prepare_snapshots(raw, args.bookmaker)
@@ -374,10 +423,30 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("No games have an eligible fixed-cutoff sportsbook entry.")
     patches = discover_score_patch_files(args.score_patch_dir, args.score_patch_files)
     games, score_diag = build_game_dataset(selected, args.scores_file, [str(p) for p in patches])
-    scored = walk_forward_market_probabilities(
-        games, args.min_train_games, args.min_calibration_games, args.ridge_alpha
-    )
-    summary = build_summary(scored)
+    readiness = market_sample_readiness(games, args.min_train_games, args.min_calibration_games)
+    if readiness["unique_game_dates"] < 3:
+        scored = pd.DataFrame()
+        summary = {
+            "status": "insufficient_market_sample",
+            "holdout_market_games": readiness["reserved_holdout_games"],
+            "holdout_residual_model_games": 0,
+            "probability_comparison": {
+                "entry_market_no_vig": {"games": 0, "brier": None, "log_loss": None},
+                "v5_distribution": {"games": 0, "brier": None, "log_loss": None},
+                "market_residual_distribution": {"games": 0, "brier": None, "log_loss": None},
+            },
+            "market_residual_probability_ev_diagnostics": {
+                "note": "No probability or expected-value result: insufficient distinct game dates."
+            },
+            "readiness": readiness,
+            "interpretation": {"roi_claim": False, "market_edge_claim": False},
+        }
+    else:
+        scored = walk_forward_market_probabilities(
+            games, args.min_train_games, args.min_calibration_games, args.ridge_alpha
+        )
+        summary = build_summary(scored)
+        summary["readiness"] = readiness
     diagnostics = {
         "status": summary["status"],
         "bookmaker": args.bookmaker,
@@ -387,11 +456,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "minimum_prior_oos_calibration_errors": args.min_calibration_games,
         "ridge_alpha": args.ridge_alpha,
         **snapshot_diag, **entry_diag, **score_diag,
-        "eligible_game_dates": int(scored.game_date.nunique()),
-        "development_games": int(scored.evaluation_split.eq("development").sum()),
-        "reserved_holdout_games": int(scored.evaluation_split.eq("reserved_holdout").sum()),
-        "development_residual_model_predictions": int(scored.residual_model_status.eq("walk_forward_scored").sum()),
-        "holdout_residual_model_predictions": int(scored.residual_model_status.eq("frozen_holdout_scored").sum()),
+        "readiness": readiness,
+        "eligible_game_dates": int(games.game_date.nunique()),
+        "development_games": readiness["development_games"],
+        "reserved_holdout_games": readiness["reserved_holdout_games"],
+        "development_residual_model_predictions": int(scored.residual_model_status.eq("walk_forward_scored").sum()) if not scored.empty else 0,
+        "holdout_residual_model_predictions": int(scored.residual_model_status.eq("frozen_holdout_scored").sum()) if not scored.empty else 0,
     }
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
