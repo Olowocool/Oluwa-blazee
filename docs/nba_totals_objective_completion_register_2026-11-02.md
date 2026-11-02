@@ -34,6 +34,8 @@ Primary success criterion: a chronologically validated totals strategy with posi
 - Candidate realized ROI date-cluster 95% lower bound above zero.
 - Candidate-minus-entry-market-favourite ROI date-cluster 95% lower bound above zero, using the same candidate opportunities and stakes.
 
+Because Objective 5 reserves the final 20% of eligible game dates, the 30-date Objective 7 holdout gate implies at least 150 distinct eligible market game dates overall (30 holdout dates plus 120 earlier development dates). The actual archive must contain more than 100 games because the bet selector will abstain on many games. This is a season-scale prospective evidence requirement, not a quick code task.
+
 The sample-size gates are not relaxed to make a report look complete. A smaller sample can be reported descriptively but cannot pass the profitability objective.
 
 ## Latest private archive diagnostic supplied on 2026-11-02
