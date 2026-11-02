@@ -4,3 +4,7 @@ numpy
 requests
 duckdb
 pytest
+scikit-learn
+beautifulsoup4
+lxml
+pyarrow
