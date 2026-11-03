@@ -116,27 +116,27 @@ def main() -> None:
     window_sql = []
     for w in WINDOWS:
         window_sql.append(f"""
-            SUM(min) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_min,
-            SUM(pts) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_pts,
-            SUM(fga) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_fga,
-            SUM(fgm) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_fgm,
-            SUM(fg3a) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_fg3a,
-            SUM(fg3m) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_fg3m,
-            SUM(fta) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_fta,
-            SUM(ftm) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_ftm,
-            SUM(oreb) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_oreb,
-            SUM(reb) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_reb,
-            SUM(ast) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_ast,
-            SUM(tov) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_tov,
-            SUM(stl) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_stl,
-            SUM(blk) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_blk,
-            SUM(poss) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_poss,
-            AVG(usg_pct) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_usg_pct,
-            AVG(ts_pct) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_ts_pct,
-            AVG(efg_pct) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_efg_pct,
-            AVG(off_rating) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_off_rating,
-            AVG(def_rating) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_def_rating,
-            AVG(pace) OVER player_window ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING AS l{w}_pace
+            SUM(min) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_min,
+            SUM(pts) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_pts,
+            SUM(fga) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fga,
+            SUM(fgm) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fgm,
+            SUM(fg3a) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fg3a,
+            SUM(fg3m) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fg3m,
+            SUM(fta) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fta,
+            SUM(ftm) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_ftm,
+            SUM(oreb) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_oreb,
+            SUM(reb) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_reb,
+            SUM(ast) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_ast,
+            SUM(tov) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_tov,
+            SUM(stl) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_stl,
+            SUM(blk) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_blk,
+            SUM(poss) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_poss,
+            AVG(usg_pct) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_usg_pct,
+            AVG(ts_pct) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_ts_pct,
+            AVG(efg_pct) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_efg_pct,
+            AVG(off_rating) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_off_rating,
+            AVG(def_rating) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_def_rating,
+            AVG(pace) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_pace
         """)
     select_windows = ",\n".join(window_sql)
     con.execute(f"""
@@ -145,9 +145,6 @@ def main() -> None:
                ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY history_date) - 1 AS prior_game_days,
                {select_windows}
         FROM player_days
-        WINDOW player_window AS (
-            PARTITION BY player_id ORDER BY history_date
-        )
     """)
 
     # ASOF condition is strict: the selected profile date must be < target date.
@@ -157,18 +154,17 @@ def main() -> None:
                g.opp_team_id, g.home, g.min AS target_game_min,
                h.history_date AS profile_through_date,
                COALESCE(h.prior_game_days, 0) AS prior_game_days,
-               h.*
+               h.l5_min,\n               h.l5_pts,\n               h.l5_fga,\n               h.l5_fgm,\n               h.l5_fg3a,\n               h.l5_fg3m,\n               h.l5_fta,\n               h.l5_ftm,\n               h.l5_oreb,\n               h.l5_reb,\n               h.l5_ast,\n               h.l5_tov,\n               h.l5_stl,\n               h.l5_blk,\n               h.l5_poss,\n               h.l5_usg_pct,\n               h.l5_ts_pct,\n               h.l5_efg_pct,\n               h.l5_off_rating,\n               h.l5_def_rating,\n               h.l5_pace,\n               h.l10_min,\n               h.l10_pts,\n               h.l10_fga,\n               h.l10_fgm,\n               h.l10_fg3a,\n               h.l10_fg3m,\n               h.l10_fta,\n               h.l10_ftm,\n               h.l10_oreb,\n               h.l10_reb,\n               h.l10_ast,\n               h.l10_tov,\n               h.l10_stl,\n               h.l10_blk,\n               h.l10_poss,\n               h.l10_usg_pct,\n               h.l10_ts_pct,\n               h.l10_efg_pct,\n               h.l10_off_rating,\n               h.l10_def_rating,\n               h.l10_pace,\n               h.l20_min,\n               h.l20_pts,\n               h.l20_fga,\n               h.l20_fgm,\n               h.l20_fg3a,\n               h.l20_fg3m,\n               h.l20_fta,\n               h.l20_ftm,\n               h.l20_oreb,\n               h.l20_reb,\n               h.l20_ast,\n               h.l20_tov,\n               h.l20_stl,\n               h.l20_blk,\n               h.l20_poss,\n               h.l20_usg_pct,\n               h.l20_ts_pct,\n               h.l20_efg_pct,\n               h.l20_off_rating,\n               h.l20_def_rating,\n               h.l20_pace
         FROM player_games g
         ASOF LEFT JOIN player_history h
           ON g.player_id = h.player_id
          AND g.game_date > h.history_date
     """)
+
     # Remove duplicate key fields from the history join and add interpretable rates.
     con.execute("""
         CREATE TEMP TABLE final_profiles AS
-        SELECT * EXCLUDE (
-            h_player_id, h_history_date
-        )
+        SELECT *
         FROM (
             SELECT *,
                    CASE WHEN l5_fga > 0 THEN l5_fgm / l5_fga END AS l5_fg_pct,
