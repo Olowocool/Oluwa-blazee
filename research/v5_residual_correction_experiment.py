@@ -178,6 +178,25 @@ def main() -> None:
         feature_frame, on=["season", "game_id"], how="left",
         validate="one_to_one", suffixes=("", "_feature"),
     )
+    # build_paired_predictions may already carry some V4 feature columns.
+    # Prefer the explicit point-in-time feature-frame values, while verifying
+    # any overlapping columns agree before removing merge suffixes.
+    for column in feature_columns:
+        feature_column = f"{column}_feature"
+        if feature_column in data.columns:
+            if column in data.columns:
+                left = pd.to_numeric(data[column], errors="coerce")
+                right = pd.to_numeric(data[feature_column], errors="coerce")
+                both = left.notna() & right.notna()
+                if both.any() and not np.allclose(
+                    left[both].to_numpy(float), right[both].to_numpy(float),
+                    rtol=1e-10, atol=1e-10,
+                ):
+                    raise RuntimeError(f"Conflicting point-in-time feature values: {column}")
+                data[column] = right.combine_first(left)
+                data = data.drop(columns=[feature_column])
+            else:
+                data = data.rename(columns={feature_column: column})
     if data.game_date_feature.notna().any():
         mismatch = pd.to_datetime(data.game_date).dt.normalize().ne(
             pd.to_datetime(data.game_date_feature).dt.normalize()
