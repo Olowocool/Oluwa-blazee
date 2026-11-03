@@ -25,7 +25,7 @@ Do not silently substitute the newer handover count for the branch file or treat
 
 - Repository exists and is public.
 - `research/live-market-testbench` exists.
-- Branch head: `dbc260c78bb894492abe24d0cf18fa09f15d20c1`.
+- Branch head at initial inventory capture: `dbc260c78bb894492abe24d0cf18fa09f15d20c1`; Stage 1 score-patch and documentation commits followed.
 - Compared with `main`, the research branch is **312 commits ahead and 2 commits behind**; the branches have diverged from merge base `b86b8a1eda87e908a60589f494f1acd8f42b4352`.
 - The research test bench file `live_market_testbench.py` is present. It uses frozen V5 projections, and explicitly leaves model probabilities uncalibrated and betting decisions at No Bet while the market-evidence gate is closed.
 - `research/DATA_INVENTORY.md` and `research/DATA_AVAILABILITY_MATRIX.csv` did not exist before this audit.
@@ -44,7 +44,7 @@ Prior audited version:
 - 0 null cells; 0 invalid dates; 0 duplicate normalized game keys.
 - File size in the prior audit: 3,667,424 bytes.
 
-The current handover's 63,886-row / 2026-11-01 version is a separate, not-yet-reconciled version. The current GitHub branch file SHA still identifies the older audited version.
+The current GitHub base file SHA still identifies the older 63,797-row version. The three separate research patches now extend the branch inventory to the handover's reported 63,886 rows through 2026-11-01; the local file itself was not available for row-by-row comparison.
 
 ### Score patches
 
@@ -183,7 +183,7 @@ The configured local destination `data/private/dunkapi_public_odds_snapshots.csv
 
 Safe candidates for a later controlled experiment, subject to normal pregame cutoffs:
 
-1. Historical score data for score-only features, after reconciling the current 63,886-row handover copy against the 63,797-row branch blob and 78 tracked patches.
+1. Historical score data for score-only features through 2026-11-01, using the 63,797-row audited base plus 89 tracked patch rows, with strict target-date cutoffs. The local 63,886-row copy has not been compared row-by-row.
 2. Modern team-game `poss`, `pace`, `off_rating` and `def_rating` from the audited regular-season subset, using only prior completed games and preserving the historical-vintage limitation.
 3. Player game logs and rotation-derived minutes/lineups for seasons with verified game/player ID joins, while retaining the documented exclusions and minute errors.
 4. Timestamped injury reports selected using a fixed, explicit pre-tip cutoff and excluding incomplete report dates.
