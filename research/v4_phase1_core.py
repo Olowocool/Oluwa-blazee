@@ -132,6 +132,12 @@ def build_point_in_time(
     d = d[d.formula_poss.gt(0)].copy()
     d["poss_diff"] = d.formula_poss - d.source_poss
     d["off_eff"] = 100.0 * d.pts / d.formula_poss
+    # Point-in-time scoring-mechanism rates from completed team games.
+    d["fga_per_poss"] = d.fga / d.formula_poss
+    d["fta_per_poss"] = d.fta / d.formula_poss
+    d["oreb_per_poss"] = d.oreb / d.formula_poss
+    d["tov_per_poss"] = d.tov / d.formula_poss
+    d["points_per_fga"] = d.pts / d.fga.replace(0, np.nan)
     d["home_flag"] = d.home.fillna(False).astype(bool).astype(int)
 
     # Pair each team's box score with the opponent's points and possessions.
@@ -261,6 +267,20 @@ def build_point_in_time(
                     "expected_possessions": expected_pace,
                     "expected_home_efficiency": h_eff,
                     "expected_away_efficiency": a_eff,
+                    # Recent scoring/possession mix, weighted over the latest
+                    # 25 completed games used by the pace estimates.
+                    "home_recent_off_eff": weighted_recent_mean(h_hist, "off_eff"),
+                    "away_recent_off_eff": weighted_recent_mean(a_hist, "off_eff"),
+                    "home_recent_fga_per_poss": weighted_recent_mean(h_hist, "fga_per_poss"),
+                    "away_recent_fga_per_poss": weighted_recent_mean(a_hist, "fga_per_poss"),
+                    "home_recent_fta_per_poss": weighted_recent_mean(h_hist, "fta_per_poss"),
+                    "away_recent_fta_per_poss": weighted_recent_mean(a_hist, "fta_per_poss"),
+                    "home_recent_oreb_per_poss": weighted_recent_mean(h_hist, "oreb_per_poss"),
+                    "away_recent_oreb_per_poss": weighted_recent_mean(a_hist, "oreb_per_poss"),
+                    "home_recent_tov_per_poss": weighted_recent_mean(h_hist, "tov_per_poss"),
+                    "away_recent_tov_per_poss": weighted_recent_mean(a_hist, "tov_per_poss"),
+                    "home_recent_points_per_fga": weighted_recent_mean(h_hist, "points_per_fga"),
+                    "away_recent_points_per_fga": weighted_recent_mean(a_hist, "points_per_fga"),
                     "projected_total": projection,
                     "actual_total": float(home["pts"] + away["pts"]),
                     "home_formula_poss": float(home["formula_poss"]),
