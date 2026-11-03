@@ -124,27 +124,27 @@ def main() -> None:
     window_sql = []
     for w in WINDOWS:
         window_sql.append(f"""
-            SUM(min) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_min,
-            SUM(pts) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_pts,
-            SUM(fga) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fga,
-            SUM(fgm) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fgm,
-            SUM(fg3a) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fg3a,
-            SUM(fg3m) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fg3m,
-            SUM(fta) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_fta,
-            SUM(ftm) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_ftm,
-            SUM(oreb) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_oreb,
-            SUM(reb) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_reb,
-            SUM(ast) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_ast,
-            SUM(tov) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_tov,
-            SUM(stl) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_stl,
-            SUM(blk) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_blk,
-            SUM(poss) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_poss,
-            AVG(usg_pct) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_usg_pct,
-            AVG(ts_pct) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_ts_pct,
-            AVG(efg_pct) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_efg_pct,
-            AVG(off_rating) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_off_rating,
-            AVG(def_rating) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_def_rating,
-            AVG(pace) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w} PRECEDING AND 1 PRECEDING) AS l{w}_pace
+            SUM(min) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_min,
+            SUM(pts) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_pts,
+            SUM(fga) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_fga,
+            SUM(fgm) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_fgm,
+            SUM(fg3a) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_fg3a,
+            SUM(fg3m) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_fg3m,
+            SUM(fta) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_fta,
+            SUM(ftm) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_ftm,
+            SUM(oreb) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_oreb,
+            SUM(reb) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_reb,
+            SUM(ast) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_ast,
+            SUM(tov) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_tov,
+            SUM(stl) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_stl,
+            SUM(blk) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_blk,
+            SUM(poss) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_poss,
+            AVG(usg_pct) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_usg_pct,
+            AVG(ts_pct) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_ts_pct,
+            AVG(efg_pct) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_efg_pct,
+            AVG(off_rating) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_off_rating,
+            AVG(def_rating) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_def_rating,
+            AVG(pace) OVER (PARTITION BY player_id ORDER BY history_date ROWS BETWEEN {w-1} PRECEDING AND CURRENT ROW) AS l{w}_pace
         """)
     select_windows = ",\n".join(window_sql)
     con.execute(f"""
@@ -155,7 +155,10 @@ def main() -> None:
         FROM player_days
     """)
 
-    # ASOF condition is strict: the selected profile date must be < target date.
+    # Each rolling frame includes its own history_date (the latest eligible prior
+    # player game-day) and the preceding w-1 game-days. The ASOF join below
+    # selects the latest date strictly before the target game, so the target
+    # game and all same-day games remain excluded.
     con.execute("""
         CREATE TEMP TABLE player_game_profiles AS
         SELECT g.season, g.game_id, g.game_date, g.player_id, g.team_id,
@@ -238,6 +241,7 @@ def main() -> None:
         "scope": "regular season only; target game row retained for keying but excluded from profile",
         "history_rule": "player history_date strictly less than target game_date; same-date games excluded",
         "rolling_windows": list(WINDOWS),
+        "rolling_window_semantics": "last N distinct player game-days through and including the latest eligible date strictly before the target game date",
         "metrics": [
             "minutes and counting-stat rolling totals",
             "shooting efficiency (FG%, eFG%, points/FGA)",
