@@ -211,6 +211,6 @@ This inventory is a consolidated record of prior audits and current repository e
 1. The reported 63,886-row count/date range now reconciles to the branch's audited 63,797-row base plus 89 patch rows through 2026-11-01. The local file itself has not been compared byte-for-byte or game-by-game.
 2. Position source is classified: NBA player_seasons has no position field in any of the 18 audited seasons (2010–2027). DunksAndThrees daily position snapshots are current-season-only; the predictive feed contains a future-dated 2026-11-04 snapshot that must be excluded pending explanation.
 3. The private prospective odds archive could not be inspected.
-4. The current branch has not run a dedicated Stage 1-only audit; the existing `.github/workflows/nba-advanced-data-audit.yml` also runs `research/v4_phase1_core.py`, so it was deliberately not dispatched because that would go beyond a data-only audit.
+4. The isolated read-only position-coverage workflow has now run successfully. A comprehensive Stage 1-only audit covering the local score-file comparison and private odds archive has not run; the existing `.github/workflows/nba-advanced-data-audit.yml` still also runs `research/v4_phase1_core.py`, so it remains intentionally undispatched.
 
 No Stage 2 training or model implementation was started. No production, deployment, live betting or paper-trading resources were changed.
