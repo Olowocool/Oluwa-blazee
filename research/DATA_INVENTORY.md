@@ -3,7 +3,8 @@
 **Audit date:** 2026-11-03  
 **Repository:** `Olowocool/Oluwa-blazee`  
 **Branch:** `research/live-market-testbench`  
-**Branch head verified:** `dbc260c78bb894492abe24d0cf18fa09f15d20c1`  
+**Initial inventory branch head:** `dbc260c78bb894492abe24d0cf18fa09f15d20c1`  
+**Subsequent score-patch commit:** `6eee5532b8c98ff55288c4d2c9b4567dc1fe7903`  
 **Scope:** Research data inventory only. No model training, production changes, deployment, paid API calls, or paper-ledger changes were performed.
 
 ## Executive status
@@ -49,9 +50,9 @@ The current handover's 63,886-row / 2026-11-01 version is a separate, not-yet-re
 
 - `research/data/score_history_patch_2026-10-21_to_2026-10-29.csv`: 68 rows, 5 columns, no nulls, dates Oct 21–29.
 - `research/data/score_history_patch_2026-10-30.csv`: 10 rows, 5 columns, no nulls, date Oct 30.
-- Combined with the 63,797-row base: 63,875 unique games through Oct 30, with no duplicate keys in the base-plus-patch set.
-
-These patches do not account for the additional 11 games implied by the 63,886-row handover count.
+- `research/data/score_history_patch_2026-10-31_to_2026-11-01.csv`: 11 rows, 5 columns, all 11 games from Oct 31 (7 games) and Nov 1 (4 games).
+- Combined expected inventory: 63,886 rows through Nov 1 (63,797 + 68 + 10 + 11). The date windows are consecutive and non-overlapping; the earlier base-plus-patch set had no duplicate normalized game keys in the prior audit.
+- Source references for the new patch: NBA.com Oct 31 schedule (`https://www.nba.com/schedule?date=2026-10-30`) and NBA.com game pages for Oct 31–Nov 1, including game IDs 0022600147–0022600152 and 0022600154–0022600157.
 
 ### `data/game.csv`
 
@@ -134,7 +135,7 @@ The 2026-10-30 Phase 2 artifact provides measured rotation diagnostics:
 
 The published historical OpenRAPM file is a current reconstruction across seasons, not a historical point-in-time rating series; the Phase 2 experiment correctly did not use it as a historical pregame feature. It recomputed lineup-stint RAPM using only earlier games.
 
-**Position/role coverage is not yet independently established.** Player IDs, game IDs, team IDs, minutes and player box-score/rotation information are present in the research pipeline, but the inventory has not verified a stable historical position/role field, its missingness, or role changes over time.
+**Position/role schema is now identified, but coverage is not yet measured.** The external v2 data dictionary defines `player_seasons.position` as the player's position **as of their last game that season** (and `team_id` as their last team). That is a season-end value, not a point-in-time position snapshot; using it for earlier games in that season would introduce future information. The exact null rate and position-category distribution by season have not yet been counted. The same source documents DunksAndThrees `epm_daily` / `epm_predictive_daily` snapshots from the current 2026-27 season (end-year 2027), including position and `as_of_date`; this is potentially useful only for the current season and only with a strict prior-day cutoff. It does not provide historical daily position coverage for earlier seasons.
 
 ### Injury reports
 
@@ -200,8 +201,8 @@ Not yet safe or not established:
 
 This inventory is a consolidated record of prior audits and current repository evidence. The **expanded Stage 1 is not yet fully signed off** because:
 
-1. The handover's newer 63,886-row score file through 2026-11-01 has not been reconciled to the branch's 63,797-row file plus 78 patches through 2026-10-30.
-2. Player position/role schema and coverage have not been measured.
+1. The reported 63,886-row count/date range now reconciles to the branch's audited 63,797-row base plus 89 patch rows through 2026-11-01. The local file itself has not been compared byte-for-byte or game-by-game.
+2. Position schema semantics are known, but per-season null rates/category counts are not measured; the season-end position field is not point-in-time safe for earlier games.
 3. The private prospective odds archive could not be inspected.
 4. The current branch has not run a dedicated Stage 1-only audit; the existing `.github/workflows/nba-advanced-data-audit.yml` also runs `research/v4_phase1_core.py`, so it was deliberately not dispatched because that would go beyond a data-only audit.
 
