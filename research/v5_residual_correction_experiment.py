@@ -237,6 +237,33 @@ def main() -> None:
     if not (pd.to_datetime(result.training_latest_date) < result.game_date).all():
         raise RuntimeError("Residual model training cutoff is not strictly pregame")
 
+    # Robustness check: fit once at the beginning of each test season,
+    # then freeze coefficients for the entire season (no within-season updates).
+    season_frozen_families = {}
+    season_frozen_cutoffs = {}
+    for season in TEST_SEASONS:
+        season_part = result.loc[result.season.eq(season)].copy()
+        season_start = season_part.game_date.min()
+        season_train = data.loc[data.game_date < season_start].copy()
+        if len(season_train) < MIN_TRAIN_GAMES:
+            raise RuntimeError(
+                f"Insufficient pre-season history for frozen validation {season}: {len(season_train)}"
+            )
+        season_frozen_cutoffs[str(season)] = {
+            "first_test_date": season_start.date().isoformat(),
+            "training_games": int(len(season_train)),
+            "training_latest_date": season_train.game_date.max().date().isoformat(),
+        }
+        if not (season_train.game_date.max() < season_start):
+            raise RuntimeError(f"Season-frozen training cutoff failed for {season}")
+        for family, cols in FEATURE_FAMILIES.items():
+            frozen_model = model_pipeline()
+            frozen_model.fit(season_train[cols], season_train.v5_error)
+            result.loc[result.season.eq(season), f"season_frozen_{family}_total"] = (
+                result.loc[result.season.eq(season), "v5_total"].to_numpy(float)
+                - frozen_model.predict(season_part[cols])
+            )
+
     overall = {"V5_frozen_control": metrics(result.actual_total, result.v5_total)}
     by_family = {}
     for family in FEATURE_FAMILIES:
@@ -246,11 +273,26 @@ def main() -> None:
             "paired_date_cluster_bootstrap": date_cluster_bootstrap(result, col),
         }
     by_season = {}
+    season_frozen_by_family = {}
+    season_frozen_by_season = {}
+    for family in FEATURE_FAMILIES:
+        col = f"season_frozen_{family}_total"
+        season_frozen_by_family[family] = {
+            "metrics": metrics(result.actual_total, result[col]),
+            "paired_date_cluster_bootstrap": date_cluster_bootstrap(result, col),
+        }
     for season, part in result.groupby("season", sort=True):
         by_season[str(int(season))] = {
             "V5": metrics(part.actual_total, part.v5_total),
             **{
                 family: metrics(part.actual_total, part[f"{family}_total"])
+                for family in FEATURE_FAMILIES
+            },
+        }
+        season_frozen_by_season[str(int(season))] = {
+            "V5": metrics(part.actual_total, part.v5_total),
+            **{
+                family: metrics(part.actual_total, part[f"season_frozen_{family}_total"])
                 for family in FEATURE_FAMILIES
             },
         }
@@ -271,6 +313,12 @@ def main() -> None:
         "overall": overall,
         "candidate_results": by_family,
         "by_season": by_season,
+        "season_frozen_validation": {
+            "policy": "One model fit per test season using only games dated before that season's first eligible prediction; coefficients remain frozen for the entire season",
+            "season_training_cutoffs": season_frozen_cutoffs,
+            "candidate_results": season_frozen_by_family,
+            "by_season": season_frozen_by_season,
+        },
         "point_in_time_cutoffs_verified": True,
         "same_date_games_excluded_from_training": True,
         "data_diagnostics": {**history_diagnostics, **pair_diagnostics},
