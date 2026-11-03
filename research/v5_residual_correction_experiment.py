@@ -262,6 +262,13 @@ def main() -> None:
     season_frozen_cutoffs = {}
     for season in TEST_SEASONS:
         season_part = result.loc[result.season.eq(season)].copy()
+        required_frozen_features = set().union(*[set(cols) for cols in FEATURE_FAMILIES.values()])
+        missing_frozen_features = sorted(required_frozen_features - set(season_part.columns))
+        if missing_frozen_features:
+            raise RuntimeError(
+                f"Season-frozen predictions missing feature columns for {season}: "
+                f"{missing_frozen_features}"
+            )
         season_start = season_part.game_date.min()
         season_train = data.loc[data.game_date < season_start].copy()
         if len(season_train) < MIN_TRAIN_GAMES:
