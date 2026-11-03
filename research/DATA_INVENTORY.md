@@ -184,7 +184,9 @@ Phase 2 projected-minute coverage and model results do not establish a reliable 
 
 The collector `research/collect_public_odds_snapshots.py` reads the public DunkAPI odds board, not the credit-metered API. It records game/bookmaker, total line, paired Over/Under prices, `published_as_of_utc` and `observed_at_utc`. The retrieval timestamp is the conservative availability time.
 
-The configured local destination `data/private/dunkapi_public_odds_snapshots.csv` is explicitly ignored by `.gitignore`. The actual private archive was not accessible through the repository and its current row count, date coverage, age distribution and T−120 eligibility are unverified here. Do not commit it or assume the Windows scheduled task is still running.
+The configured local destination `data/private/dunkapi_public_odds_snapshots.csv` is explicitly ignored by `.gitignore`. The actual private archive was not accessible through the repository or the Library search, so its current row count, date coverage, age distribution and T−120 eligibility remain unverified.
+
+A local-only helper, `research/audit_private_odds_archive.py`, is now available on the research branch. Run it from the repository root on the Windows machine that contains the private CSV. It prints only a compact JSON summary (row/date/book coverage, timestamp-age and tip-offset distributions, approximate T−120 diagnostics, and Task Scheduler status); it does not print raw prices, modify the archive, call DunkAPI, or upload the data. Do not commit the private archive or assume the Windows scheduled task is still running.
 
 ## 7. What is safe to use, and what remains gated
 
@@ -210,7 +212,7 @@ This inventory is a consolidated record of prior audits and current repository e
 
 1. The reported 63,886-row count/date range now reconciles to the branch's audited 63,797-row base plus 89 patch rows through 2026-11-01. The local file itself has not been compared byte-for-byte or game-by-game.
 2. Position source is classified: NBA player_seasons has no position field in any of the 18 audited seasons (2010–2027). DunksAndThrees daily position snapshots are current-season-only; the predictive feed contains a future-dated 2026-11-04 snapshot that must be excluded pending explanation.
-3. The private prospective odds archive could not be inspected.
+3. The private prospective odds archive could not be inspected. A privacy-preserving local summary helper is committed, but it still needs to be run on the machine that holds the ignored CSV.
 4. The isolated read-only position-coverage workflow has now run successfully. A comprehensive Stage 1-only audit covering the local score-file comparison and private odds archive has not run; the existing `.github/workflows/nba-advanced-data-audit.yml` still also runs `research/v4_phase1_core.py`, so it remains intentionally undispatched.
 
 No Stage 2 training or model implementation was started. No production, deployment, live betting or paper-trading resources were changed.
