@@ -119,7 +119,8 @@ def main() -> None:
     con.execute(f"""
         COPY (
             SELECT * FROM final_ratings
-            ORDER BY game_date, game_id, player_id
+            WHERE rating_eligible
+            ORDER BY game_date DESC, game_id, player_id
             LIMIT 500
         ) TO {sample_sql} (HEADER, DELIMITER ',')
     """)
