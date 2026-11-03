@@ -24,7 +24,7 @@ MIN_PRIOR_GAME_DAYS = 5
 MIN_PRIOR_MINUTES = 60.0
 
 METRICS = {
-    "scoring_efficiency": "l20_ts_pct",
+    "scoring_efficiency": "rating_ts_pct",
     "scoring_volume_per36": "pts_per36",
     "usage": "l20_usg_pct",
     "three_point_attempt_share": "three_pa_share",
@@ -61,9 +61,10 @@ def main() -> None:
             CASE WHEN l20_min > 0 THEN 36.0*(l20_reb-l20_oreb)/l20_min END AS dreb_per36,
             CASE WHEN l20_min > 0 THEN 36.0*l20_stl/l20_min END AS stl_per36,
             CASE WHEN l20_min > 0 THEN 36.0*l20_blk/l20_min END AS blk_per36,
-            CASE WHEN l20_fga > 0 THEN l20_fg3a/l20_fga END AS three_pa_share,
-            CASE WHEN l20_fg3a > 0 THEN l20_fg3m/l20_fg3a END AS three_pct,
-            CASE WHEN l20_fga > 0 THEN l20_fta/l20_fga END AS free_throw_rate,
+            CASE WHEN l20_fga >= 20 THEN l20_ts_pct END AS rating_ts_pct,
+            CASE WHEN l20_fga >= 20 THEN l20_fg3a/l20_fga END AS three_pa_share,
+            CASE WHEN l20_fg3a >= 10 THEN l20_fg3m/l20_fg3a END AS three_pct,
+            CASE WHEN l20_fga >= 20 THEN l20_fta/l20_fga END AS free_throw_rate,
             (prior_game_days >= {MIN_PRIOR_GAME_DAYS}
              AND l20_min >= {MIN_PRIOR_MINUTES}) AS rating_eligible
         FROM profiles
@@ -78,12 +79,12 @@ def main() -> None:
             CASE WHEN rating_eligible
                        AND stddev_pop(CASE WHEN rating_eligible THEN {signed_metric} END)
                            OVER (PARTITION BY game_date) > 0
-                 THEN (
+                 THEN LEAST(3.0, GREATEST(-3.0, (
                     {signed_metric}
                     - avg(CASE WHEN rating_eligible THEN {signed_metric} END)
                       OVER (PARTITION BY game_date)
                  ) / stddev_pop(CASE WHEN rating_eligible THEN {signed_metric} END)
-                   OVER (PARTITION BY game_date)
+                   OVER (PARTITION BY game_date)))
             END AS {name}_z
         """)
     con.execute(f"""
@@ -145,7 +146,7 @@ def main() -> None:
         "input": str(INPUT),
         "output": str(OUTPUT),
         "history_basis": "Stage A rolling L20 features, including the latest eligible prior player game-day",
-        "standardization": "target-date cross-sectional z-scores among eligible players only",
+        "standardization": "target-date cross-sectional z-scores among eligible players only; component z-scores winsorized to [-3, 3]",
         "eligibility": {
             "minimum_prior_player_game_days": MIN_PRIOR_GAME_DAYS,
             "minimum_prior_minutes_in_L20": MIN_PRIOR_MINUTES
@@ -153,7 +154,8 @@ def main() -> None:
         "components": METRICS,
         "derived_metrics": [
             "points, assists, turnovers, offensive rebounds, defensive rebounds, steals and blocks per 36",
-            "three-point attempt share and three-point accuracy",
+            "three-point attempt share (minimum 20 L20 FGA) and three-point accuracy (minimum 10 L20 3PA)",
+            "scoring efficiency and free-throw generation require at least 20 L20 FGA",
             "free-throw attempts per field-goal attempt",
             "defensive activity proxy: steals, blocks and defensive rebounds"
         ],
