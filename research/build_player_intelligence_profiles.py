@@ -142,7 +142,7 @@ def main() -> None:
     con.execute(f"""
         CREATE TEMP TABLE player_history AS
         SELECT *,
-               ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY history_date) - 1 AS prior_game_days,
+               ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY history_date) AS prior_game_days,
                {select_windows}
         FROM player_days
     """)
