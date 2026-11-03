@@ -35,14 +35,22 @@ def main() -> None:
     player_urls = [url("stats", "player_game_logs", s) for s in SEASONS]
     game_urls = [url("stats", "games", s) for s in SEASONS]
 
+    # DuckDB does not allow prepared parameters in CREATE VIEW/TABLE or COPY
+    # statements. These URLs are generated locally from fixed source constants.
+    def sql_string(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    player_urls_sql = "[" + ", ".join(sql_string(u) for u in player_urls) + "]"
+    game_urls_sql = "[" + ", ".join(sql_string(u) for u in game_urls) + "]"
+
     # game_type is the authoritative regular-season/playoff discriminator.
-    con.execute("""
+    con.execute(f"""
         CREATE TEMP VIEW games AS
         SELECT season, game_id, CAST(game_date AS DATE) AS game_date,
                lower(CAST(game_type AS VARCHAR)) AS game_type
-        FROM read_parquet(?, union_by_name=true)
-    """, [game_urls])
-    con.execute("""
+        FROM read_parquet({game_urls_sql}, union_by_name=true)
+    """)
+    con.execute(f"""
         CREATE TEMP TABLE player_games AS
         SELECT p.season, CAST(p.game_id AS VARCHAR) AS game_id,
                CAST(p.player_id AS VARCHAR) AS player_id,
@@ -73,13 +81,13 @@ def main() -> None:
                CAST(p.off_rating AS DOUBLE) AS off_rating,
                CAST(p.def_rating AS DOUBLE) AS def_rating,
                CAST(p.pace AS DOUBLE) AS pace
-        FROM read_parquet(?, union_by_name=true) p
+        FROM read_parquet({player_urls_sql}, union_by_name=true) p
         JOIN games g
           ON p.season = g.season AND CAST(p.game_id AS VARCHAR) = g.game_id
         WHERE g.game_type LIKE '%regular%'
           AND p.player_id IS NOT NULL
           AND p.game_date IS NOT NULL
-    """, [player_urls])
+    """)
 
     # Collapse any same-day duplicate appearances before rolling calculations.
     con.execute("""
@@ -196,14 +204,14 @@ def main() -> None:
 
     parquet_path = str(OUT / "player_game_profiles.parquet")
     csv_path = str(OUT / "player_game_profiles_sample.csv")
-    con.execute("COPY final_profiles TO ? (FORMAT PARQUET, COMPRESSION ZSTD)", [parquet_path])
+    con.execute(f"COPY final_profiles TO {sql_string(parquet_path)} (FORMAT PARQUET, COMPRESSION ZSTD)")
     con.execute(f"""
         COPY (
             SELECT * FROM final_profiles
             ORDER BY game_date, game_id, player_id
             LIMIT 500
-        ) TO ? (HEADER, DELIMITER ',')
-    """, [csv_path])
+        ) TO {sql_string(csv_path)} (HEADER, DELIMITER ',')
+    """)
 
     stats = con.execute("""
         SELECT COUNT(*) AS player_game_rows,
