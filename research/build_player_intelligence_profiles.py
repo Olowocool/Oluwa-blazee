@@ -14,7 +14,7 @@ from pathlib import Path
 import duckdb
 
 BASE = "https://basketball-data.billmill.org/nba"
-SEASONS = list(range(2021, 2027))
+SEASONS = list(range(2021, 2028))
 OUT = Path("outputs/research/player_intelligence_profiles")
 WINDOWS = (5, 10, 20)
 STAT_COLUMNS = (
