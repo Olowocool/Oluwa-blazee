@@ -13,13 +13,13 @@ The historical score/box-score foundation was already audited on 2026-11-02. The
 
 This document records that completed work and extends the inventory to the currently documented player, injury, rotation, schedule and market sources. It is **not a claim that every new source has been re-downloaded and re-audited on 2026-11-03**.
 
-The most important unresolved discrepancy is the score-history version:
+The score-history count and date range are now reconciled at the inventory level:
 
-- The current research branch's `data/historical_nba_scores.csv` has blob SHA `2464a3aa73f4a13053da50092125a6fd1bbd7bec`, identical to the file used by the 2026-11-02 audit. That audited file had **63,797 rows**, ending **2026-10-20**.
-- The current handover reports a newer local score file with **63,886 rows**, ending **2026-11-01**.
-- The current branch contains score patches only through **2026-10-30** (68 rows for Oct 21–29 and 10 rows for Oct 30). The newer 63,886-row file/version is therefore not represented by the audited branch blob. Its bytes and exact schema have not been independently inspected in this audit.
+- The audited base file has **63,797 rows** through **2026-10-20**.
+- Three research-only patches add 68 games (Oct 21–29), 10 games (Oct 30), and 11 games (Oct 31–Nov 1).
+- The resulting total is **63,886 rows through 2026-11-01**, matching the count and end date in the user's handover. The 11 new results were checked against NBA.com schedule/game pages and added as a separate patch.
+- The local 63,886-row file is not itself present in the repository, so its bytes and every individual row have not been compared against this reconstruction. The count/date reconciliation is strong evidence of consistency, not proof of file identity.
 
-Do not silently substitute the newer handover count for the branch file or treat the two versions as identical.
 
 ## 1. Repository and branch state
 
