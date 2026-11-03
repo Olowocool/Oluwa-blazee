@@ -10,6 +10,11 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import numpy as np
 import pandas as pd
@@ -22,7 +27,6 @@ from research.v4_paired_v2_vs_v4_backtest import (
 )
 from research.v4_phase1_core import connect_and_load
 
-ROOT = Path(__file__).resolve().parents[1]
 OUT = Path("outputs/research/v5_vs_v4_phase1")
 BASE_HISTORY = ROOT / "data" / "historical_nba_scores.csv"
 PATCH_FILES = [
