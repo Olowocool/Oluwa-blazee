@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/player-intelligence-profile-build.yml
       - research/build_player_intelligence_profiles.py
+      - research/test_player_profile_window_alignment.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,7 +22,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install duckdb pandas
-      - run: python -m py_compile research/build_player_intelligence_profiles.py
+      - run: python -m py_compile research/build_player_intelligence_profiles.py research/test_player_profile_window_alignment.py
+      - run: python research/test_player_profile_window_alignment.py
       - run: python research/build_player_intelligence_profiles.py
       - uses: actions/upload-artifact@v4
         with:
