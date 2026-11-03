@@ -236,7 +236,7 @@ def main() -> None:
         train = data.loc[data.game_date < target_date].copy()
         if len(train) < MIN_TRAIN_GAMES:
             continue
-        day_predictions = day[["season", "game_id", "game_date", "actual_total", "v5_total"]].copy()
+        day_predictions = day[["season", "game_id", "game_date", "actual_total", "v5_total", *feature_columns]].copy()
         for family, cols in FEATURE_FAMILIES.items():
             model = model_pipeline()
             model.fit(train[cols], train.v5_error)
