@@ -1,3 +1,4 @@
+# Trigger audit workflow from the research branch; no production impact.
 #!/usr/bin/env python3
 """Read-only source audit for the NBA Player Intelligence Engine.
 
