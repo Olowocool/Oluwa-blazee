@@ -135,7 +135,9 @@ The 2026-10-30 Phase 2 artifact provides measured rotation diagnostics:
 
 The published historical OpenRAPM file is a current reconstruction across seasons, not a historical point-in-time rating series; the Phase 2 experiment correctly did not use it as a historical pregame feature. It recomputed lineup-stint RAPM using only earlier games.
 
-**Position/role schema is now identified, but coverage is not yet measured.** The external v2 data dictionary defines `player_seasons.position` as the player's position **as of their last game that season** (and `team_id` as their last team). That is a season-end value, not a point-in-time position snapshot; using it for earlier games in that season would introduce future information. The exact null rate and position-category distribution by season have not yet been counted. The same source documents DunksAndThrees `epm_daily` / `epm_predictive_daily` snapshots from the current 2026-27 season (end-year 2027), including position and `as_of_date`; this is potentially useful only for the current season and only with a strict prior-day cutoff. It does not provide historical daily position coverage for earlier seasons.
+**Historical NBA position coverage is not available in the NBA `player_seasons` table.** A read-only scan of all 18 public v2 NBA season partitions (2010–2027) found that `stats/player_seasons` contains no `position` column at all; it has identity/roster fields only. The season-end `position` field seen elsewhere in the same data dictionary belongs to the separate college-basketball dataset and must not be attributed to NBA.
+
+The DunksAndThrees current-season daily tables do provide dated position snapshots for 2026-27 only. The first audit pass measured `epm_daily` at 1,321 player-snapshot rows across 3 dates (2026-10-31 to 2026-11-03), with 1,321 non-null positions; `epm_predictive_daily` had 7,332 player-snapshot rows across 14 dates (2026-10-20 to 2026-11-04), with 7,318 non-null positions and 14 nulls. The latter's 2026-11-04 snapshot date is later than the 2026-11-03 audit date; do not use it in any historical replay or pregame feature until its timestamp/date semantics are explained. These current-season snapshots do not supply historical daily position data for earlier seasons.
 
 ### Injury reports
 
@@ -192,7 +194,7 @@ Safe candidates for a later controlled experiment, subject to normal pregame cut
 Not yet safe or not established:
 
 - Raw possession formula features across the full historical era (raw inputs are missing before 1985 for most games).
-- Position/role matchup features until historical position coverage is measured.
+- Historical position/role matchup features for 2010–2026: no position column exists in NBA player_seasons and no historical daily position archive was found. Current 2026–27 daily EPM snapshots are a separate, limited candidate only after strict date cutoffs and resolution of the future-dated snapshot.
 - Travel/altitude and referee features until source files, timestamps and historical coverage are verified.
 - Market residual and betting EV until the private prospective archive is inspected and enough valid T−120 DraftKings observations exist.
 - Precomputed training-dataset features until their exact point-in-time construction is verified.
@@ -202,7 +204,7 @@ Not yet safe or not established:
 This inventory is a consolidated record of prior audits and current repository evidence. The **expanded Stage 1 is not yet fully signed off** because:
 
 1. The reported 63,886-row count/date range now reconciles to the branch's audited 63,797-row base plus 89 patch rows through 2026-11-01. The local file itself has not been compared byte-for-byte or game-by-game.
-2. Position schema semantics are known, but per-season null rates/category counts are not measured; the season-end position field is not point-in-time safe for earlier games.
+2. NBA player_seasons has no position field in any of the 18 audited seasons (2010–2027). Only current-season DunksAndThrees daily snapshots exist in this source; the predictive feed contains a future-dated 2026-11-04 snapshot that must be excluded pending explanation.
 3. The private prospective odds archive could not be inspected.
 4. The current branch has not run a dedicated Stage 1-only audit; the existing `.github/workflows/nba-advanced-data-audit.yml` also runs `research/v4_phase1_core.py`, so it was deliberately not dispatched because that would go beyond a data-only audit.
 
