@@ -1,6 +1,12 @@
 name: Paired V5 versus V4 possession-efficiency research
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - research/live-market-testbench
+    paths:
+      - .github/workflows/v5-vs-v4-phase1-paired.yml
+      - research/v5_vs_v4_phase1_paired.py
 permissions:
   contents: read
 jobs:
