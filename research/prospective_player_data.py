@@ -186,6 +186,7 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
     return {
         "games": g, "team_logs": t, "player_logs": p,
         "player_names": pn, "team_names": team_names_current,
+        "team_names_all": tn,
         "rotations": r, "events": e, "segments": segments,
         "rapm": ratings, "team_history": team_hist,
         "player_history": player_hist, "first_seen": first_seen,
