@@ -33,11 +33,12 @@ def main() -> None:
     missing = sorted(set(required) - set(columns))
     if missing:
         raise RuntimeError(f"game_events missing required columns {missing}; found {columns}")
-    sample = con.execute(
-        f"SELECT {', '.join('"' + x + '"' for x in required)} "
-        f"FROM read_parquet({source}, hive_partitioning=true, "
+    select_columns = ", ".join(chr(34) + x + chr(34) for x in required)
+    sample_query = (
+        f"SELECT {select_columns} FROM read_parquet({source}, hive_partitioning=true, "
         "hive_types={'season': INTEGER}, union_by_name=true) LIMIT 40"
-    ).fetchdf().to_dict("records")
+    )
+    sample = con.execute(sample_query).fetchdf().to_dict("records")
     result = {
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "source": BASE,
