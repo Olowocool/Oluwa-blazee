@@ -253,74 +253,90 @@ def load_player_history() -> tuple[pd.DataFrame, dict]:
 
 
 def profile_candidates(history: pd.DataFrame, candidates: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    # Only actual player rows receive player histories; the rotation-tail bucket
-    # remains visible in team coverage but is not assigned an invented player.
+    # Vectorized per-player rolling profiles: the history window is limited to
+    # the last 20 player games and all features are calculated in NumPy arrays.
     players = candidates.loc[
         (~candidates.is_rotation_tail)
         & candidates.player_id.notna()
         & candidates.expected_minutes.gt(0)
-    ].copy()
-    history_by_player = {
-        pid: g.reset_index(drop=True)
-        for pid, g in history.groupby("player_id", sort=False)
-    }
+    ].sort_values(["player_id", "game_date", "_candidate_id"]).copy()
+
+    weight_columns = [WEIGHT_MAP[f] for f in FEATURES]
+    history_by_player = {}
+    for pid, h in history.groupby("player_id", sort=False):
+        h = h.reset_index(drop=True)
+        history_by_player[str(pid)] = {
+            "dates": h.game_date.to_numpy(dtype="datetime64[ns]"),
+            "values": h[FEATURES].to_numpy(dtype=float),
+            "weights": h[weight_columns].to_numpy(dtype=float),
+            "minutes": h.seconds_played.fillna(0).clip(lower=0).to_numpy(dtype=float) / 60.0,
+            "o_poss": h.o_team_poss.fillna(0).clip(lower=0).to_numpy(dtype=float),
+            "d_poss": h.d_team_poss.fillna(0).clip(lower=0).to_numpy(dtype=float),
+        }
+
     profile_rows = []
     half_life = np.log(2.0) / HALF_LIFE_DAYS
-
+    n_features = len(FEATURES)
     for pid, group in players.groupby("player_id", sort=False):
-        h = history_by_player.get(str(pid))
-        if h is None or h.empty:
-            for row in group.to_dict("records"):
-                item = {"_candidate_id": int(row["_candidate_id"]), "prior_games": 0,
-                        "prior_minutes": 0.0, "prior_o_possessions": 0.0,
-                        "prior_d_possessions": 0.0, "days_since_last_game": np.nan,
-                        "max_history_date": None}
-                item.update({f: np.nan for f in FEATURES})
-                profile_rows.append(item)
-            continue
-        h_dates = h.game_date.to_numpy(dtype="datetime64[ns]")
-        for row in group.to_dict("records"):
-            target = np.datetime64(pd.Timestamp(row["game_date"]).to_datetime64())
-            end = int(np.searchsorted(h_dates, target, side="left"))
-            lo = max(0, end - MAX_PRIOR_GAMES)
-            prior = h.iloc[lo:end]
-            item = {"_candidate_id": int(row["_candidate_id"])}
-            if prior.empty:
+        arrays = history_by_player.get(str(pid))
+        for candidate_id, target_value in group[["_candidate_id", "game_date"]].itertuples(index=False, name=None):
+            item = {"_candidate_id": int(candidate_id)}
+            if arrays is None:
                 item.update({
                     "prior_games": 0, "prior_minutes": 0.0, "prior_o_possessions": 0.0,
                     "prior_d_possessions": 0.0, "days_since_last_game": np.nan,
                     "max_history_date": None,
                 })
-                item.update({f: np.nan for f in FEATURES})
+                item.update({feature: np.nan for feature in FEATURES})
                 profile_rows.append(item)
                 continue
-            ages = (pd.Timestamp(row["game_date"]) - prior.game_date).dt.days.to_numpy(float)
+
+            target = np.datetime64(pd.Timestamp(target_value).to_datetime64())
+            dates = arrays["dates"]
+            end = int(np.searchsorted(dates, target, side="left"))
+            lo = max(0, end - MAX_PRIOR_GAMES)
+            if end <= lo:
+                item.update({
+                    "prior_games": 0, "prior_minutes": 0.0, "prior_o_possessions": 0.0,
+                    "prior_d_possessions": 0.0, "days_since_last_game": np.nan,
+                    "max_history_date": None,
+                })
+                item.update({feature: np.nan for feature in FEATURES})
+                profile_rows.append(item)
+                continue
+
+            prior_dates = dates[lo:end]
+            ages = (target - prior_dates).astype("timedelta64[D]").astype(float)
             decay = np.exp(-half_life * np.maximum(ages, 0.0))
-            o_poss = prior.o_team_poss.fillna(0).clip(lower=0).to_numpy(float)
-            d_poss = prior.d_team_poss.fillna(0).clip(lower=0).to_numpy(float)
-            minutes = prior.seconds_played.fillna(0).clip(lower=0).to_numpy(float) / 60.0
+            values = arrays["values"][lo:end]
+            weights = arrays["weights"][lo:end] * decay[:, None]
+            valid = np.isfinite(values) & np.isfinite(weights) & (weights > 0)
+            numerator = np.where(valid, values * weights, 0.0).sum(axis=0)
+            denominator = np.where(valid, weights, 0.0).sum(axis=0)
+            profile = np.divide(
+                numerator, denominator,
+                out=np.full(n_features, np.nan, dtype=float),
+                where=denominator > 0,
+            )
+
+            minutes = arrays["minutes"][lo:end]
+            o_poss = arrays["o_poss"][lo:end]
+            d_poss = arrays["d_poss"][lo:end]
+            prior_minutes = float(minutes.sum())
+            prior_games = int(end - lo)
+            eligible = prior_games >= MIN_PRIOR_GAMES and prior_minutes >= MIN_PRIOR_MINUTES
+            if not eligible:
+                profile[:] = np.nan
+            last_date = pd.Timestamp(prior_dates[-1])
             item.update({
-                "prior_games": int(len(prior)),
-                "prior_minutes": float(minutes.sum()),
+                "prior_games": prior_games,
+                "prior_minutes": prior_minutes,
                 "prior_o_possessions": float(o_poss.sum()),
                 "prior_d_possessions": float(d_poss.sum()),
-                "days_since_last_game": float(ages.min()),
-                "max_history_date": prior.game_date.max().date().isoformat(),
+                "days_since_last_game": float(ages[-1]),
+                "max_history_date": last_date.date().isoformat(),
             })
-            eligible = len(prior) >= MIN_PRIOR_GAMES and minutes.sum() >= MIN_PRIOR_MINUTES
-            for feature in FEATURES:
-                values = pd.to_numeric(prior[feature], errors="coerce").to_numpy(float)
-                weight_col = WEIGHT_MAP[feature]
-                if weight_col == "fga_equiv":
-                    exposure = prior.fga_equiv.fillna(0).clip(lower=0).to_numpy(float)
-                else:
-                    exposure = pd.to_numeric(prior[weight_col], errors="coerce").fillna(0).clip(lower=0).to_numpy(float)
-                weights = decay * exposure
-                valid = np.isfinite(values) & np.isfinite(weights) & (weights > 0)
-                if eligible and valid.any():
-                    item[feature] = float(np.average(values[valid], weights=weights[valid]))
-                else:
-                    item[feature] = np.nan
+            item.update(dict(zip(FEATURES, profile.tolist())))
             profile_rows.append(item)
 
     profiles = pd.DataFrame(profile_rows)
@@ -339,6 +355,7 @@ def profile_candidates(history: pd.DataFrame, candidates: pd.DataFrame) -> tuple
         "candidate_rows_without_prior_history": int(result.prior_games.fillna(0).eq(0).sum()),
         "median_prior_games": float(result.prior_games.median()),
         "median_prior_minutes": float(result.prior_minutes.median()),
+        "profile_calculation": "NumPy vectorized over last 20 prior player games; date cutoff is strictly before target game date",
     }
     return result, diagnostics
 
