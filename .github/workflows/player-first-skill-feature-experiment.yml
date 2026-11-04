@@ -1,19 +1,11 @@
 name: Player-first skill feature experiment
 
 on:
-  workflow_run:
-    workflows:
-      - "NBA totals V4 Phase 2 rotation and injury research"
-    types:
-      - completed
-    branches:
-      - "research/live-market-testbench"
   workflow_dispatch:
     inputs:
       stage_c_run_id:
-        description: "Successful Stage C artifact run ID"
+        description: "Successful full-rotation Stage C artifact run ID"
         required: true
-        default: "41907289358"
       prediction_run_id:
         description: "Successful frozen V5 comparison artifact run ID"
         required: true
@@ -38,7 +30,7 @@ jobs:
       - name: Download full-rotation Stage C artifact
         uses: actions/download-artifact@v4
         with:
-          name: nba-player-intelligence-stage-c
+          name: nba-player-intelligence-stage-c-and-full-rotation-validation
           path: outputs/research/stage_c_artifact
           run-id: ${{ github.event.workflow_run.id || inputs.stage_c_run_id || '41907289358' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
