@@ -14,6 +14,12 @@ module = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(module)
 
+# A star-heavy prior role must not create an impossible >48-minute forecast.
+capped = module.allocate_minutes([1000.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+assert abs(float(capped.sum()) - 240.0) < 1e-8
+assert float(capped.max()) <= 48.0 + 1e-8
+assert int((capped >= 48.0 - 1e-8).sum()) >= 1
+
 GAME_ID = "0099999999"
 TEAM_ID = "1610610001"
 GAME_DATE = pd.Timestamp("2025-01-20")
@@ -64,6 +70,8 @@ assert minutes.rotation_rank.tolist() == list(range(1, PLAYER_COUNT + 1))
 assert minutes.player_id.is_unique
 assert abs(float(minutes.baseline_minutes.sum()) - 240.0) < 1e-8
 assert abs(float(minutes.expected_minutes.sum()) - 240.0) < 1e-8
+assert float(minutes.expected_minutes.max()) <= 48.0 + 1e-8
+assert float(minutes.baseline_minutes.max()) <= 48.0 + 1e-8
 assert abs(float(minutes.actual_minutes_240.sum()) - 240.0) < 1e-8
 assert minutes.loc[minutes.player_id.eq("100000"), "status"].iloc[0] == "OUT"
 assert minutes.loc[minutes.player_id.eq("100000"), "availability_probability"].iloc[0] < 0.1
