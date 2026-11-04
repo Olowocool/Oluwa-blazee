@@ -6,7 +6,16 @@ on:
       - "research/live-market-testbench"
     paths:
       - "research/prospective_player_data.py"
+      - "research/build_prospective_pregame_records.py"
+      - "research/audit_prospective_v5_history.py"
       - "research/v4_phase2_rotation.py"
+      - "points_engine_v5.py"
+      - "points_engine_v3.py"
+      - "points_engine_v4.py"
+      - "points_engine.py"
+      - "team_name_utils.py"
+      - "data/historical_nba_scores.csv"
+      - "research/data/score_history_patch_*.csv"
       - ".github/workflows/prospective-player-data-integration.yml"
   workflow_dispatch:
 
@@ -32,17 +41,19 @@ jobs:
         run: |
           python -m py_compile research/prospective_player_data.py
           python -m py_compile research/prospective_rotation_projection.py
+          python -m py_compile research/build_prospective_pregame_records.py
+          python -m py_compile research/audit_prospective_v5_history.py
           python -m py_compile research/v4_phase2_rotation.py
       - name: Load current public partitions and fit strictly pregame RAPM
         env:
           PYTHONUNBUFFERED: "1"
         run: |
           TARGET_DATE="$(date -u -d '+1 day' +%F)"
-          python research/prospective_player_data.py --target-date "$TARGET_DATE" --output outputs/research/prospective_player_data_state.json
+          python research/audit_prospective_v5_history.py --target-date "$TARGET_DATE" --output outputs/research/prospective_v5_history_audit.json
       - name: Upload non-sensitive readiness diagnostics
         uses: actions/upload-artifact@v6
         with:
-          name: prospective-current-season-player-data
-          path: outputs/research/prospective_player_data_state.json
+          name: prospective-current-season-player-data-and-v5-history
+          path: outputs/research/prospective_v5_history_audit.json
           if-no-files-found: error
           retention-days: 30
