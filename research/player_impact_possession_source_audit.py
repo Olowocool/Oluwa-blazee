@@ -104,37 +104,46 @@ def main() -> None:
         box_url = f"{BASE}/espn/player_box/season={season}/data.parquet"
         team_url = f"{BASE}/stats/team_game_logs/season={season}/data.parquet"
         try:
-            # Team-level values are repeated on each player row; take MAX once
-            # per team-game, then compare offense and opponent possessions.
+            # ESPN's o_team_poss/d_team_poss are each player's actual team
+            # possession exposure while on court, not full-game team totals.
+            # Compare them with the linear clock-time allocation used by the
+            # current RAPM builder to quantify that proxy's error directly.
             box_compare = con.execute("""
                 WITH pb AS (
                     SELECT CAST(game_id AS VARCHAR) game_id,
                            CAST(team_id AS VARCHAR) team_id,
-                           MAX(TRY_CAST(o_team_poss AS DOUBLE)) o_team_poss,
-                           MAX(TRY_CAST(d_team_poss AS DOUBLE)) d_team_poss,
-                           COUNT(DISTINCT player_id) players,
-                           COUNT(*) FILTER (WHERE played) played_rows,
-                           SUM(TRY_CAST(seconds_played AS DOUBLE)) player_seconds
+                           CAST(player_id AS VARCHAR) player_id,
+                           TRY_CAST(seconds_played AS DOUBLE) seconds_played,
+                           TRY_CAST(o_team_poss AS DOUBLE) observed_o_team_poss,
+                           TRY_CAST(d_team_poss AS DOUBLE) observed_d_team_poss
                     FROM read_parquet(?, union_by_name=true)
-                    GROUP BY 1, 2
+                    WHERE played
                 ), tg AS (
                     SELECT CAST(game_id AS VARCHAR) game_id,
                            CAST(team_id AS VARCHAR) team_id,
                            CAST(opp_team_id AS VARCHAR) opp_team_id,
-                           TRY_CAST(poss AS DOUBLE) team_poss
+                           TRY_CAST(poss AS DOUBLE) team_poss,
+                           TRY_CAST(min AS DOUBLE) * 60.0 / 5.0 AS game_seconds
                     FROM read_parquet(?, union_by_name=true)
+                ), paired AS (
+                    SELECT pb.*,
+                           tg.team_poss * pb.seconds_played / NULLIF(tg.game_seconds, 0) AS time_alloc_o,
+                           opp.team_poss * pb.seconds_played / NULLIF(tg.game_seconds, 0) AS time_alloc_d
+                    FROM pb
+                    JOIN tg USING (game_id, team_id)
+                    LEFT JOIN tg opp ON opp.game_id=tg.game_id AND opp.team_id=tg.opp_team_id
                 )
-                SELECT COUNT(*) joined_team_games,
-                       COUNT(*) FILTER (WHERE ABS(pb.o_team_poss-tg.team_poss) <= 1.0) offense_within_1_poss,
-                       quantile_cont(ABS(pb.o_team_poss-tg.team_poss), 0.5) offense_median_abs_diff,
-                       quantile_cont(ABS(pb.o_team_poss-tg.team_poss), 0.9) offense_p90_abs_diff,
-                       COUNT(*) FILTER (WHERE ABS(pb.d_team_poss-opp.team_poss) <= 1.0) defense_within_1_poss,
-                       quantile_cont(ABS(pb.d_team_poss-opp.team_poss), 0.5) defense_median_abs_diff,
-                       quantile_cont(ABS(pb.d_team_poss-opp.team_poss), 0.9) defense_p90_abs_diff,
-                       COUNT(*) FILTER (WHERE pb.o_team_poss IS NULL OR pb.d_team_poss IS NULL) missing_box_possessions
-                FROM pb
-                JOIN tg USING (game_id, team_id)
-                LEFT JOIN tg opp ON opp.game_id=tg.game_id AND opp.team_id=tg.opp_team_id
+                SELECT COUNT(*) player_games,
+                       COUNT(*) FILTER (WHERE observed_o_team_poss IS NOT NULL AND time_alloc_o IS NOT NULL) offense_compared,
+                       AVG(ABS(observed_o_team_poss-time_alloc_o)) offense_mean_abs_error,
+                       quantile_cont(ABS(observed_o_team_poss-time_alloc_o), 0.5) offense_median_abs_error,
+                       quantile_cont(ABS(observed_o_team_poss-time_alloc_o), 0.9) offense_p90_abs_error,
+                       AVG(ABS(observed_d_team_poss-time_alloc_d)) defense_mean_abs_error,
+                       quantile_cont(ABS(observed_d_team_poss-time_alloc_d), 0.5) defense_median_abs_error,
+                       quantile_cont(ABS(observed_d_team_poss-time_alloc_d), 0.9) defense_p90_abs_error,
+                       AVG(observed_o_team_poss-time_alloc_o) offense_signed_error,
+                       AVG(observed_d_team_poss-time_alloc_d) defense_signed_error
+                FROM paired
             """, [box_url, team_url]).fetchdf()
             player_box_diagnostics[str(season)] = box_compare.astype(object).where(box_compare.notna(), None).to_dict("records")[0]
         except Exception as exc:
