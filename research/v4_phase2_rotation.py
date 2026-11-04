@@ -15,6 +15,7 @@ import unicodedata
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -400,7 +401,16 @@ def fetch_injury_reports(game_dates):
         found = False
         errors = []
         for clock in candidates:
+            # Archive filenames use Eastern Time. Keep the naive value for the
+            # nbainjuries URL helper, but persist an explicit timezone and UTC
+            # instant so downstream audits never have to guess the offset.
             ts = datetime.combine(game_date.date(), clock)
+            ts_et = ts.replace(tzinfo=ZoneInfo("America/New_York"))
+            ts_utc = ts_et.astimezone(timezone.utc).isoformat()
+            snapshot_meta = {
+                "snapshot_timezone": "America/New_York",
+                "snapshot_time_utc": ts_utc,
+            }
             try:
                 url = injury.gen_url(ts)
                 path = Path(_gen_filepath(ts, CACHE))
@@ -428,7 +438,7 @@ def fetch_injury_reports(game_dates):
                     digest = hashlib.sha256(path.read_bytes()).hexdigest()
                     manifest.append({
                         "game_date": str(game_date.date()), "status": "complete",
-                        "snapshot_time": ts.isoformat(), "url": url, "sha256": digest,
+                        "snapshot_time": ts.isoformat(), **snapshot_meta, "url": url, "sha256": digest,
                         "rows": 0, "pdf_pages": len(pdf.pages),
                     })
                     found = True
@@ -450,12 +460,14 @@ def fetch_injury_reports(game_dates):
                     break
                 digest = hashlib.sha256(path.read_bytes()).hexdigest()
                 frame["snapshot_time"] = ts.isoformat()
+                frame["snapshot_timezone"] = snapshot_meta["snapshot_timezone"]
+                frame["snapshot_time_utc"] = snapshot_meta["snapshot_time_utc"]
                 frame["snapshot_url"] = url
                 frame["snapshot_sha256"] = digest
                 rows.extend(frame.to_dict("records"))
                 manifest.append({
                     "game_date": str(game_date.date()), "status": "complete",
-                    "snapshot_time": ts.isoformat(), "url": url, "sha256": digest,
+                    "snapshot_time": ts.isoformat(), **snapshot_meta, "url": url, "sha256": digest,
                     "rows": int(len(frame)), "pdf_pages": len(pdf.pages),
                 })
                 found = True
