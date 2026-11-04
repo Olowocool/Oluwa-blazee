@@ -924,6 +924,12 @@ def main():
     team_minute_eval["top15_actual_minute_coverage_pct"] = (
         team_minute_eval.actual_top15_minutes_240 / 240.0 * 100.0
     )
+    team_minute_eval["candidate_pool_actual_minute_coverage_pct"] = (
+        team_minute_eval.actual_total_minutes_240 / 240.0 * 100.0
+    )
+    team_minute_eval["unallocated_actual_minutes_240"] = (
+        240.0 - team_minute_eval.actual_total_minutes_240
+    ).clip(lower=0.0)
     tail_summary = tail_rows.groupby(["season", "game_id", "side"]).agg(
         projected_tail_minutes=("expected_minutes", "sum"),
         actual_tail_minutes_240=("actual_minutes_240", "sum"),
@@ -937,6 +943,8 @@ def main():
     coverage_summary = team_minute_eval.groupby("season").agg(
         team_sides=("game_id", "size"),
         mean_top15_actual_minute_coverage_pct=("top15_actual_minute_coverage_pct", "mean"),
+        mean_candidate_pool_actual_minute_coverage_pct=("candidate_pool_actual_minute_coverage_pct", "mean"),
+        mean_unallocated_actual_minutes_240=("unallocated_actual_minutes_240", "mean"),
         mean_projected_tail_minutes=("projected_tail_minutes", "mean"),
         mean_actual_tail_minutes_240=("actual_tail_minutes_240", "mean"),
         mean_tail_bucket_abs_error=("tail_abs_error", "mean"),
