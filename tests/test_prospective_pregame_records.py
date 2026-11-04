@@ -43,14 +43,11 @@ class ProspectivePregameRecordTests(unittest.TestCase):
                 "sha256": "report-hash",
             },
             "projections": pd.DataFrame([
-                {"game_id":"fixture-1","team_id":"LAC","player_id":"p1","rotation_rank":1,
-                 "baseline_minutes":36.0,"expected_minutes":36.0,"availability_probability":1.0,
+                {"game_id":"fixture-1","team_id":team,"player_id":f"{team}-{i}","rotation_rank":i,
+                 "baseline_minutes":30.0,"expected_minutes":30.0,"availability_probability":1.0,
                  "status":"NOT_REPORTED","o_rapm":1.2,"d_rapm":-0.2,
-                 "o_delta_contribution":0.0,"d_delta_contribution":0.0},
-                {"game_id":"fixture-1","team_id":"LAL","player_id":"p2","rotation_rank":1,
-                 "baseline_minutes":36.0,"expected_minutes":36.0,"availability_probability":1.0,
-                 "status":"NOT_REPORTED","o_rapm":0.8,"d_rapm":0.1,
-                 "o_delta_contribution":0.0,"d_delta_contribution":0.0},
+                 "o_delta_contribution":0.0,"d_delta_contribution":0.0}
+                for team in ("LAC", "LAL") for i in range(1, 9)
             ]),
             "summaries": [
                 {"game_id":"fixture-1","team_id":"LAC","features":{"off_delta":0.0}},
