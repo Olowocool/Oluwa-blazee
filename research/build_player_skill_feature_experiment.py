@@ -113,6 +113,14 @@ def load_inputs() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     ).fillna(False).astype(bool)
     if candidates.loc[~candidates.is_rotation_tail, "expected_minutes"].gt(48.01).any():
         raise RuntimeError("A non-tail player has projected minutes above 48")
+    if candidates.player_id.isna().any() or candidates.player_id.astype(str).eq("__ROTATION_TAIL__").any():
+        raise RuntimeError("Full-rotation input contains missing player IDs or an aggregate tail sentinel")
+    if candidates.duplicated(["game_id", "player_id"]).any():
+        raise RuntimeError("Full-rotation input has duplicate player-game assignments")
+    minute_sums = candidates.groupby(["game_id", "side"]).expected_minutes.sum()
+    max_minute_error = float((minute_sums - 240.0).abs().max())
+    if max_minute_error > 0.25:
+        raise RuntimeError(f"Full-rotation input minute budget error: {max_minute_error}")
     predictions["game_id"] = predictions.game_id.astype("string").str.zfill(10)
     if predictions.duplicated(["season", "game_id"]).any():
         raise RuntimeError("Duplicate game keys in frozen Stage C/V5 predictions")
@@ -414,6 +422,10 @@ def build_team_features(candidate_profiles: pd.DataFrame) -> tuple[pd.DataFrame,
         "max_rotation_minutes_sum_error": float(minute_error.max()),
         "mean_profiled_minutes_share": float(team.profiled_minutes_share.mean()),
         "mean_rotation_tail_minutes": float(team.rotation_tail_minutes.mean()),
+        "mean_individual_rotation_players_per_team_game": float(team.rotation_players.mean()),
+        "median_individual_rotation_players_per_team_game": float(team.rotation_players.median()),
+        "max_individual_rotation_players_per_team_game": int(team.rotation_players.max()),
+        "rotation_tail_rows": int(candidate_profiles.is_rotation_tail.sum()),
     }
     return wide, diagnostics
 
