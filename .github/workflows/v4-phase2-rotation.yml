@@ -63,6 +63,16 @@ jobs:
         run: python research/v4_phase2_rotation.py
       - name: Build Stage C point-in-time player impact features
         run: python research/build_player_impact_features.py
+      - name: Upload full-rotation Stage C build evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: nba-player-intelligence-stage-c-full-rotation
+          path: |
+            outputs/research/v4_phase2/
+            outputs/research/player_intelligence_profiles/
+            outputs/research/player_intelligence_stage_c/
+          if-no-files-found: error
+          retention-days: 30
       - name: Download immutable frozen V5 prequential predictions
         uses: actions/download-artifact@v4
         with:
@@ -78,14 +88,10 @@ jobs:
         run: |
           python -m py_compile research/build_player_skill_feature_experiment.py
           python research/build_player_skill_feature_experiment.py
-      - name: Upload Stage C and Phase 2 evidence
+      - name: Upload full-rotation player skill comparison evidence
         uses: actions/upload-artifact@v6
         with:
-          name: nba-player-intelligence-stage-c-and-full-rotation-validation
-          path: |
-            outputs/research/v4_phase2/
-            outputs/research/player_intelligence_profiles/
-            outputs/research/player_intelligence_stage_c/
-            outputs/research/player_skill_feature_experiment/
+          name: full-rotation-player-skill-experiment
+          path: outputs/research/player_skill_feature_experiment/
           if-no-files-found: error
           retention-days: 30
