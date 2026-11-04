@@ -453,7 +453,7 @@ def fetch_injury_reports(game_dates):
                     digest = hashlib.sha256(path.read_bytes()).hexdigest()
                     manifest.append({
                         "game_date": str(game_date.date()), "status": "complete",
-                        "snapshot_time": ts.isoformat(), "url": url, "sha256": digest,
+                        "snapshot_time": ts.isoformat(), **snapshot_meta, "url": url, "sha256": digest,
                         "rows": 0, "pdf_pages": len(pdf.pages),
                     })
                     found = True
