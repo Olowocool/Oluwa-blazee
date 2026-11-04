@@ -44,7 +44,7 @@ RAPM_ALPHA = 1000.0
 RATING_HALF_LIFE_DAYS = 60.0
 RATING_REFRESH_DAYS = 14
 RAPM_EXPOSURE_SHRINK = 500.0
-MIN_ROTATION_MINUTES = 1.0
+MIN_ROTATION_MINUTES = 0.0
 PLAYER_MINUTES_WINDOW = 10
 PLAYER_MINUTES_HALF_LIFE = 5.0
 STATUS_PRIOR_STRENGTH = 10.0
@@ -818,6 +818,22 @@ def main():
     print(f"Built injury/rotation features for {len(features)} games and {len(minutes)} player-game rotations", flush=True)
     if features.empty:
         raise RuntimeError("No injury-adjusted game features were generated")
+    # Full-rotation contract: all positive-minute eligible candidates are
+    # retained individually, with no anonymous tail sentinel, unique team
+    # assignment, and a complete 240-minute regulation allocation.
+    if minutes["player_id"].astype(str).eq("__ROTATION_TAIL__").any():
+        raise RuntimeError("Aggregate rotation-tail sentinel unexpectedly present")
+    if minutes.duplicated(["game_id", "player_id"]).any():
+        dup = minutes.loc[minutes.duplicated(["game_id", "player_id"], keep=False),
+                          ["game_id", "player_id", "side"]]
+        raise RuntimeError(f"Duplicate individual player-game assignments: {dup.head(10).to_dict('records')}")
+    minute_budgets = minutes.groupby(["game_id", "side"]).expected_minutes.sum()
+    max_budget_error = float((minute_budgets - 240.0).abs().max())
+    if max_budget_error > 0.25:
+        raise RuntimeError(f"Full rotation minute budget does not sum to 240: {max_budget_error}")
+    rank_duplicates = minutes.duplicated(["game_id", "side", "rotation_rank"]).sum()
+    if rank_duplicates:
+        raise RuntimeError(f"Duplicate rotation ranks: {int(rank_duplicates)}")
     # The aggregate rotation-tail sentinel is intentionally present once per team.
     # Check real player IDs across both teams, and validate tail rows per game/side.
     real_minutes = minutes[minutes["player_id"].astype(str) != "__ROTATION_TAIL__"]
@@ -930,6 +946,9 @@ def main():
         tail_abs_error=("absolute_minutes_error", "mean"),
     ).reset_index()
     team_minute_eval = team_minute_eval.merge(tail_summary, on=["season", "game_id", "side"], how="left")
+    team_minute_eval[["projected_tail_minutes", "actual_tail_minutes_240", "tail_abs_error"]] = (
+        team_minute_eval[["projected_tail_minutes", "actual_tail_minutes_240", "tail_abs_error"]].fillna(0.0)
+    )
     minute_summary = individual.groupby("season").agg(
         player_game_rows=("player_id", "size"),
         projected_player_minutes_mae=("absolute_minutes_error", "mean"),
@@ -954,9 +973,10 @@ def main():
         "target_seasons_end_year": TARGET_SEASONS,
         "oos_test_seasons_end_year": [2025, 2026],
         "rotation_output": {
-            "policy": "all eligible prior-team players retained as individual rows; no top-15 compression",
+            "policy": "all prior-team players with positive recent minutes retained as individual rows; no top-15 compression",
             "minute_budget_per_team": 240.0,
             "minimum_recent_role_minutes": MIN_ROTATION_MINUTES,
+            "eligibility": "any positive recent minutes in the last 10 prior player-team games",
         },
         "rapm": {
             "method": "Ridge model on reconstructed five-on-five lineup scoring stints; separate player offense and defense coefficients; team offense/defense fixed effects",
