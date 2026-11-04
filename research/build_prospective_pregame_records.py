@@ -76,8 +76,15 @@ def build_pregame_records(
                 raise ValueError(f"Missing {side} rotation rows for {game_key}/{team_id}")
             team_rows = team_rows.sort_values("rotation_rank")
             minutes = pd.to_numeric(team_rows.expected_minutes, errors="coerce")
-            if minutes.isna().any() or abs(float(minutes.sum()) - 240.0) > 1e-5:
-                raise ValueError(f"{side} rotation does not reconcile to 240 minutes")
+            if (minutes.isna().any() or not minutes.map(lambda x: pd.notna(x) and float(x) >= 0).all()
+                    or abs(float(minutes.sum()) - 240.0) > 1e-5):
+                raise ValueError(f"{side} rotation does not reconcile to 240 valid minutes")
+            if team_rows.player_id.astype(str).duplicated().any():
+                raise ValueError(f"Duplicate player IDs in {side} rotation for {game_key}")
+            if float(minutes.max()) > 48.0 + 1e-6:
+                raise ValueError(f"{side} rotation exceeds the 48-minute player cap")
+            if team_rows.get("is_rotation_tail", pd.Series(False, index=team_rows.index)).astype(bool).any():
+                raise ValueError(f"Synthetic rotation-tail row found for {side} team")
             player_rows = []
             for player in team_rows.to_dict("records"):
                 player_rows.append({
