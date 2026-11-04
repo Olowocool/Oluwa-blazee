@@ -17,7 +17,7 @@ import duckdb
 BASE = "https://basketball-data.billmill.org/nba"
 OUT = Path("outputs/research/player_impact_possession_source_audit")
 SEASONS_TO_INSPECT = [2024, 2025, 2026, 2027]
-TOKENS = ("play", "poss", "shot", "tracking", "lineup", "rotation", "event", "matchup", "rapm", "player")
+TOKENS = ("play", "poss", "shot", "tracking", "lineup", "rotation", "event", "matchup", "rapm", "player", "factor", "epm")
 
 
 def main() -> None:
@@ -74,8 +74,8 @@ def main() -> None:
                 }
         result["tables"][table] = item
 
-    # Inspect actual event categories and whether the ESPN player-box
-    # possession fields reconcile to the independent team-game log.
+    # Inspect event categories, player action-value categories, and compare
+    # ESPN on-court possession exposure with the old clock-time allocation.
     event_diagnostics = {}
     player_box_diagnostics = {}
     for season in SEASONS_TO_INSPECT:
@@ -149,6 +149,29 @@ def main() -> None:
         except Exception as exc:
             player_box_diagnostics[str(season)] = {"error": f"{type(exc).__name__}: {exc}"}
 
+    player_detail_categories = {}
+    four_factor_categories = {}
+    for season in SEASONS_TO_INSPECT:
+        detail_url = f"{BASE}/espn/player_details/season={season}/data.parquet"
+        factor_url = f"{BASE}/espn/four_factors/season={season}/data.parquet"
+        for url, destination in (
+            (detail_url, player_detail_categories),
+            (factor_url, four_factor_categories),
+        ):
+            try:
+                counts = con.execute("""
+                    SELECT action_type, COUNT(*) AS rows,
+                           COUNT(DISTINCT game_id) AS games,
+                           COUNT(DISTINCT player_id) AS players
+                    FROM read_parquet(?, union_by_name=true)
+                    GROUP BY 1 ORDER BY rows DESC
+                """, [url]).fetchdf()
+                destination[str(season)] = counts.astype(object).where(counts.notna(), None).to_dict("records")
+            except Exception as exc:
+                destination[str(season)] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    result["player_detail_action_type_diagnostics"] = player_detail_categories
+    result["four_factor_action_type_diagnostics"] = four_factor_categories
     result["event_category_diagnostics"] = event_diagnostics
     result["player_box_possession_reconciliation"] = player_box_diagnostics
 
