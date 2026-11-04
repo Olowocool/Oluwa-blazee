@@ -154,7 +154,7 @@ def immutable_snapshot(record: dict, output_dir: Path) -> Path:
     path = output_dir / f"{digest}.json"
     if path.exists():
         existing = path.read_text(encoding="utf-8")
-        if existing != payload:
+        if existing.rstrip(chr(10)) != payload:
             raise RuntimeError("Content-address collision; refusing overwrite")
         return path
     # Exclusive create makes the append-only guarantee explicit.
