@@ -13,6 +13,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
@@ -40,7 +41,7 @@ def validate_rotation_projection(rows: pd.DataFrame, game_id: str, team_id: str)
     if d.is_rotation_tail.astype(bool).any():
         raise ValueError("Synthetic rotation-tail rows are prohibited")
     minutes = pd.to_numeric(d.expected_minutes, errors="coerce")
-    if minutes.isna().any() or not minutes.map(lambda x: pd.notna(x) and x >= 0).all():
+    if minutes.isna().any() or not np.isfinite(minutes.to_numpy(dtype=float)).all() or (minutes < 0).any():
         raise ValueError("Expected minutes must be finite and non-negative")
     if abs(float(minutes.sum()) - 240.0) > 1e-5:
         raise ValueError(f"Expected minutes do not reconcile to 240: {minutes.sum()}")
@@ -89,9 +90,14 @@ def build_target_date_rotations(state: dict, fixtures: pd.DataFrame, target_date
     metadata = require_complete_injury_report(manifest, target)
     if manifest.iloc[0].get("snapshot_time_utc") is None:
         raise RuntimeError("Official report manifest lacks a UTC timestamp")
-    mapped, unmatched = phase2.map_injury_rows(
-        raw, game_map, state["player_names"], team_names
-    )
+    if raw.empty and int(manifest.iloc[0].get("rows", -1)) == 0:
+        mapped = pd.DataFrame(columns=["season", "game_date", "game_id", "team_id",
+                                       "player_id", "status", "snapshot_time"])
+        unmatched = pd.DataFrame(columns=["game_date", "team", "player", "reason"])
+    else:
+        mapped, unmatched = phase2.map_injury_rows(
+            raw, game_map, state["player_names"], team_names
+        )
     mapped = mapped[mapped.game_date.eq(target)].copy()
     if mapped.empty and int(manifest.iloc[0].get("rows", -1)) != 0:
         raise RuntimeError("Official injury report rows did not map to target fixtures")
