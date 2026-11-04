@@ -17,7 +17,7 @@ import duckdb
 BASE = "https://basketball-data.billmill.org/nba"
 OUT = Path("outputs/research/player_impact_possession_source_audit")
 SEASONS_TO_INSPECT = [2024, 2025, 2026, 2027]
-TOKENS = ("play", "poss", "shot", "tracking", "lineup", "rotation", "event", "matchup", "rapm")
+TOKENS = ("play", "poss", "shot", "tracking", "lineup", "rotation", "event", "matchup", "rapm", "player")
 
 
 def main() -> None:
