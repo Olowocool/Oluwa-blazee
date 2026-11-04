@@ -258,6 +258,58 @@ def main():
     phase["game_id"] = phase.game_id.astype(str)
     phase["game_date"] = pd.to_datetime(phase.game_date).dt.normalize()
     phase["rapm_snapshot_date"] = pd.to_datetime(phase.rapm_snapshot_date, errors="coerce")
+
+    # snapshot_date is an as-of label, not the last observation date.
+    # A snapshot labelled on game day is valid only when its fitted history
+    # ends strictly before that day. Verify the actual manifest cutoff rather
+    # than incorrectly rejecting same-day-labelled pregame snapshots.
+    rapm_manifest_path = PHASE2_DIR / "v4_phase2_rapm_snapshots.csv"
+    if not rapm_manifest_path.is_file():
+        raise FileNotFoundError(f"Missing RAPM snapshot manifest: {rapm_manifest_path}")
+    rapm_manifest = pd.read_csv(rapm_manifest_path)
+    required_manifest = {"season", "snapshot_date", "max_history_date", "history_rows"}
+    missing_manifest = sorted(required_manifest - set(rapm_manifest.columns))
+    if missing_manifest:
+        raise RuntimeError(f"RAPM manifest missing required fields: {missing_manifest}")
+    rapm_manifest["snapshot_date"] = pd.to_datetime(rapm_manifest.snapshot_date, errors="coerce").dt.normalize()
+    rapm_manifest["max_history_date"] = pd.to_datetime(rapm_manifest.max_history_date, errors="coerce").dt.normalize()
+    if rapm_manifest.duplicated(["season", "snapshot_date"]).any():
+        raise RuntimeError("Duplicate season/snapshot-date rows in RAPM manifest")
+    manifest_bad = int((
+        rapm_manifest.snapshot_date.isna()
+        | rapm_manifest.max_history_date.isna()
+        | rapm_manifest.max_history_date.ge(rapm_manifest.snapshot_date)
+        | pd.to_numeric(rapm_manifest.history_rows, errors="coerce").fillna(0).le(0)
+    ).sum())
+    if manifest_bad:
+        raise RuntimeError(f"RAPM manifest contains {manifest_bad} invalid snapshot history cutoffs")
+    phase = phase.merge(
+        rapm_manifest[["season", "snapshot_date", "max_history_date"]].rename(columns={
+            "snapshot_date": "rapm_snapshot_date",
+            "max_history_date": "rapm_max_history_date",
+        }),
+        on=["season", "rapm_snapshot_date"], how="left", validate="many_to_one",
+    )
+    missing_snapshot = int(phase.rapm_max_history_date.isna().sum())
+    future_snapshot = int((
+        phase.rapm_snapshot_date.notna()
+        & phase.rapm_snapshot_date.gt(phase.game_date)
+    ).sum())
+    non_pregame_history = int((
+        phase.rapm_max_history_date.notna()
+        & phase.rapm_max_history_date.ge(phase.game_date)
+    ).sum())
+    rapm_bad = missing_snapshot + future_snapshot + non_pregame_history
+    if rapm_bad:
+        raise RuntimeError(
+            "RAPM point-in-time validation failed: "
+            f"missing_manifest_match={missing_snapshot}, "
+            f"snapshot_after_game_date={future_snapshot}, "
+            f"history_not_strictly_prior={non_pregame_history}"
+        )
+    phase["game_id"] = phase.game_id.astype(str)
+    phase["game_date"] = pd.to_datetime(phase.game_date).dt.normalize()
+    phase["rapm_snapshot_date"] = pd.to_datetime(phase.rapm_snapshot_date, errors="coerce")
     rapm_bad = int((phase.rapm_snapshot_date.notna() & phase.rapm_snapshot_date.ge(phase.game_date)).sum())
     if rapm_bad:
         raise RuntimeError(f"RAPM snapshot is not strictly pregame for {rapm_bad} game rows")
