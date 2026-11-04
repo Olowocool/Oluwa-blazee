@@ -614,32 +614,63 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reporte
             estimates[pid] = m
     if not estimates:
         return None, None
-    ranked = sorted(estimates, key=estimates.get, reverse=True)[:MAX_ROTATION_PLAYERS]
-    base = np.array([estimates[p] for p in ranked], dtype=float)
-    base = base * (240.0 / base.sum())
+    ranked_all = sorted(estimates, key=estimates.get, reverse=True)
+    ranked = ranked_all[:MAX_ROTATION_PLAYERS]
+    tail = ranked_all[MAX_ROTATION_PLAYERS:]
+    # Allocate the 240-minute budget across the complete eligible prior-team
+    # player pool before compressing players outside the top 15 into one
+    # explicit rotation-tail bucket. Never silently redistribute omitted
+    # rotation minutes to the top 15.
+    base_all = np.array([estimates[p] for p in ranked_all], dtype=float)
+    base_all = base_all * (240.0 / base_all.sum())
     status_map = {
         str(r.player_id): str(r.status)
         for r in team_reports.itertuples()
     }
-    exp_raw, probs, statuses = [], [], []
-    for pid, m in zip(ranked, base):
+    prob_all, status_all = [], []
+    for pid in ranked_all:
         status = status_map.get(pid, "NOT_REPORTED")
         prob = 1.0 if status == "NOT_REPORTED" else status_probability(status, STATUS_HISTORY, game_date)
-        exp_raw.append(m * prob)
-        probs.append(prob)
-        statuses.append(status)
-    exp_raw = np.asarray(exp_raw, dtype=float)
+        prob_all.append(prob)
+        status_all.append(status)
+    exp_raw = base_all * np.asarray(prob_all, dtype=float)
     if exp_raw.sum() <= 1e-8:
-        exp = base.copy()
+        exp_all = base_all.copy()
     else:
-        exp = exp_raw * (240.0 / exp_raw.sum())
+        exp_all = exp_raw * (240.0 / exp_raw.sum())
+
+    top_n = len(ranked)
+    top_base, top_exp = base_all[:top_n], exp_all[:top_n]
+    top_prob, top_status = prob_all[:top_n], status_all[:top_n]
     d = pd.DataFrame({
-        "player_id": ranked, "baseline_minutes": base, "expected_minutes": exp,
-        "availability_probability": probs, "status": statuses,
+        "player_id": ranked, "baseline_minutes": top_base, "expected_minutes": top_exp,
+        "availability_probability": top_prob, "status": top_status,
         "actual_minutes": [actual_lookup.get((game_id, p), 0.0) for p in ranked],
+        "is_rotation_tail": False,
     })
+    if tail:
+        tail_base = float(base_all[top_n:].sum())
+        tail_exp = float(exp_all[top_n:].sum())
+        tail_weights = base_all[top_n:]
+        tail_o = np.array([rapm.get(pid, {}).get("o_rapm", 0.0) for pid in tail], dtype=float)
+        tail_d = np.array([rapm.get(pid, {}).get("d_rapm", 0.0) for pid in tail], dtype=float)
+        tail_o_rapm = float(np.average(tail_o, weights=tail_weights)) if tail_base > 0 else 0.0
+        tail_d_rapm = float(np.average(tail_d, weights=tail_weights)) if tail_base > 0 else 0.0
+        tail_status = "ROTATION_TAIL"
+        tail_row = pd.DataFrame([{
+            "player_id": "__ROTATION_TAIL__", "baseline_minutes": tail_base,
+            "expected_minutes": tail_exp,
+            "availability_probability": tail_exp / tail_base if tail_base > 0 else 1.0,
+            "status": tail_status,
+            "actual_minutes": sum(actual_lookup.get((game_id, pid), 0.0) for pid in tail),
+            "is_rotation_tail": True,
+            "o_rapm": tail_o_rapm, "d_rapm": tail_d_rapm,
+        }])
+        d = pd.concat([d, tail_row], ignore_index=True)
+    d["is_rotation_tail"] = d["is_rotation_tail"].fillna(False).astype(bool)
     for col in ("o_rapm", "d_rapm"):
-        d[col] = [rapm.get(p, {}).get(col, 0.0) for p in ranked]
+        if col not in d:
+            d[col] = [rapm.get(pid, {}).get(col, 0.0) for pid in ranked]
     d["o_delta_contribution"] = (d.expected_minutes - d.baseline_minutes) / 48.0 * d.o_rapm
     d["d_delta_contribution"] = (d.expected_minutes - d.baseline_minutes) / 48.0 * d.d_rapm
     features = {
@@ -868,28 +899,37 @@ def main():
 
     minute_error = minutes.copy()
     minute_error["absolute_minutes_error"] = np.abs(minute_error.expected_minutes - minute_error.actual_minutes_240)
+    individual = minute_error[~minute_error.is_rotation_tail].copy()
+    tail_rows = minute_error[minute_error.is_rotation_tail].copy()
     team_minute_eval = minute_error.groupby(["season", "game_id", "side"]).agg(
-        projected_candidate_minutes=("expected_minutes", "sum"),
-        actual_candidate_minutes_240=("actual_minutes_240", "sum"),
+        projected_total_minutes=("expected_minutes", "sum"),
+        actual_total_minutes_240=("actual_minutes_240", "sum"),
     ).reset_index()
-    team_minute_eval["candidate_actual_minute_coverage_pct"] = (
-        team_minute_eval.actual_candidate_minutes_240 / 240.0 * 100.0
+    top15_eval = individual.groupby(["season", "game_id", "side"]).agg(
+        actual_top15_minutes_240=("actual_minutes_240", "sum"),
+    ).reset_index()
+    team_minute_eval = team_minute_eval.merge(top15_eval, on=["season", "game_id", "side"], how="left")
+    team_minute_eval["top15_actual_minute_coverage_pct"] = (
+        team_minute_eval.actual_top15_minutes_240 / 240.0 * 100.0
     )
-    minute_summary = minute_error.groupby("season").agg(
+    tail_summary = tail_rows.groupby(["season", "game_id", "side"]).agg(
+        projected_tail_minutes=("expected_minutes", "sum"),
+        actual_tail_minutes_240=("actual_minutes_240", "sum"),
+        tail_abs_error=("absolute_minutes_error", "mean"),
+    ).reset_index()
+    team_minute_eval = team_minute_eval.merge(tail_summary, on=["season", "game_id", "side"], how="left")
+    minute_summary = individual.groupby("season").agg(
         player_game_rows=("player_id", "size"),
         projected_player_minutes_mae=("absolute_minutes_error", "mean"),
-        mean_projected_candidate_team_minutes=("expected_minutes", "sum"),
-        mean_actual_candidate_team_minutes_240=("actual_minutes_240", "sum"),
     ).reset_index()
     coverage_summary = team_minute_eval.groupby("season").agg(
         team_sides=("game_id", "size"),
-        mean_candidate_actual_minute_coverage_pct=("candidate_actual_minute_coverage_pct", "mean"),
-        mean_projected_candidate_team_minutes=("projected_candidate_minutes", "mean"),
-        mean_actual_candidate_team_minutes_240=("actual_candidate_minutes_240", "mean"),
+        mean_top15_actual_minute_coverage_pct=("top15_actual_minute_coverage_pct", "mean"),
+        mean_projected_tail_minutes=("projected_tail_minutes", "mean"),
+        mean_actual_tail_minutes_240=("actual_tail_minutes_240", "mean"),
+        mean_tail_bucket_abs_error=("tail_abs_error", "mean"),
     ).reset_index()
-    minute_summary = minute_summary.drop(columns=[
-        "mean_projected_candidate_team_minutes", "mean_actual_candidate_team_minutes_240"
-    ]).merge(coverage_summary, on="season", how="left")
+    minute_summary = minute_summary.merge(coverage_summary, on="season", how="left")
     status_summary.to_csv(OUT / "v4_phase2_status_calibration.csv", index=False)
     minute_summary.to_csv(OUT / "v4_phase2_minutes_metrics.csv", index=False)
 
