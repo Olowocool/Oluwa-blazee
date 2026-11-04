@@ -101,8 +101,14 @@ def build_target_date_rotations(state: dict, fixtures: pd.DataFrame, target_date
     mapped = mapped[mapped.game_date.eq(target)].copy()
     if mapped.empty and int(manifest.iloc[0].get("rows", -1)) != 0:
         raise RuntimeError("Official injury report rows did not map to target fixtures")
-    if mapped.game_id.astype(str).nunique() > len(target_games):
-        raise RuntimeError("Mapped injury rows contain unexpected target game IDs")
+    unexpected_games = set(mapped.game_id.astype(str)) - set(target_games.game_id.astype(str))
+    if unexpected_games:
+        raise RuntimeError(f"Injury rows mapped to non-target fixtures: {sorted(unexpected_games)}")
+    if not unmatched.empty:
+        raise RuntimeError(
+            f"Official injury report contains {len(unmatched)} unmapped player/team rows; "
+            "refusing to assume those players are available"
+        )
 
     # The prospective status prior must not borrow later historical labels.
     phase2.STATUS_HISTORY = pd.DataFrame(columns=["game_date", "status", "played"])
