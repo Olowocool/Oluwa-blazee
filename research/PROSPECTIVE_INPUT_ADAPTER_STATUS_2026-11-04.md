@@ -20,7 +20,9 @@ It would be misleading to publish a player-adjusted number until the current-sea
 - Writes content-addressed JSON snapshots with exclusive-create semantics; existing snapshots are never overwritten.
 - Explicitly records that no player-adjusted total is available until calibration exists.
 
-## Joined pregame evidence builder\n\n`research/build_prospective_pregame_records.py` joins a fresh DraftKings quote, current-season point-in-time RAPM state, one complete official target-date injury report, and both teams' individual full-rotation minute projections. It verifies that the report and quote precede tip, each team has unique player rows and exactly 240 projected regulation minutes, and the record includes source/report provenance. Each game is written with the shared content-addressed, exclusive-create snapshot writer. It reconstructs V5's score-history schema from the same public, strictly pre-target team-game logs and calls the frozen V5 engine for a baseline total and home/away split. It records the V5 history cutoff and row count. It still records `player_adjusted_forecast_emitted=false` and `player_adjusted_total=null`; RAPM coefficients and minute deltas are inputs, not a calibrated total adjustment.\n\nRun from the repository root with a fresh local private odds archive:\n\n```bash\npython research/build_prospective_pregame_records.py \\\n  --target-date YYYY-MM-DD \\\n  --odds-archive data/private/dunkapi_public_odds_snapshots.csv \\\n  --output-dir outputs/research/prospective_pregame_records\n```\n\n## Local invocation
+## Joined pregame evidence builder\n\n`research/build_prospective_pregame_records.py` joins a fresh DraftKings quote, current-season point-in-time RAPM state, one complete official target-date injury report, and both teams' individual full-rotation minute projections. It verifies that the report and quote precede tip, each team has unique player rows and exactly 240 projected regulation minutes, and the record includes source/report provenance. Each game is written with the shared content-addressed, exclusive-create snapshot writer. It assembles the full historical V5 score base (`data/historical_nba_scores.csv`), dated score patches in `research/data`, and verified completed current-season public team-game logs. Duplicate fixtures must agree on scores, and all target-date/future rows are excluded. It then calls the frozen V5 engine for a baseline total and home/away split. It records the V5 history cutoff and row count. It still records `player_adjusted_forecast_emitted=false` and `player_adjusted_total=null`; RAPM coefficients and minute deltas are inputs, not a calibrated total adjustment.\n\nRun from the repository root with a fresh local private odds archive:\n\n```bash\npython research/build_prospective_pregame_records.py \\\n  --target-date YYYY-MM-DD \\\n  --odds-archive data/private/dunkapi_public_odds_snapshots.csv \\\n  --score-history data/historical_nba_scores.csv \\
+  --score-patch-dir research/data \\
+  --output-dir outputs/research/prospective_pregame_records\n```\n\n## Local invocation
 
 Run from the repository root after the private odds collector has populated the local archive:
 
@@ -34,10 +36,9 @@ The private odds archive and generated snapshots are local research evidence and
 
 ## Not yet implemented / not claimed
 
-- Current-season 2026-27 RAPM reconstruction and point-in-time snapshot selection inside the prospective runner.
-- Current-season rotation projection joined to the fixture and mapped official injury report.
+- A live end-to-end record generation against the user's private odds archive and a freshly retrieved target-date official injury report (the archive is local/private and is not available to GitHub CI).
 - A calibrated RAPM/injury-to-total residual model fitted strictly before each forecast date.
-- A frozen V5 baseline alongside the player-aware challenger in the same immutable record (the current builder deliberately emits neither number until the score-history input and baseline join are wired and tested).
+- A calibrated player-adjusted challenger alongside the frozen V5 baseline in the same immutable record.
 - Prospective grading, betting outcomes, CLV and profitability evidence.
 
 ## Safety
