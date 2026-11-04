@@ -82,15 +82,15 @@ class ProspectivePregameRecordTests(unittest.TestCase):
             root = Path(td)
             base = root / "historical.csv"
             base.write_text(
-                "game_date,home_team,away_team,home_score,away_score\\n"
-                "2026-10-01,Boston Celtics,Chicago Bulls,110,100\\n",
+                "game_date,home_team,away_team,home_score,away_score\n"
+                "2026-10-01,Boston Celtics,Chicago Bulls,110,100\n",
                 encoding="utf-8",
             )
             patches = root / "patches"
             patches.mkdir()
             (patches / "score_history_patch_test.csv").write_text(
-                "game_date,home_team,away_team,home_score,away_score\\n"
-                "2026-11-03,Miami Heat,Orlando Magic,105,101\\n",
+                "game_date,home_team,away_team,home_score,away_score\n"
+                "2026-11-03,Miami Heat,Orlando Magic,105,101\n",
                 encoding="utf-8",
             )
             history = build_v5_score_history(
