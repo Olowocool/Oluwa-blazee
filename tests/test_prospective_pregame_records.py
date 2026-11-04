@@ -45,6 +45,10 @@ class ProspectivePregameRecordTests(unittest.TestCase):
                 {"season": 2027, "game_id": "target-game", "team_id": "LAC", "pts": 120},
                 {"season": 2027, "game_id": "target-game", "team_id": "LAL", "pts": 115},
             ]),
+            "v5_score_history": pd.DataFrame([{
+                "game_date": "2026-11-04", "home_team": "Los Angeles Lakers",
+                "away_team": "Los Angeles Clippers", "home_score": 112, "away_score": 108,
+            }]),
             "diagnostics": {
                 "source_seasons": [2026, 2027],
                 "rapm_max_history_date": "2026-11-04",
