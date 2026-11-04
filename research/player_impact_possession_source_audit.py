@@ -117,7 +117,7 @@ def main() -> None:
                            TRY_CAST(o_team_poss AS DOUBLE) observed_o_team_poss,
                            TRY_CAST(d_team_poss AS DOUBLE) observed_d_team_poss
                     FROM read_parquet(?, union_by_name=true)
-                    WHERE played
+                    WHERE played AND CAST(game_id AS VARCHAR) LIKE '002%'
                 ), tg AS (
                     SELECT CAST(game_id AS VARCHAR) game_id,
                            CAST(team_id AS VARCHAR) team_id,
@@ -125,6 +125,7 @@ def main() -> None:
                            TRY_CAST(poss AS DOUBLE) team_poss,
                            TRY_CAST(min AS DOUBLE) * 60.0 / 5.0 AS game_seconds
                     FROM read_parquet(?, union_by_name=true)
+                    WHERE CAST(game_id AS VARCHAR) LIKE '002%'
                 ), paired AS (
                     SELECT pb.*,
                            tg.team_poss * pb.seconds_played / NULLIF(tg.game_seconds, 0) AS time_alloc_o,
