@@ -218,6 +218,7 @@ def load_player_history() -> tuple[pd.DataFrame, dict]:
     fga = history.fga.clip(lower=0)
     fg3a = history.fg3a.clip(lower=0)
     fg2a = (history.fga - history.fg3a).clip(lower=0)
+    history["fg2a"] = fg2a
     fta = history.fta.clip(lower=0)
     layup_fga = history.layup_fga.clip(lower=0)
     history["fga_equiv"] = fga + 0.44 * fta
@@ -229,13 +230,15 @@ def load_player_history() -> tuple[pd.DataFrame, dict]:
     history["three_pa_share"] = fg3a / fga.replace(0, np.nan)
     history["layup_share"] = layup_fga / fga.replace(0, np.nan)
     history["ft_rate"] = fta / fga.replace(0, np.nan)
+    action_rate_columns = {}
     for action in ACTION_TYPES:
-        history[f"action_{action}_o_per100"] = (
+        action_rate_columns[f"action_{action}_o_per100"] = (
             100 * history[f"action_{action}_o_net_pts"] / o.replace(0, np.nan)
         )
-        history[f"action_{action}_d_per100"] = (
+        action_rate_columns[f"action_{action}_d_per100"] = (
             100 * history[f"action_{action}_d_net_pts"] / d.replace(0, np.nan)
         )
+    history = pd.concat([history, pd.DataFrame(action_rate_columns, index=history.index)], axis=1)
     diagnostics = {
         "player_game_rows": int(len(history)),
         "unique_players": int(history.player_id.nunique()),
