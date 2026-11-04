@@ -55,7 +55,8 @@ def build_v5_score_history(
     required_logs = {"season", "game_id", "team_id", "pts"}
     if not required_games.issubset(games.columns) or not required_logs.issubset(team_logs.columns):
         raise ValueError("Public source frames cannot reconstruct current-season V5 history")
-    current_season = int(target.year if target.month >= 10 else target.year - 1)
+    # NBA season IDs use the ending year (e.g. October 2026 belongs to 2027).
+    current_season = int(target.year + 1 if target.month >= 10 else target.year)
     games = games[games.season.astype(int).eq(current_season)].copy()
     team_logs = team_logs[team_logs.season.astype(int).eq(current_season)].copy()
     names = team_names[team_names.season.astype(int).eq(current_season)][
@@ -163,8 +164,6 @@ def build_pregame_records(
     report = rotation_result["report_metadata"]
     report_time = utc_timestamp(report["snapshot_time_utc"])
     created_at = utc_timestamp(created_at_utc)
-    if report_time > created_at:
-        raise ValueError("Official injury report timestamp is later than record creation")
     projections = rotation_result["projections"].copy()
     if projections.empty:
         raise ValueError("No full-rotation player projections available")
@@ -180,6 +179,8 @@ def build_pregame_records(
         observed = utc_timestamp(row["observed_at_utc"])
         if report_time >= commence:
             raise ValueError(f"Official injury report is not pregame for {game_key}")
+        if report_time > created_at:
+            raise ValueError(f"Official injury report timestamp is later than record creation for {game_key}")
         if observed >= commence:
             raise ValueError(f"Market observation is not pregame for {game_key}")
         if observed > created_at:
