@@ -44,6 +44,7 @@ def normalize_source_frames(games, team_logs, player_logs, player_names,
     g["game_date"] = pd.to_datetime(g.game_date, errors="coerce").dt.normalize()
     if g.game_date.isna().any():
         raise ValueError("games contains invalid game dates")
+    all_source_game_ids = set(g.game_id.astype(str))
     g = g[g.game_type.astype(str).str.casefold().eq("regular_season")].copy()
     g["game_id"] = g.game_id.astype(str)
     for c in ("home_team_id", "away_team_id"):
@@ -64,9 +65,12 @@ def normalize_source_frames(games, team_logs, player_logs, player_names,
             raise ValueError(f"{label} has invalid game dates")
         if (d.game_date >= target).any():
             raise ValueError(f"{label} contains same-day/future rows for {target.date()}")
-        unknown = set(d.game_id) - set(g.game_id)
+        unknown = set(d.game_id) - all_source_game_ids
         if unknown:
-            raise ValueError(f"{label} contains {len(unknown)} unknown game IDs")
+            raise ValueError(f"{label} contains {len(unknown)} game IDs absent from games source")
+        # Exclude playoff/preseason and non-target-season rows consistently with
+        # the regular-season game universe used by the audited RAPM builder.
+        d = d[d.game_id.isin(set(g.game_id))].copy()
         for c in id_cols:
             d[c] = d[c].astype(str)
         return d
