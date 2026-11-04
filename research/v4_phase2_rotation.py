@@ -682,7 +682,9 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reporte
     d["is_rotation_tail"] = d["is_rotation_tail"].fillna(False).astype(bool)
     for col in ("o_rapm", "d_rapm"):
         if col not in d:
-            d[col] = [rapm.get(pid, {}).get(col, 0.0) for pid in ranked]
+            d[col] = 0.0
+        fallback = d["player_id"].map(lambda pid: rapm.get(str(pid), {}).get(col, 0.0))
+        d[col] = d[col].fillna(fallback).fillna(0.0)
     d["o_delta_contribution"] = (d.expected_minutes - d.baseline_minutes) / 48.0 * d.o_rapm
     d["d_delta_contribution"] = (d.expected_minutes - d.baseline_minutes) / 48.0 * d.d_rapm
     features = {
@@ -999,7 +1001,7 @@ def main():
                 features["home_players_excluded_by_opposing_report"].sum()
                 + features["away_players_excluded_by_opposing_report"].sum()
             ),
-            "duplicate_player_game_assignments": int(minutes.duplicated(["game_id", "player_id"]).sum()),
+            "duplicate_player_game_assignments": int(real_minutes.duplicated(["game_id", "player_id"]).sum()),
         },
         "forward_metrics": metric_rows,
         "status_calibration": status_summary.to_dict("records"),
