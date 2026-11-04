@@ -254,7 +254,7 @@ def main():
         "target_date": str(target.date()),
         "records_saved": len(saved),
         "records": saved,
-        "forecast_emitted": False,
+        "player_adjusted_forecast_emitted": False,
         "calibration_status": "not_fitted",
         "paid_dunkapi_calls": 0,
         "raw_odds_committed_to_git": False,
