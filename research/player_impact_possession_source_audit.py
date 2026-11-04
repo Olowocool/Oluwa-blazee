@@ -74,6 +74,75 @@ def main() -> None:
                 }
         result["tables"][table] = item
 
+    # Inspect actual event categories and whether the ESPN player-box
+    # possession fields reconcile to the independent team-game log.
+    event_diagnostics = {}
+    player_box_diagnostics = {}
+    for season in SEASONS_TO_INSPECT:
+        event_url = f"{BASE}/stats/game_events/season={season}/data.parquet"
+        try:
+            event_counts = con.execute("""
+                SELECT action_type, COALESCE(sub_type, '<NULL>') AS sub_type,
+                       COUNT(*) AS rows, COUNT(DISTINCT game_id) AS games,
+                       SUM(COALESCE(pts, 0)) AS points
+                FROM read_parquet(?, union_by_name=true)
+                GROUP BY 1, 2 ORDER BY rows DESC
+            """, [event_url]).fetchdf()
+            examples = con.execute("""
+                SELECT action_type, COALESCE(sub_type, '<NULL>') AS sub_type,
+                       MIN(description) AS example_description
+                FROM read_parquet(?, union_by_name=true)
+                GROUP BY 1, 2
+            """, [event_url]).fetchdf()
+            event_diagnostics[str(season)] = {
+                "categories": event_counts.astype(object).where(event_counts.notna(), None).to_dict("records"),
+                "examples": examples.astype(object).where(examples.notna(), None).to_dict("records"),
+            }
+        except Exception as exc:
+            event_diagnostics[str(season)] = {"error": f"{type(exc).__name__}: {exc}"}
+
+        box_url = f"{BASE}/espn/player_box/season={season}/data.parquet"
+        team_url = f"{BASE}/stats/team_game_logs/season={season}/data.parquet"
+        try:
+            # Team-level values are repeated on each player row; take MAX once
+            # per team-game, then compare offense and opponent possessions.
+            box_compare = con.execute("""
+                WITH pb AS (
+                    SELECT CAST(game_id AS VARCHAR) game_id,
+                           CAST(team_id AS VARCHAR) team_id,
+                           MAX(TRY_CAST(o_team_poss AS DOUBLE)) o_team_poss,
+                           MAX(TRY_CAST(d_team_poss AS DOUBLE)) d_team_poss,
+                           COUNT(DISTINCT player_id) players,
+                           COUNT(*) FILTER (WHERE played) played_rows,
+                           SUM(TRY_CAST(seconds_played AS DOUBLE)) player_seconds
+                    FROM read_parquet(?, union_by_name=true)
+                    GROUP BY 1, 2
+                ), tg AS (
+                    SELECT CAST(game_id AS VARCHAR) game_id,
+                           CAST(team_id AS VARCHAR) team_id,
+                           CAST(opp_team_id AS VARCHAR) opp_team_id,
+                           TRY_CAST(poss AS DOUBLE) team_poss
+                    FROM read_parquet(?, union_by_name=true)
+                )
+                SELECT COUNT(*) joined_team_games,
+                       COUNT(*) FILTER (WHERE ABS(pb.o_team_poss-tg.team_poss) <= 1.0) offense_within_1_poss,
+                       quantile_cont(ABS(pb.o_team_poss-tg.team_poss), 0.5) offense_median_abs_diff,
+                       quantile_cont(ABS(pb.o_team_poss-tg.team_poss), 0.9) offense_p90_abs_diff,
+                       COUNT(*) FILTER (WHERE ABS(pb.d_team_poss-opp.team_poss) <= 1.0) defense_within_1_poss,
+                       quantile_cont(ABS(pb.d_team_poss-opp.team_poss), 0.5) defense_median_abs_diff,
+                       quantile_cont(ABS(pb.d_team_poss-opp.team_poss), 0.9) defense_p90_abs_diff,
+                       COUNT(*) FILTER (WHERE pb.o_team_poss IS NULL OR pb.d_team_poss IS NULL) missing_box_possessions
+                FROM pb
+                JOIN tg USING (game_id, team_id)
+                LEFT JOIN tg opp ON opp.game_id=tg.game_id AND opp.team_id=tg.opp_team_id
+            """, [box_url, team_url]).fetchdf()
+            player_box_diagnostics[str(season)] = box_compare.astype(object).where(box_compare.notna(), None).to_dict("records")[0]
+        except Exception as exc:
+            player_box_diagnostics[str(season)] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    result["event_category_diagnostics"] = event_diagnostics
+    result["player_box_possession_reconciliation"] = player_box_diagnostics
+
     # Summarize which sources actually expose fields needed to identify
     # possession endings, shot zones, play types, tracking or matchup defenders.
     feature_terms = {
