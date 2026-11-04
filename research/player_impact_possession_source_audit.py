@@ -103,6 +103,7 @@ def main() -> None:
 
         box_url = f"{BASE}/espn/player_box/season={season}/data.parquet"
         team_url = f"{BASE}/stats/team_game_logs/season={season}/data.parquet"
+        rotation_url = f"{BASE}/stats/game_rotations/season={season}/data.parquet"
         try:
             # ESPN's o_team_poss/d_team_poss are each player's actual team
             # possession exposure while on court, not full-game team totals.
@@ -122,16 +123,22 @@ def main() -> None:
                     SELECT CAST(game_id AS VARCHAR) game_id,
                            CAST(team_id AS VARCHAR) team_id,
                            CAST(opp_team_id AS VARCHAR) opp_team_id,
-                           TRY_CAST(poss AS DOUBLE) team_poss,
-                           TRY_CAST(min AS DOUBLE) * 60.0 / 5.0 AS game_seconds
+                           TRY_CAST(poss AS DOUBLE) team_poss
                     FROM read_parquet(?, union_by_name=true)
                     WHERE CAST(game_id AS VARCHAR) LIKE '002%'
+                ), game_clock AS (
+                    SELECT CAST(game_id AS VARCHAR) game_id,
+                           MAX(TRY_CAST(out_time AS DOUBLE)) AS game_seconds
+                    FROM read_parquet(?, union_by_name=true)
+                    WHERE CAST(game_id AS VARCHAR) LIKE '002%'
+                    GROUP BY 1
                 ), paired AS (
                     SELECT pb.*,
-                           tg.team_poss * pb.seconds_played / NULLIF(tg.game_seconds, 0) AS time_alloc_o,
-                           opp.team_poss * pb.seconds_played / NULLIF(tg.game_seconds, 0) AS time_alloc_d
+                           tg.team_poss * pb.seconds_played / NULLIF(gc.game_seconds, 0) AS time_alloc_o,
+                           opp.team_poss * pb.seconds_played / NULLIF(gc.game_seconds, 0) AS time_alloc_d
                     FROM pb
                     JOIN tg USING (game_id, team_id)
+                    JOIN game_clock gc USING (game_id)
                     LEFT JOIN tg opp ON opp.game_id=tg.game_id AND opp.team_id=tg.opp_team_id
                 )
                 SELECT COUNT(*) player_games,
@@ -145,7 +152,7 @@ def main() -> None:
                        AVG(observed_o_team_poss-time_alloc_o) offense_signed_error,
                        AVG(observed_d_team_poss-time_alloc_d) defense_signed_error
                 FROM paired
-            """, [box_url, team_url]).fetchdf()
+            """, [box_url, team_url, rotation_url]).fetchdf()
             player_box_diagnostics[str(season)] = box_compare.astype(object).where(box_compare.notna(), None).to_dict("records")[0]
         except Exception as exc:
             player_box_diagnostics[str(season)] = {"error": f"{type(exc).__name__}: {exc}"}
