@@ -5,7 +5,9 @@ on:
       - research/live-market-testbench
     paths:
       - research/prospective_player_snapshot.py
+      - research/prospective_player_data.py
       - tests/test_prospective_player_snapshot.py
+      - tests/test_prospective_player_data.py
       - .github/workflows/prospective-player-snapshot-tests.yml
   workflow_dispatch:
 permissions:
@@ -22,5 +24,5 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install pandas numpy
-      - run: python -m py_compile research/prospective_player_snapshot.py
-      - run: python -m unittest tests.test_prospective_player_snapshot -v
+      - run: python -m py_compile research/prospective_player_snapshot.py research/prospective_player_data.py
+      - run: python -m unittest tests.test_prospective_player_snapshot tests.test_prospective_player_data -v
