@@ -45,7 +45,6 @@ RATING_HALF_LIFE_DAYS = 60.0
 RATING_REFRESH_DAYS = 14
 RAPM_EXPOSURE_SHRINK = 500.0
 MIN_ROTATION_MINUTES = 1.0
-MAX_ROTATION_PLAYERS = 15
 PLAYER_MINUTES_WINDOW = 10
 PLAYER_MINUTES_HALF_LIFE = 5.0
 STATUS_PRIOR_STRENGTH = 10.0
@@ -626,13 +625,10 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reporte
             estimates[pid] = m
     if not estimates:
         return None, None
+    # Keep every eligible player as an individual row. The former top-15
+    # compression hid meaningful player identities and roughly one-third of
+    # projected team minutes from downstream player-skill features.
     ranked_all = sorted(estimates, key=estimates.get, reverse=True)
-    ranked = ranked_all[:MAX_ROTATION_PLAYERS]
-    tail = ranked_all[MAX_ROTATION_PLAYERS:]
-    # Allocate the 240-minute budget across the complete eligible prior-team
-    # player pool before compressing players outside the top 15 into one
-    # explicit rotation-tail bucket. Never silently redistribute omitted
-    # rotation minutes to the top 15.
     base_all = np.array([estimates[p] for p in ranked_all], dtype=float)
     base_all = base_all * (240.0 / base_all.sum())
     status_map = {
@@ -651,34 +647,17 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reporte
     else:
         exp_all = exp_raw * (240.0 / exp_raw.sum())
 
-    top_n = len(ranked)
-    top_base, top_exp = base_all[:top_n], exp_all[:top_n]
-    top_prob, top_status = prob_all[:top_n], status_all[:top_n]
     d = pd.DataFrame({
-        "player_id": ranked, "baseline_minutes": top_base, "expected_minutes": top_exp,
-        "availability_probability": top_prob, "status": top_status,
-        "actual_minutes": [actual_lookup.get((game_id, p), 0.0) for p in ranked],
+        "player_id": ranked_all,
+        "rotation_rank": np.arange(1, len(ranked_all) + 1, dtype=int),
+        "candidate_pool_size": len(ranked_all),
+        "baseline_minutes": base_all,
+        "expected_minutes": exp_all,
+        "availability_probability": prob_all,
+        "status": status_all,
+        "actual_minutes": [actual_lookup.get((game_id, p), 0.0) for p in ranked_all],
         "is_rotation_tail": False,
     })
-    if tail:
-        tail_base = float(base_all[top_n:].sum())
-        tail_exp = float(exp_all[top_n:].sum())
-        tail_weights = base_all[top_n:]
-        tail_o = np.array([rapm.get(pid, {}).get("o_rapm", 0.0) for pid in tail], dtype=float)
-        tail_d = np.array([rapm.get(pid, {}).get("d_rapm", 0.0) for pid in tail], dtype=float)
-        tail_o_rapm = float(np.average(tail_o, weights=tail_weights)) if tail_base > 0 else 0.0
-        tail_d_rapm = float(np.average(tail_d, weights=tail_weights)) if tail_base > 0 else 0.0
-        tail_status = "ROTATION_TAIL"
-        tail_row = pd.DataFrame([{
-            "player_id": "__ROTATION_TAIL__", "baseline_minutes": tail_base,
-            "expected_minutes": tail_exp,
-            "availability_probability": tail_exp / tail_base if tail_base > 0 else 1.0,
-            "status": tail_status,
-            "actual_minutes": sum(actual_lookup.get((game_id, pid), 0.0) for pid in tail),
-            "is_rotation_tail": True,
-            "o_rapm": tail_o_rapm, "d_rapm": tail_d_rapm,
-        }])
-        d = pd.concat([d, tail_row], ignore_index=True)
     d["is_rotation_tail"] = d["is_rotation_tail"].fillna(False).astype(bool)
     for col in ("o_rapm", "d_rapm"):
         if col not in d:
@@ -932,7 +911,7 @@ def main():
         projected_total_minutes=("expected_minutes", "sum"),
         actual_total_minutes_240=("actual_minutes_240", "sum"),
     ).reset_index()
-    top15_eval = individual.groupby(["season", "game_id", "side"]).agg(
+    top15_eval = individual[individual.rotation_rank.le(15)].groupby(["season", "game_id", "side"]).agg(
         actual_top15_minutes_240=("actual_minutes_240", "sum"),
     ).reset_index()
     team_minute_eval = team_minute_eval.merge(top15_eval, on=["season", "game_id", "side"], how="left")
@@ -970,10 +949,15 @@ def main():
 
     summary = {
         "run_utc": datetime.now(timezone.utc).isoformat(),
-        "phase": "V4 Phase 2: official pregame injury reports + projected rotations + point-in-time lineup RAPM",
+        "phase": "V4 Phase 2: official pregame injury reports + full individual projected rotations + point-in-time lineup RAPM",
         "source": "llimllib/nba_data v2 (NBA Stats team/player logs, play-by-play-derived game_rotations and game_events) plus official NBA injury report PDFs parsed with nbainjuries 1.1.1",
         "target_seasons_end_year": TARGET_SEASONS,
         "oos_test_seasons_end_year": [2025, 2026],
+        "rotation_output": {
+            "policy": "all eligible prior-team players retained as individual rows; no top-15 compression",
+            "minute_budget_per_team": 240.0,
+            "minimum_recent_role_minutes": MIN_ROTATION_MINUTES,
+        },
         "rapm": {
             "method": "Ridge model on reconstructed five-on-five lineup scoring stints; separate player offense and defense coefficients; team offense/defense fixed effects",
             "alpha": RAPM_ALPHA,
@@ -1002,6 +986,9 @@ def main():
                 + features["away_players_excluded_by_opposing_report"].sum()
             ),
             "duplicate_player_game_assignments": int(real_minutes.duplicated(["game_id", "player_id"]).sum()),
+            "individual_player_rows_preserved": int(len(real_minutes)),
+            "aggregate_rotation_tail_rows": int(len(tail_minutes)),
+            "max_individual_rotation_rank": int(real_minutes.rotation_rank.max()),
         },
         "forward_metrics": metric_rows,
         "status_calibration": status_summary.to_dict("records"),
