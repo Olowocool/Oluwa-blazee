@@ -67,10 +67,21 @@ def build_player_features() -> tuple[pd.DataFrame, dict]:
         if not p.exists():
             raise FileNotFoundError(f"Required Stage C input missing: {p}")
     con = duckdb.connect()
-    con.execute(f"CREATE VIEW profiles AS SELECT * FROM read_parquet({sql_literal(PROFILE)})")
+    # Candidate CSVs intentionally preserve mixed numeric/string player IDs
+    # because the rotation-tail bucket uses a reserved string ID. Normalize both
+    # sides to VARCHAR before the ASOF join; otherwise DuckDB may attempt to cast
+    # the tail sentinel to BIGINT and fail the entire Stage C build.
+    con.execute(f"""
+        CREATE VIEW profiles AS
+        SELECT * REPLACE (CAST(player_id AS VARCHAR) AS player_id)
+        FROM read_parquet({sql_literal(PROFILE)})
+    """)
     con.execute(f"""
         CREATE VIEW candidates AS
-        SELECT * REPLACE (CAST(game_id AS VARCHAR) AS game_id),
+        SELECT * REPLACE (
+                   CAST(game_id AS VARCHAR) AS game_id,
+                   CAST(player_id AS VARCHAR) AS player_id
+               ),
                CAST(game_date AS DATE) AS target_date,
                CAST(expected_minutes AS DOUBLE) AS exp_min
         FROM read_csv_auto({sql_literal(MINUTES)}, header=true, all_varchar=true)
