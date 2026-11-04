@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect play-by-play fields needed to score reconstructed lineup intervals."""
+"""Inspect game_events fields used to score reconstructed lineup intervals."""
 from __future__ import annotations
 import json
 from datetime import datetime, timezone
@@ -7,7 +7,7 @@ from pathlib import Path
 import duckdb
 
 BASE = "https://basketball-data.billmill.org/nba"
-SEASONS = list(range(2021, 2028))
+SEASONS = list(range(2023, 2028))
 OUT = Path("outputs/research/stage_c_pbp_probe")
 
 def urls(table: str) -> str:
@@ -19,28 +19,36 @@ def main() -> None:
     con = duckdb.connect()
     con.execute("INSTALL httpfs")
     con.execute("LOAD httpfs")
-    source = urls("play_by_play")
-    schema = con.execute(f"DESCRIBE SELECT * FROM read_parquet({source}, union_by_name=true)").fetchdf()
-    count = con.execute(f"SELECT COUNT(*) FROM read_parquet({source}, union_by_name=true)").fetchone()[0]
-    columns = [x for x in schema["column_name"].tolist()]
-    preferred = [x for x in columns if any(k in x.lower() for k in (
-        "game", "event", "period", "clock", "time", "score", "pts", "team",
-        "player", "description", "action", "shot", "type", "order"
-    ))]
-    sample_sql = ", ".join('"' + x.replace('"','""') + '"' for x in preferred)
+    source = urls("game_events")
+    schema = con.execute(
+        f"DESCRIBE SELECT * FROM read_parquet({source}, hive_partitioning=true, "
+        "hive_types={'season': INTEGER}, union_by_name=true)"
+    ).fetchdf()
+    count = con.execute(
+        f"SELECT COUNT(*) FROM read_parquet({source}, hive_partitioning=true, "
+        "hive_types={'season': INTEGER}, union_by_name=true)"
+    ).fetchone()[0]
+    columns = schema["column_name"].tolist()
+    required = ["season", "game_id", "period", "time", "team_id", "pts"]
+    missing = sorted(set(required) - set(columns))
+    if missing:
+        raise RuntimeError(f"game_events missing required columns {missing}; found {columns}")
     sample = con.execute(
-        f"SELECT {sample_sql} FROM read_parquet({source}, union_by_name=true) LIMIT 40"
-    ).fetchdf().to_dict("records") if preferred else []
+        f"SELECT {', '.join('"' + x + '"' for x in required)} "
+        f"FROM read_parquet({source}, hive_partitioning=true, "
+        "hive_types={'season': INTEGER}, union_by_name=true) LIMIT 40"
+    ).fetchdf().to_dict("records")
     result = {
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "source": BASE,
-        "table": "play_by_play",
+        "table": "game_events",
         "seasons": SEASONS,
         "row_count": count,
         "columns": schema[["column_name", "column_type"]].to_dict("records"),
-        "sample_columns": preferred,
+        "required_columns_present": True,
+        "required_columns": required,
         "sample_rows": sample,
-        "purpose": "Determine whether event timestamps, team identifiers and score changes support exact scoring of reconstructed lineup intervals."
+        "purpose": "Verify the exact event clock/team/points schema consumed by the existing V4 Phase 2 lineup reconstruction."
     }
     path = OUT / "stage_c_pbp_probe.json"
     path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
