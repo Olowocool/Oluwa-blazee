@@ -1,0 +1,36 @@
+name: Player impact possession source audit
+
+on:
+  push:
+    branches:
+      - "research/live-market-testbench"
+    paths:
+      - "research/player_impact_possession_source_audit.py"
+      - ".github/workflows/player-impact-possession-source-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install DuckDB
+        run: python -m pip install --upgrade pip duckdb pandas
+      - name: Compile source audit
+        run: python -m py_compile research/player_impact_possession_source_audit.py
+      - name: Inspect public source schemas and coverage
+        run: python research/player_impact_possession_source_audit.py
+      - name: Upload source audit evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: player-impact-possession-source-audit
+          path: outputs/research/player_impact_possession_source_audit/
+          if-no-files-found: error
+          retention-days: 30
