@@ -22,6 +22,60 @@ from prospective_player_snapshot import (
 )
 from prospective_player_data import build_pregame_player_state
 from prospective_rotation_projection import build_target_date_rotations
+from points_engine_v5 import calculate_matchup_points_v5
+
+
+def build_v5_score_history(state: dict, target_date) -> pd.DataFrame:
+    """Reconstruct V5's score-history schema from strictly pregame public logs."""
+    target = pd.Timestamp(target_date).normalize()
+    games = state["games"].copy()
+    team_logs = state["team_logs"].copy()
+    team_names = state.get("team_names_all", state["team_names"]).copy()
+    required_games = {"season", "game_id", "game_date", "home_team_id", "away_team_id"}
+    required_logs = {"season", "game_id", "team_id", "pts"}
+    if not required_games.issubset(games.columns) or not required_logs.issubset(team_logs.columns):
+        raise ValueError("Public source frames cannot reconstruct the frozen V5 score history")
+    names = team_names[["season", "team_id", "full_name"]].copy()
+    names["team_id"] = names.team_id.astype(str)
+    if names.duplicated(["season", "team_id"]).any():
+        raise ValueError("Ambiguous season/team name mapping for V5 baseline")
+    games["game_id"] = games.game_id.astype(str)
+    team_logs["game_id"] = team_logs.game_id.astype(str)
+    for col in ("home_team_id", "away_team_id"):
+        games[col] = games[col].astype(str)
+    team_logs["team_id"] = team_logs.team_id.astype(str)
+    home = games.merge(
+        team_logs[["season", "game_id", "team_id", "pts"]],
+        left_on=["season", "game_id", "home_team_id"],
+        right_on=["season", "game_id", "team_id"],
+        how="left", validate="one_to_one",
+    ).rename(columns={"pts": "home_score"})
+    away = games.merge(
+        team_logs[["season", "game_id", "team_id", "pts"]],
+        left_on=["season", "game_id", "away_team_id"],
+        right_on=["season", "game_id", "team_id"],
+        how="left", validate="one_to_one",
+    ).rename(columns={"pts": "away_score"})
+    if home.home_score.isna().any() or away.away_score.isna().any():
+        raise ValueError("A completed game is missing one of its team scores")
+    history = games[["season", "game_id", "game_date", "home_team_id", "away_team_id"]].copy()
+    history["home_score"] = pd.to_numeric(home.home_score, errors="coerce").to_numpy()
+    history["away_score"] = pd.to_numeric(away.away_score, errors="coerce").to_numpy()
+    history = history.merge(
+        names.rename(columns={"team_id": "home_team_id", "full_name": "home_team"}),
+        on=["season", "home_team_id"], how="left", validate="many_to_one",
+    ).merge(
+        names.rename(columns={"team_id": "away_team_id", "full_name": "away_team"}),
+        on=["season", "away_team_id"], how="left", validate="many_to_one",
+    )
+    if history[["home_team", "away_team", "home_score", "away_score"]].isna().any().any():
+        raise ValueError("V5 score history has unmapped teams or missing scores")
+    history["game_date"] = pd.to_datetime(history.game_date, errors="coerce").dt.normalize()
+    if history.game_date.isna().any() or (history.game_date >= target).any():
+        raise ValueError("V5 score history contains same-day/future rows")
+    if (history[["home_score", "away_score"]] <= 0).any().any():
+        raise ValueError("V5 score history contains non-positive scores")
+    return history[["game_date", "home_team", "away_team", "home_score", "away_score"]].sort_values("game_date").reset_index(drop=True)
 
 
 def _json_value(value):
@@ -59,6 +113,8 @@ def build_pregame_records(
         raise ValueError("No full-rotation player projections available")
     records = []
     team_names = state["team_names"]
+    v5_history = build_v5_score_history(state, target)
+    v5_cache = {}
     for row in q.to_dict("records"):
         game_key = str(row["game_key"])
         commence = utc_timestamp(row["commence_time_utc"])
@@ -111,6 +167,10 @@ def build_pregame_records(
                 ),
                 "players": player_rows,
             }
+        v5_baseline = calculate_matchup_points_v5(
+            row["home_team"], row["away_team"], v5_history,
+            game_date=target, _prepared_cache=v5_cache,
+        )
         market = {
             key: _json_value(row[key]) for key in (
                 "bookmaker", "total_line", "over_odds_american", "under_odds_american",
@@ -141,11 +201,15 @@ def build_pregame_records(
                 "team_rotation": teams_payload,
             },
             "forecast": {
-                "status": "inputs_joined_calibration_not_fitted",
-                "v5_baseline_total": None,
+                "status": "frozen_v5_baseline_joined_player_calibration_not_fitted",
+                "v5_baseline_total": float(v5_baseline["raw_total"]),
+                "v5_projected_home_points": float(v5_baseline["projected_home_points"]),
+                "v5_projected_away_points": float(v5_baseline["projected_away_points"]),
+                "v5_history_cutoff": str(target.date()),
+                "v5_history_games": int(len(v5_history)),
                 "player_adjusted_total": None,
                 "calibration_status": "not_fitted",
-                "forecast_emitted": False,
+                "player_adjusted_forecast_emitted": False,
             },
             "provenance": {
                 "injury_report_manifest": manifest.to_dict("records"),
