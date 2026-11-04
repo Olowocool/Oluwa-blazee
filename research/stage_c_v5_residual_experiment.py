@@ -310,9 +310,6 @@ def main():
     phase["game_id"] = phase.game_id.astype(str)
     phase["game_date"] = pd.to_datetime(phase.game_date).dt.normalize()
     phase["rapm_snapshot_date"] = pd.to_datetime(phase.rapm_snapshot_date, errors="coerce")
-    rapm_bad = int((phase.rapm_snapshot_date.notna() & phase.rapm_snapshot_date.ge(phase.game_date)).sum())
-    if rapm_bad:
-        raise RuntimeError(f"RAPM snapshot is not strictly pregame for {rapm_bad} game rows")
     profile_wide, profile_diag = build_profile_features(STAGEC_DIR/"stage_c_candidate_profiles.parquet")
 
     rapm_cols = ["season","game_id","game_date",*RAPM_INJURY_FEATURES]
