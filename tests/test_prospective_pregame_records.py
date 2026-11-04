@@ -1,8 +1,12 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 import pandas as pd
 
-from research.build_prospective_pregame_records import build_pregame_records
+from research.build_prospective_pregame_records import (
+    build_pregame_records, build_v5_score_history,
+)
 
 
 class ProspectivePregameRecordTests(unittest.TestCase):
@@ -29,13 +33,17 @@ class ProspectivePregameRecordTests(unittest.TestCase):
         self.state = {
             "team_names": teams,
             "team_names_all": teams,
-            "games": pd.DataFrame([{
-                "season": 2027, "game_id": "prior-game", "game_date": "2026-11-04",
-                "home_team_id": "LAL", "away_team_id": "LAC",
-            }]),
+            "games": pd.DataFrame([
+                {"season": 2027, "game_id": "prior-game", "game_date": "2026-11-04",
+                 "home_team_id": "LAL", "away_team_id": "LAC"},
+                {"season": 2027, "game_id": "target-game", "game_date": self.target,
+                 "home_team_id": "LAC", "away_team_id": "LAL"},
+            ]),
             "team_logs": pd.DataFrame([
                 {"season": 2027, "game_id": "prior-game", "team_id": "LAL", "pts": 112},
                 {"season": 2027, "game_id": "prior-game", "team_id": "LAC", "pts": 108},
+                {"season": 2027, "game_id": "target-game", "team_id": "LAC", "pts": 120},
+                {"season": 2027, "game_id": "target-game", "team_id": "LAL", "pts": 115},
             ]),
             "diagnostics": {
                 "source_seasons": [2026, 2027],
@@ -64,6 +72,32 @@ class ProspectivePregameRecordTests(unittest.TestCase):
                 {"game_id":"fixture-1","team_id":"LAL","features":{"off_delta":0.0}},
             ],
         }
+
+    def test_v5_history_uses_base_patches_and_only_prior_current_season_rows(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            base = root / "historical.csv"
+            base.write_text(
+                "game_date,home_team,away_team,home_score,away_score\\n"
+                "2026-10-01,Boston Celtics,Chicago Bulls,110,100\\n",
+                encoding="utf-8",
+            )
+            patches = root / "patches"
+            patches.mkdir()
+            (patches / "score_history_patch_test.csv").write_text(
+                "game_date,home_team,away_team,home_score,away_score\\n"
+                "2026-11-03,Miami Heat,Orlando Magic,105,101\\n",
+                encoding="utf-8",
+            )
+            history = build_v5_score_history(
+                self.state, self.target, base_history_path=base, patch_dir=patches
+            )
+            self.assertEqual(len(history), 3)
+            self.assertEqual(history.game_date.max(), pd.Timestamp("2026-11-04"))
+            self.assertNotIn(pd.Timestamp(self.target), set(history.game_date))
+            current = history[history.game_date.eq(pd.Timestamp("2026-11-04"))].iloc[0]
+            self.assertEqual(current.home_score, 112)
+            self.assertEqual(current.away_score, 108)
 
     def test_joins_market_report_and_both_team_rotations(self):
         records = build_pregame_records(
