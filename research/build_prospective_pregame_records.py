@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from prospective_player_snapshot import (
     immutable_snapshot,
@@ -25,17 +30,37 @@ from prospective_rotation_projection import build_target_date_rotations
 from points_engine_v5 import calculate_matchup_points_v5
 
 
-def build_v5_score_history(state: dict, target_date) -> pd.DataFrame:
-    """Reconstruct V5's score-history schema from strictly pregame public logs."""
+def build_v5_score_history(
+    state: dict,
+    target_date,
+    base_history_path: Path | None = None,
+    patch_dir: Path | None = None,
+) -> pd.DataFrame:
+    """Build full frozen-V5 score history plus verified current-season updates."""
+    from team_name_utils import normalize_history_team_columns
+
     target = pd.Timestamp(target_date).normalize()
+    base_path = Path(base_history_path or ROOT / "data/historical_nba_scores.csv")
+    patches_path = Path(patch_dir or ROOT / "research/data")
+    if not base_path.is_file():
+        raise FileNotFoundError(f"Canonical V5 historical score file not found: {base_path}")
+    frames = [pd.read_csv(base_path)]
+    for path in sorted(patches_path.glob("score_history_patch_*.csv")):
+        frames.append(pd.read_csv(path))
+
     games = state["games"].copy()
     team_logs = state["team_logs"].copy()
     team_names = state.get("team_names_all", state["team_names"]).copy()
     required_games = {"season", "game_id", "game_date", "home_team_id", "away_team_id"}
     required_logs = {"season", "game_id", "team_id", "pts"}
     if not required_games.issubset(games.columns) or not required_logs.issubset(team_logs.columns):
-        raise ValueError("Public source frames cannot reconstruct the frozen V5 score history")
-    names = team_names[["season", "team_id", "full_name"]].copy()
+        raise ValueError("Public source frames cannot reconstruct current-season V5 history")
+    current_season = int(target.year if target.month >= 10 else target.year - 1)
+    games = games[games.season.astype(int).eq(current_season)].copy()
+    team_logs = team_logs[team_logs.season.astype(int).eq(current_season)].copy()
+    names = team_names[team_names.season.astype(int).eq(current_season)][
+        ["season", "team_id", "full_name"]
+    ].copy()
     names["team_id"] = names.team_id.astype(str)
     if names.duplicated(["season", "team_id"]).any():
         raise ValueError("Ambiguous season/team name mapping for V5 baseline")
@@ -57,25 +82,47 @@ def build_v5_score_history(state: dict, target_date) -> pd.DataFrame:
         how="left", validate="one_to_one",
     ).rename(columns={"pts": "away_score"})
     if home.home_score.isna().any() or away.away_score.isna().any():
-        raise ValueError("A completed game is missing one of its team scores")
-    history = games[["season", "game_id", "game_date", "home_team_id", "away_team_id"]].copy()
-    history["home_score"] = pd.to_numeric(home.home_score, errors="coerce").to_numpy()
-    history["away_score"] = pd.to_numeric(away.away_score, errors="coerce").to_numpy()
-    history = history.merge(
+        raise ValueError("A completed current-season game is missing one of its team scores")
+    current = games[["game_date", "home_team_id", "away_team_id"]].copy()
+    current["home_score"] = pd.to_numeric(home.home_score, errors="coerce").to_numpy()
+    current["away_score"] = pd.to_numeric(away.away_score, errors="coerce").to_numpy()
+    current = current.merge(
         names.rename(columns={"team_id": "home_team_id", "full_name": "home_team"}),
-        on=["season", "home_team_id"], how="left", validate="many_to_one",
+        on="home_team_id", how="left", validate="many_to_one",
     ).merge(
         names.rename(columns={"team_id": "away_team_id", "full_name": "away_team"}),
-        on=["season", "away_team_id"], how="left", validate="many_to_one",
+        on="away_team_id", how="left", validate="many_to_one",
     )
-    if history[["home_team", "away_team", "home_score", "away_score"]].isna().any().any():
-        raise ValueError("V5 score history has unmapped teams or missing scores")
+    if current[["home_team", "away_team", "home_score", "away_score"]].isna().any().any():
+        raise ValueError("Current-season V5 history has unmapped teams or missing scores")
+    frames.append(current[["game_date", "home_team", "away_team", "home_score", "away_score"]])
+
+    history = pd.concat(frames, ignore_index=True)
+    required = {"game_date", "home_team", "away_team", "home_score", "away_score"}
+    if not required.issubset(history.columns):
+        raise ValueError(f"V5 score history missing columns: {sorted(required-set(history.columns))}")
+    history = normalize_history_team_columns(history)
     history["game_date"] = pd.to_datetime(history.game_date, errors="coerce").dt.normalize()
-    if history.game_date.isna().any() or (history.game_date >= target).any():
-        raise ValueError("V5 score history contains same-day/future rows")
-    if (history[["home_score", "away_score"]] <= 0).any().any():
-        raise ValueError("V5 score history contains non-positive scores")
-    return history[["game_date", "home_team", "away_team", "home_score", "away_score"]].sort_values("game_date").reset_index(drop=True)
+    for col in ("home_score", "away_score"):
+        history[col] = pd.to_numeric(history[col], errors="coerce")
+    if history[["game_date", "home_team", "away_team", "home_score", "away_score"]].isna().any().any():
+        raise ValueError("V5 score history contains invalid dates, team names or scores")
+    history = history[
+        (history.home_score > 0) & (history.away_score > 0)
+        & (history.home_team.astype(str).str.strip() != "")
+        & (history.away_team.astype(str).str.strip() != "")
+    ].copy()
+    keys = ["game_date", "home_team", "away_team"]
+    conflicts = history.groupby(keys)[["home_score", "away_score"]].nunique(dropna=False)
+    if (conflicts > 1).any().any():
+        raise ValueError("Conflicting scores found for a duplicate V5 history fixture")
+    history = history.drop_duplicates(keys, keep="last")
+    history = history[history.game_date < target].copy()
+    if history.empty:
+        raise ValueError("No strictly pre-target V5 score history remains")
+    return history[["game_date", "home_team", "away_team", "home_score", "away_score"]].sort_values(
+        ["game_date", "home_team", "away_team"]
+    ).reset_index(drop=True)
 
 
 def _json_value(value):
@@ -113,7 +160,9 @@ def build_pregame_records(
         raise ValueError("No full-rotation player projections available")
     records = []
     team_names = state["team_names"]
-    v5_history = build_v5_score_history(state, target)
+    v5_history = state.get("v5_score_history")
+    if v5_history is None:
+        v5_history = build_v5_score_history(state, target)
     v5_cache = {}
     for row in q.to_dict("records"):
         game_key = str(row["game_key"])
@@ -227,6 +276,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target-date", required=True, help="Fixture date YYYY-MM-DD")
     parser.add_argument("--odds-archive", type=Path, default=Path("data/private/dunkapi_public_odds_snapshots.csv"))
+    parser.add_argument("--score-history", type=Path, default=ROOT / "data/historical_nba_scores.csv")
+    parser.add_argument("--score-patch-dir", type=Path, default=ROOT / "research/data")
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/research/prospective_pregame_records"))
     parser.add_argument("--max-observation-age-minutes", type=float, default=20.0)
     args = parser.parse_args()
@@ -244,6 +295,9 @@ def main():
         raise RuntimeError(f"No fresh DraftKings fixtures found for {target.date()}")
     state = build_pregame_player_state(target)
     rotation_result = build_target_date_rotations(state, quotes, target)
+    state["v5_score_history"] = build_v5_score_history(
+        state, target, args.score_history, args.score_patch_dir
+    )
     records = build_pregame_records(quotes, state, rotation_result, target, now)
     saved = []
     for record in records:
