@@ -30,7 +30,7 @@ jobs:
       - name: Download full-rotation Stage C artifact
         uses: actions/download-artifact@v4
         with:
-          name: nba-player-intelligence-stage-c-and-full-rotation-validation
+          name: nba-player-intelligence-stage-c-full-rotation
           path: outputs/research/stage_c_artifact
           run-id: ${{ github.event.workflow_run.id || inputs.stage_c_run_id || '41907289358' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
