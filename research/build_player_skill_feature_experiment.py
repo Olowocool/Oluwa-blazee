@@ -105,12 +105,14 @@ def load_inputs() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
         frame["game_date"] = pd.to_datetime(frame["game_date"], errors="raise").dt.normalize()
     if "expected_minutes" not in candidates or "side" not in candidates:
         raise RuntimeError("Projected minutes artifact lacks expected_minutes/side")
-    candidates["expected_minutes"] = pd.to_numeric(candidates.expected_minutes, errors="coerce").fillna(0).clip(0, 48)
+    candidates["expected_minutes"] = pd.to_numeric(candidates.expected_minutes, errors="coerce").fillna(0).clip(lower=0)
     candidates["player_id"] = candidates.player_id.astype("string")
     candidates["_candidate_id"] = np.arange(len(candidates), dtype=np.int64)
     candidates["is_rotation_tail"] = candidates.get(
         "is_rotation_tail", pd.Series(False, index=candidates.index)
     ).fillna(False).astype(bool)
+    if candidates.loc[~candidates.is_rotation_tail, "expected_minutes"].gt(48.01).any():
+        raise RuntimeError("A non-tail player has projected minutes above 48")
     predictions["game_id"] = predictions.game_id.astype("string").str.zfill(10)
     if predictions.duplicated(["season", "game_id"]).any():
         raise RuntimeError("Duplicate game keys in frozen Stage C/V5 predictions")
