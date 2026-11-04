@@ -10,6 +10,7 @@ on:
       - "research/build_player_intelligence_profiles.py"
       - "research/build_player_intelligence_ratings.py"
       - "research/test_player_profile_window_alignment.py"
+      - "research/test_full_rotation_output.py"
       - "research/build_player_impact_features.py"
       - ".github/workflows/v4-phase2-rotation.yml"
   workflow_dispatch:
