@@ -52,7 +52,7 @@ features, minutes = module.rotation_for_team(
     first_seen=first_seen,
     actual_lookup=actual_lookup,
     rapm=rapm,
-    team_actual_totals={(GAME_ID, TEAM_ID): 240.0},
+    team_actual_totals={(GAME_ID, TEAM_ID): 261.0},
 )
 
 assert features is not None and minutes is not None
