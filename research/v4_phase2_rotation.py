@@ -980,7 +980,7 @@ def main():
             "Players reported for a new team without prior team-specific rotation history are excluded from projected rotations rather than carrying former-team minutes across a trade; opposing-team injury reports also prevent a player from being assigned to both teams, with exclusion counts retained in game features.",
             "Each injury snapshot is captured at or before 10:00 a.m. ET on the game date; incomplete reports are excluded, never treated as all players available.",
             "The official injury report status is converted to an appearance probability using only earlier report-to-game outcomes; unreported players are assumed available.",
-            "Projected minutes are recent player-team rotation minutes, shrunk for short histories, then rescaled to 240 regulation minutes; actual candidate minutes are normalized against all team players so omitted-player minutes remain visible in coverage diagnostics.",
+            "Projected minutes use recent player-team rotation minutes across the full eligible prior-team pool, apply pregame availability probabilities, and allocate a 240-minute regulation budget; the top 15 remain individual rows and lower-ranked candidates are retained in an explicit aggregate rotation-tail bucket. Target-game actual minutes are evaluation-only.",
             "RAPM values are team-adjusted player on-court effects, not proprietary EPM/DARKO ratings.",
             "Only 2024-25 and 2025-26 are held out for forward injury-model evaluation; 2023-24 is the initial training season.",
             "This phase evaluates total-score MAE/RMSE, not betting ROI or profitability."
