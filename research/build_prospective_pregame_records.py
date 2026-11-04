@@ -135,6 +135,13 @@ def _json_value(value):
     return value
 
 
+def _finite_float(value, field):
+    number = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if pd.isna(number) or not pd.notna(number) or not __import__("math").isfinite(float(number)):
+        raise ValueError(f"Non-finite player input: {field}")
+    return float(number)
+
+
 def build_pregame_records(
     quotes: pd.DataFrame,
     state: dict,
@@ -155,6 +162,9 @@ def build_pregame_records(
     manifest = rotation_result["manifest"]
     report = rotation_result["report_metadata"]
     report_time = utc_timestamp(report["snapshot_time_utc"])
+    created_at = utc_timestamp(created_at_utc)
+    if report_time > created_at:
+        raise ValueError("Official injury report timestamp is later than record creation")
     projections = rotation_result["projections"].copy()
     if projections.empty:
         raise ValueError("No full-rotation player projections available")
@@ -172,6 +182,8 @@ def build_pregame_records(
             raise ValueError(f"Official injury report is not pregame for {game_key}")
         if observed >= commence:
             raise ValueError(f"Market observation is not pregame for {game_key}")
+        if observed > created_at:
+            raise ValueError(f"Market observation is later than record creation for {game_key}")
         away_id, home_id = map_odds_teams(row["away_team"], row["home_team"], team_names)
         game_rows = projections[projections.game_id.astype(str).eq(game_key)]
         teams_payload = {}
@@ -195,14 +207,14 @@ def build_pregame_records(
                 player_rows.append({
                     "player_id": str(player["player_id"]),
                     "rotation_rank": int(player["rotation_rank"]),
-                    "baseline_minutes": float(player["baseline_minutes"]),
-                    "expected_minutes": float(player["expected_minutes"]),
-                    "availability_probability": float(player["availability_probability"]),
+                    "baseline_minutes": _finite_float(player["baseline_minutes"], "baseline_minutes"),
+                    "expected_minutes": _finite_float(player["expected_minutes"], "expected_minutes"),
+                    "availability_probability": _finite_float(player["availability_probability"], "availability_probability"),
                     "official_status": str(player["status"]),
-                    "offensive_rapm": float(player.get("o_rapm", 0.0)),
-                    "defensive_rapm": float(player.get("d_rapm", 0.0)),
-                    "offensive_minutes_delta_contribution": float(player.get("o_delta_contribution", 0.0)),
-                    "defensive_minutes_delta_contribution": float(player.get("d_delta_contribution", 0.0)),
+                    "offensive_rapm": _finite_float(player.get("o_rapm", 0.0), "o_rapm"),
+                    "defensive_rapm": _finite_float(player.get("d_rapm", 0.0), "d_rapm"),
+                    "offensive_minutes_delta_contribution": _finite_float(player.get("o_delta_contribution", 0.0), "o_delta_contribution"),
+                    "defensive_minutes_delta_contribution": _finite_float(player.get("d_delta_contribution", 0.0), "d_delta_contribution"),
                 })
             if len({p["player_id"] for p in player_rows}) != len(player_rows):
                 raise ValueError(f"Duplicate player identity in {side} rotation for {game_key}")
