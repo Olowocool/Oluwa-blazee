@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 
 BASE = "https://basketball-data.billmill.org"
 HISTORY_SEASONS = (2026, 2027)
@@ -111,7 +115,7 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
     """Fetch public parquet history and produce validated PIT RAPM + rotation history."""
     import duckdb
     # Reuse the already-audited stint reconstruction and RAPM implementation.
-    from research import v4_phase2_rotation as phase2
+    import v4_phase2_rotation as phase2
 
     target = pd.Timestamp(target_date).normalize()
     con = duckdb.connect()
