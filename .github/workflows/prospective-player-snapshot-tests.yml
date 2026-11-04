@@ -8,6 +8,7 @@ on:
       - research/prospective_player_data.py
       - research/prospective_rotation_projection.py
       - research/build_prospective_pregame_records.py
+      - research/audit_prospective_v5_history.py
       - tests/test_prospective_player_snapshot.py
       - tests/test_prospective_player_data.py
       - tests/test_prospective_rotation_projection.py
@@ -29,4 +30,6 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install pandas numpy
       - run: python -m py_compile research/prospective_player_snapshot.py research/prospective_player_data.py research/prospective_rotation_projection.py research/build_prospective_pregame_records.py
+      - run: python research/build_prospective_pregame_records.py --help
+      - run: python research/audit_prospective_v5_history.py --help
       - run: python -m unittest tests.test_prospective_player_snapshot tests.test_prospective_player_data tests.test_prospective_rotation_projection tests.test_prospective_pregame_records -v
