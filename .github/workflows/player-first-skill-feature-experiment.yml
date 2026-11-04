@@ -1,12 +1,13 @@
 name: Player-first skill feature experiment
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - "NBA totals V4 Phase 2 rotation and injury research"
+    types:
+      - completed
     branches:
       - "research/live-market-testbench"
-    paths:
-      - "research/build_player_skill_feature_experiment.py"
-      - ".github/workflows/player-first-skill-feature-experiment.yml"
   workflow_dispatch:
     inputs:
       stage_c_run_id:
@@ -24,6 +25,7 @@ permissions:
 
 jobs:
   player-skill-experiment:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_sha == 'ea6c883302c047acd70e325fbacbdb61b07f0651') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -33,14 +35,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Download immutable Stage C projected rotation artifact
+      - name: Download full-rotation Stage C artifact
         uses: actions/download-artifact@v4
         with:
           name: nba-player-intelligence-stage-c
           path: outputs/research/stage_c_artifact
-          run-id: ${{ inputs.stage_c_run_id || '41907289358' }}
+          run-id: ${{ github.event.workflow_run.id || inputs.stage_c_run_id || '41907289358' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download immutable Stage C versus V5 predictions
+      - name: Download immutable frozen V5 comparison predictions
         uses: actions/download-artifact@v4
         with:
           name: stage-c-v5-residual-comparison
@@ -59,10 +61,10 @@ jobs:
           STAGE_C_ARTIFACT_DIR: outputs/research/stage_c_artifact
           PREDICTION_ARTIFACT_DIR: outputs/research/stage_c_v5_predictions
         run: python research/build_player_skill_feature_experiment.py
-      - name: Upload player-first skill experiment evidence
+      - name: Upload full-rotation player skill evidence
         uses: actions/upload-artifact@v6
         with:
-          name: player-first-skill-feature-experiment
+          name: full-rotation-player-skill-experiment
           path: outputs/research/player_skill_feature_experiment/
           if-no-files-found: error
           retention-days: 30
