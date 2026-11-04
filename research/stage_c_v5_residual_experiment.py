@@ -340,8 +340,8 @@ def main():
         raise RuntimeError("No common games between V5 predictions and Stage C feature artifact")
     if data.duplicated(["season","game_id"]).any():
         raise RuntimeError("Duplicate game key after Stage C/V5 merge")
-    if not data.season.isin(TEST_SEASONS).all():
-        raise RuntimeError("Unexpected season in test set")
+    # The merged frame intentionally includes earlier seasons as expanding-window
+    # training history. Restrict only emitted predictions to TEST_SEASONS below.
 
     # Require a common complete target sample across all candidate families.
     # Missing component metrics are retained and imputed from prior training only.
@@ -387,6 +387,7 @@ def main():
         for family in FAMILIES:
             by_season[str(int(season))][family]=metric(part.actual_total,part[f"{family}_total"])
 
+    OUT.mkdir(parents=True,exist_ok=True)
     result.to_csv(OUT/"stage_c_v5_prequential_predictions.csv",index=False)
     summary={
         "generated_utc":datetime.now(timezone.utc).isoformat(),
@@ -426,7 +427,6 @@ def main():
         "V5_modified":False,"production_modified":False,"paper_ledger_modified":False,
         "profitability_claim":False,
     }
-    OUT.mkdir(parents=True,exist_ok=True)
     (OUT/"stage_c_v5_summary.json").write_text(json.dumps(summary,indent=2,default=str),encoding="utf-8")
     print(json.dumps(summary,indent=2,default=str))
 
