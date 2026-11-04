@@ -31,6 +31,7 @@ jobs:
       - name: Compile adapter and audited Phase 2 engine
         run: |
           python -m py_compile research/prospective_player_data.py
+          python -m py_compile research/prospective_rotation_projection.py
           python -m py_compile research/v4_phase2_rotation.py
       - name: Load current public partitions and fit strictly pregame RAPM
         env:
