@@ -34,13 +34,13 @@ python research/prospective_player_snapshot.py \
 
 The private odds archive and generated snapshots are local research evidence and must not be committed to Git. The default maximum observation age is 20 minutes; the function can be called with a different explicit limit for controlled tests.
 
-## Not yet implemented / not claimed
+## Remaining before this component is fully closed
 
-- A live end-to-end record generation against the user's private odds archive and a freshly retrieved target-date official injury report (the archive is local/private and is not available to GitHub CI).
+- One live end-to-end record generation against the user's private odds archive and a freshly retrieved target-date official injury report. The private archive is local/ignored and cannot be accessed by GitHub CI; the user must run the committed CLI locally for this final data-dependent check.
 - A calibrated RAPM/injury-to-total residual model fitted strictly before each forecast date.
-- A calibrated player-adjusted challenger alongside the frozen V5 baseline in the same immutable record.
+- A calibrated player-adjusted challenger alongside the frozen V5 baseline in the same immutable record (this is the next component, after the live input record is verified).
 - Prospective grading, betting outcomes, CLV and profitability evidence.
 
-## Safety
+## Integration verification\n\n`research/audit_prospective_v5_history.py` reuses the current-season RAPM state builder, assembles the full historical score base plus dated patches and completed current-season team logs, checks the strict pre-target cutoff and duplicate fixture keys, and smoke-tests the frozen V5 engine. The `prospective-player-data-integration.yml` workflow now runs this combined audit and uploads only non-sensitive diagnostics.\n\n## Safety
 
 Research branch only. No production model, deployed app, frozen V5, live betting process or paper-trading ledger is modified. No paid DunkAPI calls are made. No raw odds prices are stored in Git.
