@@ -22,10 +22,20 @@ class ProspectivePregameRecordTests(unittest.TestCase):
             "observed_at_utc": "2026-11-05T20:02:00Z",
             "observation_age_minutes": 3.0,
         }])
+        teams = pd.DataFrame([
+            {"season": 2027, "team_id": "LAC", "full_name": "Los Angeles Clippers"},
+            {"season": 2027, "team_id": "LAL", "full_name": "Los Angeles Lakers"},
+        ])
         self.state = {
-            "team_names": pd.DataFrame([
-                {"season": 2027, "team_id": "LAC", "full_name": "Los Angeles Clippers"},
-                {"season": 2027, "team_id": "LAL", "full_name": "Los Angeles Lakers"},
+            "team_names": teams,
+            "team_names_all": teams,
+            "games": pd.DataFrame([{
+                "season": 2027, "game_id": "prior-game", "game_date": "2026-11-04",
+                "home_team_id": "LAL", "away_team_id": "LAC",
+            }]),
+            "team_logs": pd.DataFrame([
+                {"season": 2027, "game_id": "prior-game", "team_id": "LAL", "pts": 112},
+                {"season": 2027, "game_id": "prior-game", "team_id": "LAC", "pts": 108},
             ]),
             "diagnostics": {
                 "source_seasons": [2026, 2027],
@@ -65,7 +75,10 @@ class ProspectivePregameRecordTests(unittest.TestCase):
         self.assertEqual(record["official_injury_report"]["sha256"], "report-hash")
         self.assertEqual(record["player_data"]["team_rotation"]["away"]["team_id"], "LAC")
         self.assertEqual(record["player_data"]["team_rotation"]["home"]["players"][0]["player_id"], "LAL-1")
-        self.assertFalse(record["forecast"]["forecast_emitted"])
+        self.assertGreater(record["forecast"]["v5_baseline_total"], 0)
+        self.assertEqual(record["forecast"]["v5_history_cutoff"], self.target)
+        self.assertEqual(record["forecast"]["v5_history_games"], 1)
+        self.assertFalse(record["forecast"]["player_adjusted_forecast_emitted"])
         self.assertIsNone(record["forecast"]["player_adjusted_total"])
 
     def test_rejects_injury_report_after_tip(self):
