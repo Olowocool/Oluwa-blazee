@@ -1,6 +1,6 @@
 # Prospective player-aware totals: input snapshot adapter
 
-Status: **market input adapter, current-season pregame RAPM adapter, official injury/full-rotation projection, and immutable joined pregame evidence-record builder; no calibrated player-adjusted prediction is emitted**.
+Status: **market input adapter, current-season pregame RAPM adapter, official injury/full-rotation projection, and immutable joined pregame evidence-record builder with frozen V5 baseline; no calibrated player-adjusted prediction is emitted**.
 
 ## Why this boundary exists
 
@@ -20,7 +20,7 @@ It would be misleading to publish a player-adjusted number until the current-sea
 - Writes content-addressed JSON snapshots with exclusive-create semantics; existing snapshots are never overwritten.
 - Explicitly records that no player-adjusted total is available until calibration exists.
 
-## Joined pregame evidence builder\n\n`research/build_prospective_pregame_records.py` joins a fresh DraftKings quote, current-season point-in-time RAPM state, one complete official target-date injury report, and both teams' individual full-rotation minute projections. It verifies that the report and quote precede tip, each team has unique player rows and exactly 240 projected regulation minutes, and the record includes source/report provenance. Each game is written with the shared content-addressed, exclusive-create snapshot writer. It intentionally records `forecast_emitted=false`, `v5_baseline_total=null`, and `player_adjusted_total=null`; RAPM coefficients and minute deltas are inputs, not a calibrated total adjustment.\n\nRun from the repository root with a fresh local private odds archive:\n\n```bash\npython research/build_prospective_pregame_records.py \\\n  --target-date YYYY-MM-DD \\\n  --odds-archive data/private/dunkapi_public_odds_snapshots.csv \\\n  --output-dir outputs/research/prospective_pregame_records\n```\n\n## Local invocation
+## Joined pregame evidence builder\n\n`research/build_prospective_pregame_records.py` joins a fresh DraftKings quote, current-season point-in-time RAPM state, one complete official target-date injury report, and both teams' individual full-rotation minute projections. It verifies that the report and quote precede tip, each team has unique player rows and exactly 240 projected regulation minutes, and the record includes source/report provenance. Each game is written with the shared content-addressed, exclusive-create snapshot writer. It reconstructs V5's score-history schema from the same public, strictly pre-target team-game logs and calls the frozen V5 engine for a baseline total and home/away split. It records the V5 history cutoff and row count. It still records `player_adjusted_forecast_emitted=false` and `player_adjusted_total=null`; RAPM coefficients and minute deltas are inputs, not a calibrated total adjustment.\n\nRun from the repository root with a fresh local private odds archive:\n\n```bash\npython research/build_prospective_pregame_records.py \\\n  --target-date YYYY-MM-DD \\\n  --odds-archive data/private/dunkapi_public_odds_snapshots.csv \\\n  --output-dir outputs/research/prospective_pregame_records\n```\n\n## Local invocation
 
 Run from the repository root after the private odds collector has populated the local archive:
 
