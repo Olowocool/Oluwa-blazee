@@ -837,9 +837,22 @@ def main():
     print(f"Built injury/rotation features for {len(features)} games and {len(minutes)} player-game rotations", flush=True)
     if features.empty:
         raise RuntimeError("No injury-adjusted game features were generated")
-    if minutes.duplicated(["game_id", "player_id"]).any():
-        dup = minutes.loc[minutes.duplicated(["game_id", "player_id"], keep=False), ["game_id", "player_id", "side"]]
-        raise RuntimeError(f"Player assigned to both teams in one game; duplicate assignments: {dup.head(10).to_dict('records')}")
+    # The aggregate rotation-tail sentinel is intentionally present once per team.
+    # Check real player IDs across both teams, and validate tail rows per game/side.
+    real_minutes = minutes[minutes["player_id"].astype(str) != "__ROTATION_TAIL__"]
+    if real_minutes.duplicated(["game_id", "player_id"]).any():
+        dup = real_minutes.loc[
+            real_minutes.duplicated(["game_id", "player_id"], keep=False),
+            ["game_id", "player_id", "side"],
+        ]
+        raise RuntimeError(f"Real player assigned to both teams in one game; duplicate assignments: {dup.head(10).to_dict('records')}")
+    tail_minutes = minutes[minutes["player_id"].astype(str) == "__ROTATION_TAIL__"]
+    if tail_minutes.duplicated(["game_id", "side"]).any():
+        dup = tail_minutes.loc[
+            tail_minutes.duplicated(["game_id", "side"], keep=False),
+            ["game_id", "player_id", "side"],
+        ]
+        raise RuntimeError(f"Multiple rotation-tail buckets for one team-game: {dup.head(10).to_dict('records')}")
     features.to_csv(OUT / "v4_phase2_game_features.csv", index=False)
     minutes.to_csv(OUT / "v4_phase2_projected_minutes.csv", index=False)
 
