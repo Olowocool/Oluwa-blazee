@@ -19,7 +19,6 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-import v4_phase2_rotation as phase2
 from prospective_player_snapshot import map_odds_teams, require_complete_injury_report
 
 
@@ -54,6 +53,7 @@ def validate_rotation_projection(rows: pd.DataFrame, game_id: str, team_id: str)
 
 def build_target_date_rotations(state: dict, fixtures: pd.DataFrame, target_date) -> dict:
     """Fetch and map official report; project every eligible player for both teams."""
+    import v4_phase2_rotation as phase2
     target = pd.Timestamp(target_date).normalize()
     required = {"game_key", "game_date", "away_team", "home_team"}
     if not required.issubset(fixtures.columns):
