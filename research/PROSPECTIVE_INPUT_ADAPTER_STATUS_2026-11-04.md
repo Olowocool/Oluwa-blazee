@@ -1,6 +1,6 @@
 # Prospective player-aware totals: input snapshot adapter
 
-Status: **input-adapter stage only; no player-adjusted prediction is emitted**.
+Status: **market input adapter plus current-season pregame player-data/RAPM adapter; no player-adjusted prediction is emitted**.
 
 ## Why this boundary exists
 
