@@ -70,10 +70,10 @@ def build_player_features() -> tuple[pd.DataFrame, dict]:
     con.execute(f"CREATE VIEW profiles AS SELECT * FROM read_parquet({sql_literal(PROFILE)})")
     con.execute(f"""
         CREATE VIEW candidates AS
-        SELECT *,
+        SELECT * REPLACE (CAST(game_id AS VARCHAR) AS game_id),
                CAST(game_date AS DATE) AS target_date,
                CAST(expected_minutes AS DOUBLE) AS exp_min
-        FROM read_csv_auto({sql_literal(MINUTES)}, header=true)
+        FROM read_csv_auto({sql_literal(MINUTES)}, header=true, all_varchar=true)
     """)
     # Critical PIT join: select the latest player-game profile dated strictly
     # before the target game. Candidate rows come from projected rotations,
@@ -212,7 +212,11 @@ def metrics(name: str, season: int, y: np.ndarray, pred: np.ndarray) -> dict:
 
 def main() -> None:
     team, candidate_stats = build_player_features()
-    base = pd.read_csv(GAMES)
+    # Preserve NBA game identifiers as strings end-to-end. Numeric inference can
+    # drop leading zeroes and produce false join failures.
+    base = pd.read_csv(GAMES, dtype={"game_id": "string"})
+    team["game_id"] = team["game_id"].astype("string")
+    base["game_id"] = base["game_id"].astype("string")
     base["game_date"] = pd.to_datetime(base.game_date).dt.normalize()
     features = add_wide_features(team,base)
     if features.empty:
