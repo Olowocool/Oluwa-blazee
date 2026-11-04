@@ -27,7 +27,7 @@ class ProspectiveRotationProjectionTests(unittest.TestCase):
     def test_over_48_minute_player_is_rejected(self):
         rows = self.valid_rows()
         rows.loc[0, "expected_minutes"] = 49.0
-        rows.loc[1, "expected_minutes"] = 31.0
+        rows.loc[1:, "expected_minutes"] = 191.0 / 7.0
         with self.assertRaisesRegex(ValueError, "48-minute"):
             validate_rotation_projection(rows, "g1", "t1")
 
