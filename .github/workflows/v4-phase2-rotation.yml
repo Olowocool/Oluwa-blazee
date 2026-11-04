@@ -15,6 +15,10 @@ on:
       - ".github/workflows/v4-phase2-rotation.yml"
   workflow_dispatch:
 
+concurrency:
+  group: v4-phase2-full-rotation-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   actions: read
