@@ -53,7 +53,7 @@ class ProspectivePlayerDataTests(unittest.TestCase):
     def test_unknown_player_game_id_is_rejected(self):
         games, team, players, names, teams, rotations, events = self.fixtures()
         players.loc[0, "game_id"] = "not-a-game"
-        with self.assertRaisesRegex(ValueError, "unknown game IDs"):
+        with self.assertRaisesRegex(ValueError, "absent from games source"):
             normalize_source_frames(games, team, players, names, teams,
                                     rotations, events, "2026-11-05")
 
