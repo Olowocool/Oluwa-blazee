@@ -1,6 +1,6 @@
 # Prospective player-aware totals: input snapshot adapter
 
-Status: **market input adapter plus current-season pregame player-data/RAPM adapter; no player-adjusted prediction is emitted**.
+Status: **market input adapter, current-season pregame RAPM adapter, and official injury/full-rotation projection component; no calibrated player-adjusted prediction is emitted**.
 
 ## Why this boundary exists
 
