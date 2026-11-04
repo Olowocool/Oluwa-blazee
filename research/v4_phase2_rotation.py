@@ -562,6 +562,43 @@ def build_player_history(player_logs):
     return team_hist, player_hist, first_seen
 
 
+def allocate_minutes(weights, total=240.0, cap=48.0):
+    """Allocate a team minute budget proportionally without exceeding 48/player."""
+    w = np.asarray(weights, dtype=float)
+    if w.ndim != 1 or len(w) < int(math.ceil(total / cap)):
+        raise ValueError("Insufficient individual players to allocate a valid 240-minute rotation")
+    if not np.isfinite(w).all() or (w < 0).any():
+        raise ValueError("Minute allocation weights must be finite and non-negative")
+    if float(w.sum()) <= 0:
+        w = np.ones_like(w)
+    allocation = np.zeros(len(w), dtype=float)
+    active = np.ones(len(w), dtype=bool)
+    remaining = float(total)
+    while active.any():
+        idx = np.flatnonzero(active)
+        active_weights = w[idx]
+        if float(active_weights.sum()) <= 0:
+            proposals = np.full(len(idx), remaining / len(idx), dtype=float)
+        else:
+            proposals = remaining * active_weights / active_weights.sum()
+        capped = proposals > cap + 1e-10
+        if not capped.any():
+            allocation[idx] = proposals
+            remaining = 0.0
+            break
+        capped_idx = idx[capped]
+        allocation[capped_idx] = cap
+        active[capped_idx] = False
+        remaining -= cap * len(capped_idx)
+        if remaining < -1e-8:
+            raise RuntimeError("Minute allocation exceeded the team budget")
+    if abs(float(allocation.sum()) - total) > 1e-6:
+        raise RuntimeError("Minute allocation failed to reconcile to the team budget")
+    if float(allocation.max()) > cap + 1e-8:
+        raise RuntimeError("Minute allocation exceeded the per-player regulation cap")
+    return allocation
+
+
 def recent_minutes(hist, game_date):
     dates = [x[0] for x in hist]
     ix = bisect_left(dates, game_date)
@@ -629,8 +666,8 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reporte
     # compression hid meaningful player identities and roughly one-third of
     # projected team minutes from downstream player-skill features.
     ranked_all = sorted(estimates, key=estimates.get, reverse=True)
-    base_all = np.array([estimates[p] for p in ranked_all], dtype=float)
-    base_all = base_all * (240.0 / base_all.sum())
+    base_weights = np.array([estimates[p] for p in ranked_all], dtype=float)
+    base_all = allocate_minutes(base_weights, total=240.0, cap=48.0)
     status_map = {
         str(r.player_id): str(r.status)
         for r in team_reports.itertuples()
@@ -643,9 +680,8 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reporte
         status_all.append(status)
     exp_raw = base_all * np.asarray(prob_all, dtype=float)
     if exp_raw.sum() <= 1e-8:
-        exp_all = base_all.copy()
-    else:
-        exp_all = exp_raw * (240.0 / exp_raw.sum())
+        exp_raw = base_all.copy()
+    exp_all = allocate_minutes(exp_raw, total=240.0, cap=48.0)
 
     d = pd.DataFrame({
         "player_id": ranked_all,
