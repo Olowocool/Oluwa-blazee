@@ -95,3 +95,10 @@ simple status-prior baseline.
    independent RAPM history-cutoff check passes.
 5. Keep all findings research-only. No promotion or profitability claim is supported
    by this audit.
+
+
+## Follow-up implementation on 2026-11-04
+
+- Injury report snapshots now retain both the original 10:00-or-earlier archive clock label and explicit `America/New_York` timezone plus a UTC ISO timestamp. The naive timestamp is still passed to the existing archive URL/parser helper for filename compatibility. This makes the archive observation instant unambiguous, but does not by itself prove it precedes each game's tip; scheduled tip-time join remains outstanding.
+- Rotation-minute evaluation now separately reports (a) actual minute coverage by the top 15, (b) actual minute coverage by the entire eligible historical candidate pool, and (c) actual minutes not represented by that candidate pool. This prevents the tail bucket from hiding cold-start/traded-player omissions.
+- The explicit rotation-tail allocation and these diagnostics are research-only. The updated workflow must complete before any new metric is treated as measured evidence.
