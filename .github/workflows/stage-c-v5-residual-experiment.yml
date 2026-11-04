@@ -12,7 +12,7 @@ on:
       artifact_run_id:
         description: "Successful Phase 2 / Stage C workflow run ID"
         required: true
-        default: "41743621707"
+        default: "41907289358"
 
 permissions:
   contents: read
@@ -34,7 +34,7 @@ jobs:
         with:
           name: nba-player-intelligence-stage-c
           path: outputs/research/stage_c_artifact
-          run-id: ${{ inputs.artifact_run_id || '41743621707' }}
+          run-id: ${{ inputs.artifact_run_id || '41907289358' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install research dependencies
         run: |
