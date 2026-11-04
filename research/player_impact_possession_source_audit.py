@@ -170,7 +170,7 @@ def main() -> None:
                 counts = con.execute("""
                     SELECT action_type, COUNT(*) AS rows,
                            COUNT(DISTINCT game_id) AS games,
-                           COUNT(DISTINCT player_id) AS players
+                           COUNT(DISTINCT team_id) AS teams
                     FROM read_parquet(?, union_by_name=true)
                     GROUP BY 1 ORDER BY rows DESC
                 """, [url]).fetchdf()
