@@ -64,7 +64,7 @@ class ProspectivePregameRecordTests(unittest.TestCase):
         self.assertEqual(record["market"]["total_line"], 221.5)
         self.assertEqual(record["official_injury_report"]["sha256"], "report-hash")
         self.assertEqual(record["player_data"]["team_rotation"]["away"]["team_id"], "LAC")
-        self.assertEqual(record["player_data"]["team_rotation"]["home"]["players"][0]["player_id"], "p2")
+        self.assertEqual(record["player_data"]["team_rotation"]["home"]["players"][0]["player_id"], "LAL-1")
         self.assertFalse(record["forecast"]["forecast_emitted"])
         self.assertIsNone(record["forecast"]["player_adjusted_total"])
 
