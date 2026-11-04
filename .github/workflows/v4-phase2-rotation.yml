@@ -42,8 +42,11 @@ jobs:
           python -m py_compile research/test_player_profile_window_alignment.py
           python -m py_compile research/v4_phase1_core.py
           python -m py_compile research/v4_phase2_rotation.py
+          python -m py_compile research/test_full_rotation_output.py
       - name: Test player profile point-in-time window alignment
         run: python research/test_player_profile_window_alignment.py
+      - name: Verify full individual rotation output contract
+        run: python research/test_full_rotation_output.py
       - name: Build Stage A player profiles
         run: python research/build_player_intelligence_profiles.py
       - name: Build Stage B descriptive skill components
