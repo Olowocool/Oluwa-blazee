@@ -1,0 +1,68 @@
+name: Player-first skill feature experiment
+
+on:
+  push:
+    branches:
+      - "research/live-market-testbench"
+    paths:
+      - "research/build_player_skill_feature_experiment.py"
+      - ".github/workflows/player-first-skill-feature-experiment.yml"
+  workflow_dispatch:
+    inputs:
+      stage_c_run_id:
+        description: "Successful Stage C artifact run ID"
+        required: true
+        default: "41907289358"
+      prediction_run_id:
+        description: "Successful frozen V5 comparison artifact run ID"
+        required: true
+        default: "41918521365"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  player-skill-experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/live-market-testbench
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Download immutable Stage C projected rotation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nba-player-intelligence-stage-c
+          path: outputs/research/stage_c_artifact
+          run-id: ${{ inputs.stage_c_run_id || '41907289358' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download immutable Stage C versus V5 predictions
+        uses: actions/download-artifact@v4
+        with:
+          name: stage-c-v5-residual-comparison
+          path: outputs/research/stage_c_v5_predictions
+          run-id: ${{ inputs.prediction_run_id || '41918521365' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install research dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pandas<3" "numpy<3" duckdb scikit-learn scipy pyarrow
+      - name: Compile experiment
+        run: python -m py_compile research/build_player_skill_feature_experiment.py
+      - name: Build point-in-time player skill features and compare with frozen V5
+        env:
+          PYTHONUNBUFFERED: "1"
+          STAGE_C_ARTIFACT_DIR: outputs/research/stage_c_artifact
+          PREDICTION_ARTIFACT_DIR: outputs/research/stage_c_v5_predictions
+        run: python research/build_player_skill_feature_experiment.py
+      - name: Upload player-first skill experiment evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: player-first-skill-feature-experiment
+          path: outputs/research/player_skill_feature_experiment/
+          if-no-files-found: error
+          retention-days: 30
