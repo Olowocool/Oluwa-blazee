@@ -12,7 +12,6 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 
@@ -79,7 +78,11 @@ def latest_draftkings_quotes(archive: pd.DataFrame, now_utc, max_observation_age
     if (d.total_line <= 0).any() or (d.over_odds_american == 0).any() or (d.under_odds_american == 0).any():
         raise ValueError("DraftKings quote contains invalid total or American price")
     d["observation_age_minutes"] = (now - d.observed_at_utc).dt.total_seconds() / 60
+    publication_lag = (d.observed_at_utc - d.published_as_of_utc).dt.total_seconds() / 60
+    if (publication_lag < -5).any():
+        raise ValueError("Odds publication timestamp is implausibly later than its observation")
     d = d[d.observation_age_minutes.between(0, max_observation_age_minutes)].copy()
+    d = d[d.commence_time_utc > now].copy()
     if d.empty:
         raise ValueError("No fresh DraftKings observations within configured age limit")
     # Keep the latest actual observation per fixture; never combine prices from rows.
@@ -164,8 +167,6 @@ def immutable_snapshot(record: dict, output_dir: Path) -> Path:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--odds-archive", type=Path, default=Path("data/private/dunkapi_public_odds_snapshots.csv"))
-    parser.add_argument("--team-seasons", type=Path, default=None,
-                        help="Optional season=2027 team_seasons parquet file; without it, only market freshness is audited.")
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/research/prospective_input_snapshots"))
     args = parser.parse_args()
     if not args.odds_archive.is_file():
