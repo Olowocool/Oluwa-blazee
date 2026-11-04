@@ -51,7 +51,7 @@ RAW_FEATURES = [
     "pts_per100", "o_net_pts_per100", "d_net_pts_per100",
     "ast_per100", "tov_per100", "live_tov_per100",
     "oreb_per100", "dreb_per100", "stl_per100", "blk_per100",
-    "off_foul_per100", "def_foul_per100",
+    "off_fouls_per100", "def_fouls_per100",
     "ts_pct", "fg3_pct", "fg2_pct", "ft_pct", "layup_pct",
     "three_pa_share", "layup_share", "ft_rate", "o_usg", "d_usg",
 ]
@@ -67,9 +67,9 @@ for name in [
     "ft_rate", "o_usg",
 ]:
     WEIGHT_MAP[name] = "o_team_poss"
-for name in ["d_net_pts_per100", "dreb_per100", "stl_per100", "blk_per100", "def_foul_per100", "d_usg"]:
+for name in ["d_net_pts_per100", "dreb_per100", "stl_per100", "blk_per100", "def_fouls_per100", "d_usg"]:
     WEIGHT_MAP[name] = "d_team_poss"
-for name in ["off_foul_per100"]:
+for name in ["off_fouls_per100"]:
     WEIGHT_MAP[name] = "o_team_poss"
 for name in ["ts_pct"]:
     WEIGHT_MAP[name] = "fga_equiv"
@@ -268,8 +268,8 @@ def profile_candidates(history: pd.DataFrame, candidates: pd.DataFrame) -> tuple
     for pid, group in players.groupby("player_id", sort=False):
         h = history_by_player.get(str(pid))
         if h is None or h.empty:
-            for row in group.itertuples():
-                item = {"_candidate_id": int(row._candidate_id), "prior_games": 0,
+            for row in group.to_dict("records"):
+                item = {"_candidate_id": int(row["_candidate_id"]), "prior_games": 0,
                         "prior_minutes": 0.0, "prior_o_possessions": 0.0,
                         "prior_d_possessions": 0.0, "days_since_last_game": np.nan,
                         "max_history_date": None}
@@ -277,12 +277,12 @@ def profile_candidates(history: pd.DataFrame, candidates: pd.DataFrame) -> tuple
                 profile_rows.append(item)
             continue
         h_dates = h.game_date.to_numpy(dtype="datetime64[ns]")
-        for row in group.itertuples():
-            target = np.datetime64(pd.Timestamp(row.game_date).to_datetime64())
+        for row in group.to_dict("records"):
+            target = np.datetime64(pd.Timestamp(row["game_date"]).to_datetime64())
             end = int(np.searchsorted(h_dates, target, side="left"))
             lo = max(0, end - MAX_PRIOR_GAMES)
             prior = h.iloc[lo:end]
-            item = {"_candidate_id": int(row._candidate_id)}
+            item = {"_candidate_id": int(row["_candidate_id"])}
             if prior.empty:
                 item.update({
                     "prior_games": 0, "prior_minutes": 0.0, "prior_o_possessions": 0.0,
@@ -292,7 +292,7 @@ def profile_candidates(history: pd.DataFrame, candidates: pd.DataFrame) -> tuple
                 item.update({f: np.nan for f in FEATURES})
                 profile_rows.append(item)
                 continue
-            ages = (pd.Timestamp(row.game_date) - prior.game_date).dt.days.to_numpy(float)
+            ages = (pd.Timestamp(row["game_date"]) - prior.game_date).dt.days.to_numpy(float)
             decay = np.exp(-half_life * np.maximum(ages, 0.0))
             o_poss = prior.o_team_poss.fillna(0).clip(lower=0).to_numpy(float)
             d_poss = prior.d_team_poss.fillna(0).clip(lower=0).to_numpy(float)
@@ -468,7 +468,9 @@ def main() -> None:
     box_features = [
         c for c in data.columns
         if c.startswith(("home_player_", "away_player_"))
-        and not any(token in c for token in ("action_",))
+        and "action_" not in c
+        and "_prior_" not in c
+        and "_days_since_" not in c
         and c.rsplit("_", 1)[-1] not in {"minutes", "share", "players", "total", "tail"}
     ]
     action_features = [
@@ -487,7 +489,7 @@ def main() -> None:
     families = {
         "box_skill": sorted(set(box_features + coverage_features)),
         "action_skill": sorted(set(action_features + coverage_features)),
-        "combined": sorted(set(box_features + action_features + coverage_features)),
+        "player_skill_combined": sorted(set(box_features + action_features + coverage_features)),
     }
     for name, cols in families.items():
         if not cols:
@@ -504,7 +506,10 @@ def main() -> None:
         out = day[[
             "season", "game_id", "game_date", "actual_total", "v5_total",
             "rapm_injury_total", "combined_total",
-        ]].copy()
+        ]].rename(columns={
+            "rapm_injury_total": "stage_c_rapm_injury_total",
+            "combined_total": "stage_c_combined_total",
+        }).copy()
         out["training_games"] = int(len(train))
         out["training_latest_date"] = train.game_date.max().date().isoformat()
         for family, cols in families.items():
@@ -557,8 +562,8 @@ def main() -> None:
         },
         "metrics": {
             "v5": metric(result.actual_total, result.v5_total),
-            "stage_c_rapm_injury": metric(result.actual_total, result.rapm_injury_total),
-            "stage_c_combined": metric(result.actual_total, result.combined_total),
+            "stage_c_rapm_injury": metric(result.actual_total, result.stage_c_rapm_injury_total),
+            "stage_c_combined": metric(result.actual_total, result.stage_c_combined_total),
         },
         "bootstrap_vs_v5": {},
         "by_season": {},
@@ -607,11 +612,11 @@ def main() -> None:
     ]
     for name, col in [
         ("Frozen V5", "v5_total"),
-        ("Stage C RAPM + injury", "rapm_injury_total"),
-        ("Stage C combined", "combined_total"),
+        ("Stage C RAPM + injury", "stage_c_rapm_injury_total"),
+        ("Stage C combined", "stage_c_combined_total"),
         ("Player box skills", "box_skill_total"),
         ("Player action skills", "action_skill_total"),
-        ("Player box + action skills", "combined_total"),
+        ("Player box + action skills", "player_skill_combined_total"),
     ]:
         m = metric(result.actual_total, result[col])
         report.append(
