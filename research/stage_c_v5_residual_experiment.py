@@ -247,6 +247,17 @@ def main():
         "v2_points_engine_total":"v5_total",
         "v2_max_history_date":"v5_helper_history_date",
     })
+    # Normalize season join keys across CSV and Parquet sources. Pandas may
+    # infer one source as int64 and another as object despite equal values.
+    def normalize_season_key(frame, label):
+        if "season" not in frame.columns:
+            raise RuntimeError(f"{label} is missing season")
+        season = pd.to_numeric(frame["season"], errors="coerce")
+        if season.isna().any():
+            raise RuntimeError(f"{label} contains non-numeric season keys")
+        frame["season"] = season.astype("int64")
+
+    normalize_season_key(paired, "V5 paired predictions")
     paired["game_date"] = pd.to_datetime(paired.game_date).dt.normalize()
     paired["v5_max_history_date"] = paired.game_date.map(lambda d: cutoffs.get(d.date().isoformat()))
     if paired.v5_max_history_date.isna().any() or not (
@@ -255,6 +266,7 @@ def main():
         raise RuntimeError("V5 pregame history cutoff validation failed")
 
     phase = pd.read_csv(PHASE2_DIR/"v4_phase2_game_features.csv", dtype={"game_id":"string"})
+    normalize_season_key(phase, "Phase2 game features")
     phase["game_id"] = phase.game_id.astype(str)
     phase["game_date"] = pd.to_datetime(phase.game_date).dt.normalize()
     phase["rapm_snapshot_date"] = pd.to_datetime(phase.rapm_snapshot_date, errors="coerce")
@@ -271,6 +283,7 @@ def main():
     missing_manifest = sorted(required_manifest - set(rapm_manifest.columns))
     if missing_manifest:
         raise RuntimeError(f"RAPM manifest missing required fields: {missing_manifest}")
+    normalize_season_key(rapm_manifest, "RAPM snapshot manifest")
     rapm_manifest["snapshot_date"] = pd.to_datetime(rapm_manifest.snapshot_date, errors="coerce").dt.normalize()
     rapm_manifest["max_history_date"] = pd.to_datetime(rapm_manifest.max_history_date, errors="coerce").dt.normalize()
     if rapm_manifest.duplicated(["season", "snapshot_date"]).any():
@@ -311,6 +324,7 @@ def main():
     phase["game_date"] = pd.to_datetime(phase.game_date).dt.normalize()
     phase["rapm_snapshot_date"] = pd.to_datetime(phase.rapm_snapshot_date, errors="coerce")
     profile_wide, profile_diag = build_profile_features(STAGEC_DIR/"stage_c_candidate_profiles.parquet")
+    normalize_season_key(profile_wide, "Stage C player profile features")
 
     rapm_cols = ["season","game_id","game_date",*RAPM_INJURY_FEATURES]
     for c in RAPM_INJURY_FEATURES:
