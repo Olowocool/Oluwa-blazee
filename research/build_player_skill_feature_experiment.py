@@ -151,7 +151,6 @@ def load_player_history() -> tuple[pd.DataFrame, dict]:
                    {detail_sql}
             FROM read_parquet({details}, hive_partitioning=true,
                               hive_types={{'season': INTEGER}}, union_by_name=true)
-            WHERE action_type IN ({",".join("'" + x.replace("'", "''") + "'" for x in ACTION_TYPES)})
             GROUP BY 1,2,3,4
         )
         SELECT CAST(p.season AS INTEGER) season, CAST(p.game_id AS VARCHAR) game_id,
