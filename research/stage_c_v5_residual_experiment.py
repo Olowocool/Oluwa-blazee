@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 OUT = ROOT / "outputs/research/stage_c_v5_comparison"
 ARTIFACT = Path(os.environ.get("STAGE_C_ARTIFACT_DIR", "outputs/research/stage_c_artifact"))
 PHASE2_DIR = ARTIFACT / "v4_phase2"
