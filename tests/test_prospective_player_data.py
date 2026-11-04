@@ -57,6 +57,19 @@ class ProspectivePlayerDataTests(unittest.TestCase):
             normalize_source_frames(games, team, players, names, teams,
                                     rotations, events, "2026-11-05")
 
+    def test_playoff_rows_are_excluded_from_regular_season_history(self):
+        games, team, players, names, teams, rotations, events = self.fixtures()
+        playoff = games.iloc[[0]].copy()
+        playoff["game_id"] = "playoff"
+        playoff["game_type"] = "playoffs"
+        games = pd.concat([games, playoff], ignore_index=True)
+        playoff_team = team.iloc[[0]].copy()
+        playoff_team["game_id"] = "playoff"
+        team = pd.concat([team, playoff_team], ignore_index=True)
+        frames = normalize_source_frames(games, team, players, names, teams,
+                                          rotations, events, "2026-11-05")
+        self.assertEqual(set(frames[1].game_id), {"old"})
+
     def test_duplicate_completed_game_id_is_rejected(self):
         games, team, players, names, teams, rotations, events = self.fixtures()
         games = pd.concat([games, games.iloc[[0]]], ignore_index=True)
