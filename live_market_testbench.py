@@ -324,14 +324,13 @@ with tab_validation:
                     else:
                         score_path.write_bytes(bundled_score_path.read_bytes())
                     archive.to_csv(snapshot_path, index=False)
-                    empty_patch_dir = root / "empty_score_patches"
-                    empty_patch_dir.mkdir()
+                    score_patch_dir = Path(__file__).resolve().parent / "research" / "data"
                     out5, out6, out7 = root / "objective5", root / "objective6", root / "objective7"
                     summary5 = run_objective5(Namespace(
                         snapshots_file=str(snapshot_path),
                         scores_file=str(score_path),
-                        score_patch_dir=str(empty_patch_dir),
-                        score_patch_files=[],
+                        score_patch_dir=str(score_patch_dir),
+                        score_patch_files=None,
                         output_dir=str(out5),
                         bookmaker="DraftKings",
                         entry_minutes=120,
