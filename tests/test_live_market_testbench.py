@@ -204,7 +204,7 @@ def test_pace_challenger_reports_paired_date_cluster_metrics(monkeypatch):
 
     monkeypatch.setattr(engine, "calculate_game_components", fake_components)
     rows, summary = evaluate_pace_challenger(
-        history, {"seasons_loaded": [2026]}, {}, bootstrap_resamples=200, seed=9
+        history, {"seasons_loaded": [2025, 2026]}, {}, bootstrap_resamples=200, seed=9
     )
     assert len(rows) == 3
     assert summary["evaluation_games"] == 3
