@@ -222,6 +222,20 @@ def export_live_player_strength_calibration(data: pd.DataFrame) -> dict:
         raise RuntimeError("Player-strength calibration includes same-day/future rows")
 
     features = list(RAPM_INJURY_FEATURES)
+    rapm_columns = ["home_off_delta", "home_def_delta", "away_off_delta", "away_def_delta"]
+    rapm_feature_diagnostics = {}
+    for column in rapm_columns:
+        values = pd.to_numeric(train[column], errors="coerce")
+        nonzero = int(values.abs().gt(1e-8).sum())
+        std = float(values.std(ddof=0))
+        rapm_feature_diagnostics[column] = {
+            "nonzero_training_rows": nonzero,
+            "standard_deviation": std,
+        }
+        if nonzero < 50 or not np.isfinite(std) or std <= 1e-8:
+            raise RuntimeError(
+                f"RAPM feature {column} is absent/constant in calibration data; refusing a player-strength model"
+            )
     model = pipeline()
     target = train.v5_total.astype(float) - train.actual_total.astype(float)
     model.fit(train[features], target)
@@ -238,6 +252,7 @@ def export_live_player_strength_calibration(data: pd.DataFrame) -> dict:
         "training_games": int(len(train)),
         "training_dates": int(pd.to_datetime(train.game_date).dt.normalize().nunique()),
         "feature_family": "Stage C RAPM + injury + full-rotation features",
+        "rapm_feature_diagnostics": rapm_feature_diagnostics,
         "features": features,
         "imputer": {"strategy": "constant", "fill_value": 0.0,
                     "statistics": [float(x) for x in imputer.statistics_]},
@@ -441,8 +456,6 @@ def main():
     if set(result.season.unique()) != set(TEST_SEASONS):
         raise RuntimeError(f"Expected both test seasons {TEST_SEASONS}, got {sorted(result.season.unique())}")
 
-    live_calibration = export_live_player_strength_calibration(data)
-
     overall = {"V5_frozen_control": metric(result.actual_total,result.v5_total)}
     candidate_results = {}
     for family in FAMILIES:
@@ -451,6 +464,17 @@ def main():
             "overall":metric(result.actual_total,result[col]),
             "paired_date_cluster_bootstrap":cluster_bootstrap(result,col),
         }
+    rapm_validation = candidate_results["rapm_injury"]
+    rapm_ci = rapm_validation["paired_date_cluster_bootstrap"]["95pct_date_cluster_ci"]
+    v5_mae = overall["V5_frozen_control"]["mae"]
+    rapm_mae = rapm_validation["overall"]["mae"]
+    if not (rapm_mae < v5_mae and float(rapm_ci[1]) < 0.0):
+        raise RuntimeError(
+            "RAPM/injury challenger did not pass the predeclared historical gate: "
+            f"V5_MAE={v5_mae:.4f}, RAPM_MAE={rapm_mae:.4f}, CI={rapm_ci}"
+        )
+    live_calibration = export_live_player_strength_calibration(data)
+
     by_season={}
     for season,part in result.groupby("season",sort=True):
         by_season[str(int(season))]={"V5":metric(part.actual_total,part.v5_total)}
