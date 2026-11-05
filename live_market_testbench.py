@@ -212,6 +212,8 @@ with tab_player_predictions:
             "home_profile_coverage_scale": "Home profile coverage scale",
             "away_profile_coverage_scale": "Away profile coverage scale",
             "away_profiled_minutes_share": "Away profile minutes coverage",
+            "home_rapm_profiled_minutes_share": "Home RAPM minutes coverage",
+            "away_rapm_profiled_minutes_share": "Away RAPM minutes coverage",
             "home_offensive_rapm": "Home weighted offensive RAPM",
             "home_defensive_rapm": "Home weighted defensive RAPM",
             "away_offensive_rapm": "Away weighted offensive RAPM",
@@ -230,7 +232,9 @@ with tab_player_predictions:
             "Home player baseline points", "Home RAPM adjustment points",
             "Away player baseline points", "Away RAPM adjustment points",
             "Expected matchup pace", "League pace", "Pace multiplier",
-            "Home profile minutes coverage", "Away profile minutes coverage", "Home profile coverage scale", "Away profile coverage scale",
+            "Home profile minutes coverage", "Away profile minutes coverage",
+            "Home RAPM minutes coverage", "Away RAPM minutes coverage",
+            "Home profile coverage scale", "Away profile coverage scale",
             "Home weighted offensive RAPM", "Home weighted defensive RAPM",
             "Away weighted offensive RAPM", "Away weighted defensive RAPM",
             "forecast_status",
@@ -319,6 +323,8 @@ with tab_player_predictions:
             "free_throw_rate": "L20 free-throw rate",
             "profile_eligible": "Profile eligible",
             "profile_through_date": "Profile through",
+            "rapm_available": "RAPM available",
+            "rapm_weighted_possessions": "RAPM weighted possessions",
         })
         wanted = [
             "Team", "Player", "rotation_rank", "Official status", "Availability %",
@@ -326,6 +332,7 @@ with tab_player_predictions:
             points_label, "Offensive RAPM points adjustment",
             "Defensive RAPM effect on opponent points",
             "Offensive RAPM", "Defensive RAPM", "Net RAPM",
+            "RAPM available", "RAPM weighted possessions",
             "L20 points / 36", "L20 assists / 36", "L20 turnovers / 36",
             "L20 offensive rebounds / 36", "L20 defensive rebounds / 36",
             "L20 steals / 36", "L20 blocks / 36", "L20 true shooting %",
@@ -357,6 +364,7 @@ with tab_player_predictions:
                 "status_prior_strength_games": rotation_parameters.STATUS_PRIOR_STRENGTH,
                 "official_status_priors": rotation_parameters.STATUS_PRIORS,
                 "minimum_player_profiled_minutes_share": 0.85,
+                "minimum_RAPM_rated_minutes_share": 0.85,
             })
             st.markdown("**Player strength (RAPM) settings**")
             st.json({
@@ -382,6 +390,7 @@ with tab_player_predictions:
                     "three-point %", "free-throw rate",
                 ],
                 "profile_data_cutoff": "strictly before the selected NBA date",
+                "non_scoring_skill_signal_policy": "visible player diagnostics; no extra point coefficient is assigned because box-score production overlaps with points per 36 and RAPM",
             })
             st.markdown("**Pace and scoring equation**")
             st.json({
