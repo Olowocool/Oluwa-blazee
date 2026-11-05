@@ -630,6 +630,7 @@ def status_probability(status, history, game_date):
 
 
 def attach_rapm_ratings(rotation: pd.DataFrame, rapm: dict) -> pd.DataFrame:
+    # Map fitted ratings before any zero fallback can mask missing values.
     """Attach fitted player RAPM values without masking absent columns with zeros."""
     if "player_id" not in rotation.columns:
         raise ValueError("Rotation rows must contain player_id before RAPM attachment")
