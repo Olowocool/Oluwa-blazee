@@ -6,6 +6,7 @@ import pytest
 from live_market_testbench_engine import (
     _h2h_features,
     _rest_adjustments,
+    apply_player_strength_calibration,
     append_paper_observations,
     compose_predictions,
     evaluate_pace_challenger,
@@ -221,3 +222,56 @@ def test_pace_challenger_fails_when_no_supported_games():
         evaluate_pace_challenger(
             history, {"seasons_loaded": [2027]}, {}, bootstrap_resamples=200
         )
+
+
+
+def test_player_calibration_applies_only_after_validation_gate(tmp_path):
+    import json
+
+    artifact = {
+        "schema_version": "stage-c-live-player-strength-calibration-v1",
+        "status": "validated_challenger",
+        "forecast_enabled": True,
+        "training_cutoff_exclusive": "2026-07-01",
+        "features": ["home_off_delta", "expected_possessions"],
+        "rapm_feature_nonzero_rows": {"home_off_delta": 40, "raw_injury_total_delta": 30},
+        "standardizer": {"mean": [0.0, 100.0], "scale": [1.0, 2.0]},
+        "ridge": {"intercept": 0.5, "coefficients": [2.0, 1.0]},
+        "validation": {"gate_passed": True, "games": 700, "dates": 120},
+    }
+    path = tmp_path / "calibration.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    result = apply_player_strength_calibration(
+        220.0, {"home_off_delta": 1.0, "expected_possessions": 102.0},
+        "2026-11-05", path,
+    )
+
+    assert result["available"] is True
+    assert result["predicted_v5_error"] == pytest.approx(3.5)
+    assert result["player_adjusted_total"] == pytest.approx(216.5)
+
+
+def test_player_calibration_stays_disabled_when_validation_gate_fails(tmp_path):
+    import json
+
+    artifact = {
+        "schema_version": "stage-c-live-player-strength-calibration-v1",
+        "status": "research_shadow_only",
+        "forecast_enabled": False,
+        "training_cutoff_exclusive": "2026-07-01",
+        "features": ["home_off_delta"],
+        "rapm_feature_nonzero_rows": {"home_off_delta": 5},
+        "standardizer": {"mean": [0.0], "scale": [1.0]},
+        "ridge": {"intercept": 0.0, "coefficients": [1.0]},
+        "validation": {"gate_passed": False},
+    }
+    path = tmp_path / "calibration.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    result = apply_player_strength_calibration(
+        220.0, {"home_off_delta": 1.0}, "2026-11-05", path,
+    )
+
+    assert result["available"] is False
+    assert "has not passed" in result["reason"]
