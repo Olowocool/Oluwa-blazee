@@ -756,16 +756,11 @@ def apply_player_strength_calibration(
     if cutoff >= target:
         return {"available": False, "reason": "Player calibration training cutoff is not strictly before target date."}
     validation = payload.get("validation") or {}
-    if (
-        payload.get("status") != "validated_challenger"
-        or payload.get("forecast_enabled") is not True
-        or validation.get("gate_passed") is not True
-    ):
-        return {
-            "available": False,
-            "reason": "Player challenger has not passed the chronological out-of-sample accuracy gate.",
-            "validation": validation,
-        }
+    forecast_eligible = bool(
+        payload.get("status") == "validated_challenger"
+        and payload.get("forecast_enabled") is True
+        and validation.get("gate_passed") is True
+    )
     names = payload.get("features") or []
     nonzero = payload.get("rapm_feature_nonzero_rows") or {}
     required_rapm = names[:4]
@@ -796,6 +791,8 @@ def apply_player_strength_calibration(
         raise ValueError("Player calibration produced a non-finite forecast.")
     return {
         "available": True,
+        "forecast_eligible": forecast_eligible,
+        "status": payload.get("status", "research_shadow_only"),
         "predicted_v5_error": predicted_v5_error,
         "player_adjusted_total": adjusted_total,
         "training_cutoff_exclusive": str(cutoff.date()),
