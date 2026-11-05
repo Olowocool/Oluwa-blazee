@@ -84,7 +84,7 @@ jobs:
             echo "Calibration unchanged; no commit required."
             exit 0
           fi
-          git commit -m "Refit live player calibration with corrected RAPM features"
+          git commit -m "Refit live player calibration from Phase 2 run ${GITHUB_RUN_ID}"
           git push origin HEAD:research/live-market-testbench
       - name: Upload full-rotation Stage C build evidence
         uses: actions/upload-artifact@v6
