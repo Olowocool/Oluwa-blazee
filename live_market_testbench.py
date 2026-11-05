@@ -486,6 +486,10 @@ with tab_players:
                                 "Validated challenger" if player_calibration.get("available")
                                 else player_calibration.get("reason", "Unavailable")
                             ),
+                            "Player OOS games": (player_calibration.get("validation") or {}).get("games"),
+                            "Player OOS dates": (player_calibration.get("validation") or {}).get("dates"),
+                            "Player MAE change vs V5": (player_calibration.get("validation") or {}).get("mae_change_player_minus_v5"),
+                            "Player date-cluster 95% CI": (player_calibration.get("validation") or {}).get("date_cluster_ci_95"),
                         })
                     st.session_state.player_diagnostics = {
                         "diagnostics": player_state["diagnostics"],
