@@ -890,18 +890,24 @@ def evaluate_pace_challenger(
             continue
         for row in day_rows.itertuples(index=False):
             try:
-                result = calculate_game_components(
-                    str(row.home_team), str(row.away_team), target, prior,
-                    pace_history, team_id_map, use_pace=True,
-                    h2h_mode="off", rest_mode="off", v5_cache=cache,
+                v5 = calculate_matchup_points_v5(
+                    str(row.home_team), str(row.away_team), prior,
+                    game_date=target, _prepared_cache=cache,
                 )
-                if not result["pace"].get("available"):
+                pace = pace_component(
+                    str(row.home_team), str(row.away_team), target,
+                    pace_history, team_id_map,
+                )
+                if not pace.get("available"):
                     skipped_unavailable += 1
                     continue
-                baseline = float(result["raw_total"])
-                challenger = float(result["composed"]["selected_prediction"])
+                if _as_date(v5.get("history_cutoff")) != target:
+                    raise RuntimeError("V5 input cutoff does not match target date.")
+                baseline = float(v5["raw_total"])
+                pace_adjustment = float(pace["adjustment"])
+                challenger = baseline + pace_adjustment
                 actual = float(row.home_score) + float(row.away_score)
-                if not np.isfinite([baseline, challenger, actual]).all():
+                if not np.isfinite([baseline, challenger, actual, pace_adjustment]).all():
                     failed += 1
                     continue
                 rows.append({
@@ -910,10 +916,10 @@ def evaluate_pace_challenger(
                     "away_team": str(row.away_team),
                     "actual_total": actual,
                     "v5_total": baseline,
-                    "pace_adjustment": float(result["pace"]["adjustment"]),
+                    "pace_adjustment": pace_adjustment,
                     "pace_adjusted_total": challenger,
-                    "expected_matchup_pace": float(result["pace"]["expected_matchup_pace_l10"]),
-                    "league_pace_prior": float(result["pace"]["league_pace_prior"]),
+                    "expected_matchup_pace": float(pace["expected_matchup_pace_l10"]),
+                    "league_pace_prior": float(pace["league_pace_prior"]),
                     "history_cutoff": str(target.date()),
                     "prior_max_date": str(pd.Timestamp(prior.game_date.max()).date()),
                 })
