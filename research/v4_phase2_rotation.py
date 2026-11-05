@@ -628,6 +628,28 @@ def status_probability(status, history, game_date):
     return float((played + STATUS_PRIOR_STRENGTH * prior) / (n + STATUS_PRIOR_STRENGTH))
 
 
+
+def attach_rapm_ratings(rotation: pd.DataFrame, rapm: dict) -> pd.DataFrame:
+    """Attach fitted player RAPM values without masking absent columns with zeros."""
+    if "player_id" not in rotation.columns:
+        raise ValueError("Rotation rows must contain player_id before RAPM attachment")
+    result = rotation.copy()
+    player_ids = result["player_id"].astype(str)
+    for col in ("o_rapm", "d_rapm"):
+        fallback = player_ids.map(
+            lambda pid: rapm.get(str(pid), {}).get(col, 0.0)
+        )
+        if col in result.columns:
+            existing = pd.to_numeric(result[col], errors="coerce")
+            result[col] = existing.where(existing.notna(), fallback)
+        else:
+            result[col] = fallback
+        result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0.0)
+        if not np.isfinite(result[col].to_numpy(dtype=float)).all():
+            raise RuntimeError(f"Non-finite RAPM values after attaching {col}")
+    return result
+
+
 def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reported_ids, team_hist, player_hist, first_seen, actual_lookup, rapm, team_actual_totals):
     candidate_ids = {
         pid for (tid, pid), first in first_seen.items()
@@ -695,11 +717,7 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reporte
         "is_rotation_tail": False,
     })
     d["is_rotation_tail"] = d["is_rotation_tail"].fillna(False).astype(bool)
-    for col in ("o_rapm", "d_rapm"):
-        if col not in d:
-            d[col] = 0.0
-        fallback = d["player_id"].map(lambda pid: rapm.get(str(pid), {}).get(col, 0.0))
-        d[col] = d[col].fillna(fallback).fillna(0.0)
+    d = attach_rapm_ratings(d, rapm)
     d["o_delta_contribution"] = (d.expected_minutes - d.baseline_minutes) / 48.0 * d.o_rapm
     d["d_delta_contribution"] = (d.expected_minutes - d.baseline_minutes) / 48.0 * d.d_rapm
     features = {
