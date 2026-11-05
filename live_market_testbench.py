@@ -419,8 +419,8 @@ with tab_players:
                             raise RuntimeError(f"Missing home/away player-strength features for {fixture.game_key}")
                         pace = pace_component(fixture.home_team, fixture.away_team, player_target_date, pace_source, team_map)
                         total_feature_delta = float(
-                            home.iloc[0].features["off_delta"] + home.iloc[0].features["def_delta"]
-                            + away.iloc[0].features["off_delta"] + away.iloc[0].features["def_delta"]
+                            home.iloc[0]["features"]["off_delta"] + home.iloc[0]["features"]["def_delta"]
+                            + away.iloc[0]["features"]["off_delta"] + away.iloc[0]["features"]["def_delta"]
                         )
                         raw_signal = (
                             float(pace["expected_matchup_pace_l10"]) / 100.0 * total_feature_delta
