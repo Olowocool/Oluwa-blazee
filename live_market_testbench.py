@@ -518,10 +518,10 @@ with tab_players:
                 "rotation_rank": "Rotation rank", "status": "Official status",
                 "availability_probability": "Availability probability",
                 "baseline_minutes": "Baseline minutes", "expected_minutes": "Expected minutes",
-                "minute_change": "Minute change", "o_rapm": "Offensive RAPM",
-                "d_rapm": "Defensive RAPM",
-                "offensive_rapm_minute_delta": "Offensive minute contribution",
-                "defensive_rapm_minute_delta": "Defensive minute contribution",
+                "minute_change": "Minute change", "o_rapm": "Offensive RAPM (pts/100 poss)",
+                "d_rapm": "Defensive RAPM (pts/100 poss)",
+                "offensive_rapm_minute_delta": "Offensive RAPM × minute delta (pts/100 poss)",
+                "defensive_rapm_minute_delta": "Defensive RAPM × minute delta (pts/100 poss)",
             })
             st.dataframe(display_players, use_container_width=True, hide_index=True)
             st.download_button(
