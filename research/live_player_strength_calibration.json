@@ -1,7 +1,7 @@
 {
   "schema_version": "stage-c-live-player-strength-calibration-v1",
   "status": "research_shadow_only",
-  "created_at_utc": "2026-11-05T02:34:07.304350+00:00",
+  "created_at_utc": "2026-11-05T11:06:59.794690+00:00",
   "training_cutoff_exclusive": "2026-07-01",
   "training_first_date": "2023-11-03",
   "training_last_date": "2026-04-12",
@@ -13,7 +13,6 @@
     "home_def_delta",
     "away_off_delta",
     "away_def_delta",
-    "raw_injury_total_delta",
     "home_minutes_changed",
     "away_minutes_changed",
     "home_reported_out_minutes",
@@ -23,15 +22,18 @@
     "home_reported_players_without_prior_team_history",
     "away_reported_players_without_prior_team_history",
     "home_players_excluded_by_opposing_report",
-    "away_players_excluded_by_opposing_report",
-    "expected_possessions"
+    "away_players_excluded_by_opposing_report"
   ],
+  "rapm_feature_nonzero_rows": {
+    "home_off_delta": 2789,
+    "home_def_delta": 2789,
+    "away_off_delta": 2789,
+    "away_def_delta": 2789
+  },
   "imputer": {
     "strategy": "constant",
     "fill_value": 0.0,
     "statistics": [
-      0.0,
-      0.0,
       0.0,
       0.0,
       0.0,
@@ -50,11 +52,10 @@
   },
   "standardizer": {
     "mean": [
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
+      -0.1500932250656171,
+      0.027074499279206233,
+      -0.1490523155825346,
+      0.023223281630882914,
       27.20218139516861,
       27.472059896016077,
       22.41810591729968,
@@ -64,15 +65,13 @@
       0.4788444703822585,
       0.5065655091917128,
       0.08608112051356871,
-      0.09512693317770644,
-      101.73506813144955
+      0.09512693317770644
     ],
     "scale": [
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
+      0.5193749738850106,
+      0.4048583903447745,
+      0.5214667031409461,
+      0.39691639471877244,
       20.78047187796084,
       20.648972132994462,
       19.835120711861833,
@@ -82,30 +81,27 @@
       0.7245771382054589,
       0.7505668077127763,
       0.2966627281566653,
-      0.3191160005734928,
-      1.4742519983897784
+      0.3191160005734928
     ]
   },
   "ridge": {
     "alpha": 25.0,
-    "intercept": 0.5250131310183795,
+    "intercept": 0.525013131018384,
     "coefficients": [
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      -0.37033065199673976,
-      2.293879276845734,
-      0.7360914444522688,
-      -1.7790964675162428,
-      -0.3541325540172447,
-      -1.110831606802511,
-      0.16478376385526625,
-      -0.2951660246502858,
-      0.10581555967701589,
-      0.3960706402579216,
-      -3.436892107499323
+      -1.2095099386031705,
+      -1.044275859741957,
+      -1.4391362938397987,
+      -1.2491649970578977,
+      -0.8532851191835994,
+      1.8932068819357288,
+      1.0035549755666355,
+      -1.7596647410855792,
+      -0.47133921545586327,
+      -1.195686260792459,
+      0.10195709705741805,
+      -0.5960774901377859,
+      0.092908166416321,
+      0.4919825552436161
     ]
   },
   "target": "frozen_v5_total_minus_actual_total",
@@ -116,5 +112,22 @@
   "profitability_claim": false,
   "v5_modified": false,
   "production_modified": false,
-  "paper_ledger_modified": false
+  "paper_ledger_modified": false,
+  "validation": {
+    "method": "expanding-window prequential RAPM/injury challenger vs frozen V5",
+    "games": 2278,
+    "dates": 303,
+    "v5_baseline_mae": 14.951676909569798,
+    "player_rapm_injury_mae": 14.896580635453178,
+    "mae_change_player_minus_v5": -0.05509627411661988,
+    "date_cluster_ci_95": [
+      -0.18986634679235725,
+      0.08413416004564739
+    ],
+    "gate_minimum_games": 500,
+    "gate_minimum_dates": 100,
+    "gate_passed": false,
+    "interpretation": "Forecast use requires lower MAE and a date-cluster 95% CI wholly below zero."
+  },
+  "forecast_enabled": false
 }
