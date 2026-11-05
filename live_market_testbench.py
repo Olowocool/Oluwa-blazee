@@ -288,9 +288,14 @@ with tab_player_predictions:
             detail.expected_minutes - detail.baseline_minutes
         ).round(1)
         detail["Availability %"] = (detail.availability_probability * 100).round(0)
-        points_label = "Player expected points" if slate.get("injury_report", {}).get("complete", True) else "Provisional points signal — not a forecast"
-        if points_label != "Player expected points":
-            detail = detail.rename(columns={"Player expected points": points_label})
+        report_complete = bool(slate.get("injury_report", {}).get("complete", True))
+        points_label = "Player expected points" if report_complete else "Provisional points signal — not a forecast"
+        minutes_label = "Projected minutes" if report_complete else "Provisional minutes — availability unconfirmed"
+        if not report_complete:
+            detail = detail.rename(columns={
+                "Player expected points": points_label,
+                "Projected minutes": minutes_label,
+            })
         detail = detail.rename(columns={
             "full_name": "Team", "name": "Player", "status": "Official status",
             "o_rapm": "Offensive RAPM", "d_rapm": "Defensive RAPM",
@@ -299,8 +304,8 @@ with tab_player_predictions:
         })
         wanted = [
             "Team", "Player", "rotation_rank", "Official status", "Availability %",
-            "Projected minutes", "Minute change", "Player pre-pace points",
-            "Player expected points", "Offensive RAPM", "Defensive RAPM",
+            minutes_label, "Minute change", "Player pre-pace points",
+            points_label, "Offensive RAPM", "Defensive RAPM",
             "L20 points / 36", "L20 assists / 36", "L20 turnovers / 36",
             "profile_eligible", "Profile through",
         ]
