@@ -60,7 +60,7 @@ def map_odds_teams(away: str, home: str, team_seasons: pd.DataFrame) -> tuple[st
     return lookup[a], lookup[h]
 
 
-def latest_draftkings_quotes(archive: pd.DataFrame, now_utc, max_observation_age_minutes=20) -> pd.DataFrame:
+def latest_draftkings_quotes(archive: pd.DataFrame, now_utc, max_observation_age_minutes=20, max_publication_age_minutes=20) -> pd.DataFrame:
     missing = REQUIRED_ODDS - set(archive.columns)
     if missing:
         raise ValueError(f"Odds archive missing required fields: {sorted(missing)}")
@@ -78,13 +78,17 @@ def latest_draftkings_quotes(archive: pd.DataFrame, now_utc, max_observation_age
     if (d.total_line <= 0).any() or (d.over_odds_american == 0).any() or (d.under_odds_american == 0).any():
         raise ValueError("DraftKings quote contains invalid total or American price")
     d["observation_age_minutes"] = (now - d.observed_at_utc).dt.total_seconds() / 60
+    d["publication_age_minutes"] = (now - d.published_as_of_utc).dt.total_seconds() / 60
     publication_lag = (d.observed_at_utc - d.published_as_of_utc).dt.total_seconds() / 60
     if (publication_lag < -5).any():
         raise ValueError("Odds publication timestamp is implausibly later than its observation")
-    d = d[d.observation_age_minutes.between(0, max_observation_age_minutes)].copy()
+    d = d[
+        d.observation_age_minutes.between(0, max_observation_age_minutes)
+        & d.publication_age_minutes.between(0, max_publication_age_minutes)
+    ].copy()
     d = d[d.commence_time_utc > now].copy()
     if d.empty:
-        raise ValueError("No fresh DraftKings observations within configured age limit")
+        raise ValueError("No DraftKings observations pass both publication-age and observation-age limits")
     # Keep the latest actual observation per fixture; never combine prices from rows.
     d = d.sort_values(["game_key", "observed_at_utc", "published_as_of_utc"])
     d = d.groupby("game_key", as_index=False, sort=False).tail(1)
