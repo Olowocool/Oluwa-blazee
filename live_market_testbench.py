@@ -587,7 +587,7 @@ with tab_players:
                 calibration_payload = json.loads(calibration_path.read_text(encoding="utf-8"))
                 calibration_features = calibration_payload.get("features", [])
                 live_feature_columns = set(diagnostics["game_features"].columns)
-                feature_contract_matches = bool(calibration_features) and set(calibration_features).issubset(live_feature_columns)
+                feature_contract_matches = len(calibration_features) == 14 and len(set(calibration_features)) == 14 and set(calibration_features).issubset(live_feature_columns)
                 if not feature_contract_matches:
                     st.warning(
                         "The stored calibration artifact predates the current live player-feature contract. "
