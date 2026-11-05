@@ -16,7 +16,7 @@ from research.collect_public_odds_snapshots import PAGE_URL, parse_odds_page
 from research.objective5_market_comparison import run as run_objective5
 from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
-from live_market_testbench_engine import PACE_LAST10_BETA, apply_live_market_freshness, apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
+from live_market_testbench_engine import PACE_LAST10_BETA, apply_live_market_freshness, apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map, pace_component
 from research.prospective_player_profiles import PROFILE_FEATURES, aggregate_live_player_profile_features, load_live_player_profile_history
 from research.player_driven_slate import fetch_scheduled_nba_games, build_player_scoring_projection
 
@@ -30,7 +30,7 @@ def cached_pace_history():
     """Cache the public possession-based pace source for one hour per app process."""
     return load_pace_history()
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_resource(ttl=3600, show_spinner=False)
 def cached_live_player_profile_history(player_ids: tuple[str, ...], target_date: str):
     """Cache strictly prior player-game profile rows for a target slate."""
     return load_live_player_profile_history(player_ids, target_date)
@@ -153,20 +153,17 @@ with tab_player_predictions:
                     gc.collect()
 
                 with st.spinner("Calculating player scoring contributions and possession-based pace…"):
-                    score_history = load_score_history()
                     pace_history = cached_pace_history()
                     team_id_map = load_team_id_map()
-                    model_cache = {"v3": {}, "v4": {}}
                     pace_by_game = {}
                     for fixture in fixtures.itertuples(index=False):
-                        parts = calculate_game_components(
-                            fixture.home_team, fixture.away_team, prediction_date,
-                            score_history, pace_history, team_id_map, use_pace=True,
-                            h2h_mode="off", rest_mode="off", v5_cache=model_cache,
+                        # Compute the possession-based pace signal directly.
+                        # Do not load score history or invoke the V5/H2H/rest
+                        # pipeline for this market-independent player model.
+                        pace_by_game[str(fixture.game_key)] = pace_component(
+                            fixture.home_team, fixture.away_team,
+                            prediction_date, pace_history, team_id_map,
                         )
-                        # Reuse only the possession-based pace estimate. The
-                        # player-driven tab does not display or use V5 totals.
-                        pace_by_game[str(fixture.game_key)] = parts["pace"]
                     player_scores, player_detail = build_player_scoring_projection(
                         player_rows, rotation_result["target_games"], pace_by_game,
                         official_report_complete=rotation_result["report_complete"],
