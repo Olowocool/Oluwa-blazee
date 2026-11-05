@@ -229,7 +229,7 @@ with tab_player_predictions:
             "Tip (Lagos)", "Away", "Home", "Player model away points",
             "Player model home points", "Player-driven total",
             "Expected matchup pace", "League pace", "Pace multiplier",
-            "Home profile minutes coverage", "Away profile minutes coverage", "home_profile_coverage_scale", "away_profile_coverage_scale",
+            "Home profile minutes coverage", "Away profile minutes coverage", "Home profile coverage scale", "Away profile coverage scale",
             "Home weighted offensive RAPM", "Home weighted defensive RAPM",
             "Away weighted offensive RAPM", "Away weighted defensive RAPM",
             "Internal V5 + pace reference", "forecast_status",
