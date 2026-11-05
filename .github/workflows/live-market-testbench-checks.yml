@@ -87,6 +87,25 @@ jobs:
               "strict_prior_date_cutoff": result["point_in_time_cutoff"],
           }, indent=2))
           PY
+      - name: Run chronological V5 versus V5-plus-pace backtest
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python - <<'PY'
+          import json
+          from live_market_testbench_engine import (
+              evaluate_pace_challenger, load_pace_history,
+              load_score_history, load_team_id_map,
+          )
+          scores = load_score_history()
+          pace_history = load_pace_history()
+          _, summary = evaluate_pace_challenger(
+              scores, pace_history, load_team_id_map(), bootstrap_resamples=2000,
+          )
+          assert summary["status"] == "evaluated"
+          assert summary["strict_prior_date_history"] is True
+          print(json.dumps(summary, indent=2))
+          PY
       - name: Publish research test status
         if: always()
         env:
