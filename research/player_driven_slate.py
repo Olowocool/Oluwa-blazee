@@ -181,6 +181,18 @@ def build_player_scoring_projection(
             rapm_rows = team[team.expected_minutes.gt(0)]
             rapm_valid = rapm_rows.o_rapm.notna() & rapm_rows.d_rapm.notna()
             rapm_minutes = float(rapm_rows.loc[rapm_valid, "expected_minutes"].sum())
+            off_rapm = (
+                float(np.average(
+                    rapm_rows.loc[rapm_valid, "o_rapm"],
+                    weights=rapm_rows.loc[rapm_valid, "expected_minutes"],
+                )) if rapm_valid.any() and rapm_minutes > 0 else np.nan
+            )
+            def_rapm = (
+                float(np.average(
+                    rapm_rows.loc[rapm_valid, "d_rapm"],
+                    weights=rapm_rows.loc[rapm_valid, "expected_minutes"],
+                )) if rapm_valid.any() and rapm_minutes > 0 else np.nan
+            )
             # RAPM coefficients are points per 100 possessions. Since a full
             # team rotation contains 240 player-minutes, minutes/48 weights
             # each player's on-court impact into a five-player lineup effect.
