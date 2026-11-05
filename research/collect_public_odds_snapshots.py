@@ -28,7 +28,7 @@ from bs4 import BeautifulSoup
 PAGE_URL = "https://dunkapi.com/odds"
 EASTERN = ZoneInfo("America/New_York")
 DEFAULT_OUTPUT = Path("data/private/dunkapi_public_odds_snapshots.csv")
-DEFAULT_MAX_PAGE_AGE_MINUTES = 180
+DEFAULT_MAX_PAGE_AGE_MINUTES = 20
 USER_AGENT = "OluwaBlazee-NBA-Research/1.0"
 
 FIELDS = [
