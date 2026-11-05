@@ -235,4 +235,6 @@ def build_player_scoring_projection(
         })
 
     detail = pd.concat(player_outputs, ignore_index=True) if player_outputs else pd.DataFrame()
+    if not detail.empty:
+        detail["net_rapm"] = detail["o_rapm"] + detail["d_rapm"]
     return pd.DataFrame(summaries), detail
