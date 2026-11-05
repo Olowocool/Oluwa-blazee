@@ -676,6 +676,71 @@ def calculate_game_components(
 
 
 
+
+def apply_player_strength_calibration(
+    v5_total: float,
+    feature_values: dict[str, Any],
+    target_date: Any,
+    calibration_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Apply only a chronologically validated RAPM/injury calibration artifact."""
+    source = Path(calibration_path) if calibration_path else ROOT / "research" / "live_player_strength_calibration.json"
+    if not source.is_file():
+        return {"available": False, "reason": "Validated player calibration artifact is missing."}
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != "stage-c-live-player-strength-calibration-v1":
+        return {"available": False, "reason": "Unsupported player calibration schema."}
+    cutoff = pd.Timestamp(payload.get("training_cutoff_exclusive"))
+    target = _as_date(target_date)
+    if cutoff >= target:
+        return {"available": False, "reason": "Player calibration training cutoff is not strictly before target date."}
+    validation = payload.get("validation") or {}
+    if (
+        payload.get("status") != "validated_challenger"
+        or payload.get("forecast_enabled") is not True
+        or validation.get("gate_passed") is not True
+    ):
+        return {
+            "available": False,
+            "reason": "Player challenger has not passed the chronological out-of-sample accuracy gate.",
+            "validation": validation,
+        }
+    nonzero = payload.get("rapm_feature_nonzero_rows") or {}
+    if not any(int(value) > 0 for value in nonzero.values()):
+        return {"available": False, "reason": "Calibration artifact contains no non-zero RAPM/injury training features."}
+    names = payload.get("features") or []
+    means = np.asarray(payload.get("standardizer", {}).get("mean", []), dtype=float)
+    scales = np.asarray(payload.get("standardizer", {}).get("scale", []), dtype=float)
+    coefficients = np.asarray(payload.get("ridge", {}).get("coefficients", []), dtype=float)
+    intercept = _finite_float(payload.get("ridge", {}).get("intercept"))
+    if (
+        not names or len(set(names)) != len(names)
+        or len(means) != len(names) or len(scales) != len(names)
+        or len(coefficients) != len(names)
+        or not np.isfinite(means).all() or not np.isfinite(scales).all()
+        or not np.isfinite(coefficients).all() or np.any(scales <= 0)
+        or intercept is None
+    ):
+        raise ValueError("Player calibration artifact has invalid scaler or coefficient dimensions.")
+    missing = [name for name in names if name not in feature_values]
+    if missing:
+        raise ValueError(f"Player calibration inputs are missing features: {missing}")
+    values = np.asarray([_finite_float(feature_values[name]) for name in names], dtype=float)
+    if not np.isfinite(values).all():
+        raise ValueError("Player calibration input contains non-finite features.")
+    predicted_v5_error = float(intercept + np.dot((values - means) / scales, coefficients))
+    adjusted_total = float(v5_total) - predicted_v5_error
+    if not np.isfinite([v5_total, predicted_v5_error, adjusted_total]).all():
+        raise ValueError("Player calibration produced a non-finite forecast.")
+    return {
+        "available": True,
+        "predicted_v5_error": predicted_v5_error,
+        "player_adjusted_total": adjusted_total,
+        "training_cutoff_exclusive": str(cutoff.date()),
+        "validation": validation,
+    }
+
+
 def evaluate_pace_challenger(
     score_history: pd.DataFrame,
     pace_history: dict[str, Any],
