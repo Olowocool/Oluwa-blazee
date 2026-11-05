@@ -49,9 +49,13 @@ def build_v5_score_history(
     patches_path = Path(patch_dir or ROOT / "research/data")
     if not base_path.is_file():
         raise FileNotFoundError(f"Canonical V5 historical score file not found: {base_path}")
-    frames = [pd.read_csv(base_path)]
+    base_frame = pd.read_csv(base_path)
+    base_frame["_history_source"] = str(base_path)
+    frames = [base_frame]
     for path in sorted(patches_path.glob("score_history_patch_*.csv")):
-        frames.append(pd.read_csv(path))
+        patch_frame = pd.read_csv(path)
+        patch_frame["_history_source"] = str(path)
+        frames.append(patch_frame)
 
     games = state["games"].copy()
     team_logs = state["team_logs"].copy()
@@ -101,7 +105,9 @@ def build_v5_score_history(
     )
     if current[["home_team", "away_team", "home_score", "away_score"]].isna().any().any():
         raise ValueError("Current-season V5 history has unmapped teams or missing scores")
-    frames.append(current[["game_date", "home_team", "away_team", "home_score", "away_score"]])
+    current_history = current[["game_date", "home_team", "away_team", "home_score", "away_score"]].copy()
+    current_history["_history_source"] = f"public_current_season_{current_season}"
+    frames.append(current_history)
 
     history = pd.concat(frames, ignore_index=True)
     required = {"game_date", "home_team", "away_team", "home_score", "away_score"}
@@ -120,8 +126,16 @@ def build_v5_score_history(
     ].copy()
     keys = ["game_date", "home_team", "away_team"]
     conflicts = history.groupby(keys)[["home_score", "away_score"]].nunique(dropna=False)
-    if (conflicts > 1).any().any():
-        raise ValueError("Conflicting scores found for a duplicate V5 history fixture")
+    conflict_mask = (conflicts > 1).any(axis=1)
+    if conflict_mask.any():
+        conflict_keys = conflicts.index[conflict_mask][:10]
+        examples = history.set_index(keys).loc[conflict_keys].reset_index()
+        detail_cols = keys + ["home_score", "away_score", "_history_source"]
+        details = examples[detail_cols].to_dict("records")
+        raise ValueError(
+            "Conflicting scores found for duplicate V5 history fixtures; "
+            f"first_examples={json.dumps(details, default=str)}"
+        )
     history = history.drop_duplicates(keys, keep="last")
     history = history[history.game_date < target].copy()
     if history.empty:
