@@ -151,18 +151,23 @@ with tab_live:
             except Exception as pace_exc:
                 pace_history = None
                 st.warning(f"Pace source unavailable; showing V5 baseline without a pace adjustment. {type(pace_exc).__name__}: {pace_exc}")
-            latest_rows = latest[latest["Live quote eligible"]].copy()
+            latest_rows = latest[
+                latest["commence_time_utc"].gt(pd.Timestamp.now(tz="UTC"))
+            ].copy()
             if latest_rows.empty:
+                st.warning("No upcoming fixtures are present in the captured market archive.")
+            elif not latest_rows["Live quote eligible"].any():
                 st.warning(
-                    "No live predictions generated. Both observation age and bookmaker-page publication age "
-                    "must be 20 minutes or less, and the game must not have started. Older quotes remain archived."
+                    "Showing model-only projections for upcoming fixtures. The archived market quotes are stale; "
+                    "market comparisons and directional signals are disabled until both timestamps pass the 20-minute gate."
                 )
             projections = []
             cache = {"v3": {}, "v4": {}}
             for game_key, group in latest_rows.groupby("game_key", sort=False):
                 first = group.iloc[0]
+                fresh_group = group[group["Live quote eligible"]]
                 quotes = []
-                for _, q in group.iterrows():
+                for _, q in fresh_group.iterrows():
                     def to_decimal(price):
                         x = float(price)
                         return 1.0 + (100.0 / abs(x) if x < 0 else x / 100.0)
@@ -180,17 +185,21 @@ with tab_live:
                     history, pace_history, team_map, use_pace=True, h2h_mode="off",
                     rest_mode="off", v5_cache=cache,
                 )
-                market_median = float(np.median([q["total_line"] for q in quotes]))
+                market_median = float(np.median([q["total_line"] for q in quotes])) if quotes else np.nan
                 # Fair market probabilities are calculated only from paired Over/Under
-                # prices at the same most-common total line. They are market estimates,
+                # prices at the same most-common fresh total line. They are market estimates,
                 # not probabilities generated or calibrated by our model.
-                line_counts = pd.Series([q["total_line"] for q in quotes]).value_counts()
-                consensus_line = float(sorted(
-                    line_counts[line_counts == line_counts.max()].index.tolist()
-                )[0])
-                same_line_quotes = [
-                    q for q in quotes if np.isclose(float(q["total_line"]), consensus_line)
-                ]
+                if quotes:
+                    line_counts = pd.Series([q["total_line"] for q in quotes]).value_counts()
+                    consensus_line = float(sorted(
+                        line_counts[line_counts == line_counts.max()].index.tolist()
+                    )[0])
+                    same_line_quotes = [
+                        q for q in quotes if np.isclose(float(q["total_line"]), consensus_line)
+                    ]
+                else:
+                    consensus_line = None
+                    same_line_quotes = []
                 fair_over = []
                 for q in same_line_quotes:
                     inv_over = 1.0 / float(q["over_odds_decimal"])
@@ -200,8 +209,10 @@ with tab_live:
                 market_fair_under = 1.0 - market_fair_over if np.isfinite(market_fair_over) else np.nan
                 pace = prediction["pace"]
                 pace_adjusted_total = float(prediction["composed"]["selected_prediction"])
-                difference = float(pace_adjusted_total - market_median)
-                if difference >= 5.0:
+                difference = float(pace_adjusted_total - market_median) if np.isfinite(market_median) else np.nan
+                if not quotes:
+                    signal = "Market stale — model only"
+                elif difference >= 5.0:
                     signal = "Strong Over"
                 elif difference >= 2.5:
                     signal = "Lean Over"
@@ -223,17 +234,19 @@ with tab_live:
                     "League pace": round(float(pace["league_pace_prior"]), 2) if pace.get("available") else None,
                     "Pace data status": "Available" if pace.get("available") else pace.get("reason", "Unavailable"),
                     "V5 + pace total": round(pace_adjusted_total, 1),
-                    "Market median": round(market_median, 1),
+                    "Market quote status": "Fresh" if quotes else "Archive only",
+                    "Market median": round(market_median, 1) if np.isfinite(market_median) else None,
                     "Consensus price line": consensus_line,
                     "Market fair Over %": round(100.0 * market_fair_over, 1) if np.isfinite(market_fair_over) else None,
                     "Market fair Under %": round(100.0 * market_fair_under, 1) if np.isfinite(market_fair_under) else None,
                     "Books at price line": len(same_line_quotes),
-                    "V5+pace − market": round(difference, 1),
+                    "V5+pace − market": round(difference, 1) if np.isfinite(difference) else None,
                     "V5 model probability": "Not calibrated",
                     "Residual-adjusted total": "Unavailable — Objective 5 gate",
-                    "Bet decision": "No Bet — evidence gate",
+                    "Bet decision": "No Bet — stale market" if not quotes else "No Bet — evidence gate",
                     "Model signal": signal,
                     "Books": len(quotes),
+                    "Archived books": len(group),
                 })
             result_frame = pd.DataFrame(projections)
             if not result_frame.empty:
