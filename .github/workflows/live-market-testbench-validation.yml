@@ -62,9 +62,10 @@ jobs:
             research/live_player_strength_testbench.py \
             research/prospective_player_data.py \
             research/prospective_rotation_projection.py \
-            research/build_prospective_pregame_records.py
+            research/build_prospective_pregame_records.py \
+            research/v4_phase2_rotation.py
       - name: Run unit tests
-        run: python -m pytest -q tests/test_live_market_testbench.py tests/test_live_player_strength.py tests/test_live_player_strength_testbench.py
+        run: python -m pytest -q tests/test_live_market_testbench.py tests/test_live_player_strength.py tests/test_live_player_strength_testbench.py tests/test_v4_phase2_rotation_rapm.py
       - name: Smoke-test player-strength inference imports
         run: |
           python - <<'PY'
