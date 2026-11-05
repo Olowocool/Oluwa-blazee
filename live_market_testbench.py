@@ -321,7 +321,24 @@ with tab_validation:
 
     if st.session_state.get("last_pace_validation"):
         st.markdown("**Pace challenger — chronological historical comparison**")
-        st.json(st.session_state.last_pace_validation)
+        pace_summary = st.session_state.last_pace_validation
+        pace_ci = pace_summary.get("mae_change_date_cluster_bootstrap_95_ci", [float("nan"), float("nan")])
+        pace_cols = st.columns(4)
+        pace_cols[0].metric("Evaluated games", f"{pace_summary.get('evaluation_games', 0):,}")
+        pace_cols[1].metric("V5 baseline MAE", f"{pace_summary.get('v5_baseline', {}).get('mae', float('nan')):.2f}")
+        pace_cols[2].metric("V5 + pace MAE", f"{pace_summary.get('v5_plus_pace', {}).get('mae', float('nan')):.2f}")
+        pace_cols[3].metric("MAE change (pace − V5)", f"{pace_summary.get('mae_change_pace_minus_v5', float('nan')):+.2f}")
+        st.caption(
+            f"Date-cluster 95% CI for MAE change: [{pace_ci[0]:+.2f}, {pace_ci[1]:+.2f}] · "
+            f"Evaluation dates: {pace_summary.get('evaluation_dates', 0):,} · "
+            "Negative MAE change favours V5+pace; a CI crossing zero is inconclusive."
+        )
+        comparison = pd.DataFrame([
+            {"Model": "Frozen V5", **pace_summary.get("v5_baseline", {})},
+            {"Model": "V5 + pace", **pace_summary.get("v5_plus_pace", {})},
+        ])
+        st.dataframe(comparison, use_container_width=True, hide_index=True)
+        st.json(pace_summary)
         if st.session_state.get("last_pace_rows") is not None:
             st.download_button(
                 "Download game-level pace evaluation (CSV)",
@@ -570,8 +587,25 @@ with tab_players:
                         parameter_frame.sort_values("Absolute coefficient", ascending=False),
                         use_container_width=True, hide_index=True,
                     )
-                if calibration_payload.get("validation"):
-                    st.json(calibration_payload["validation"])
+                validation = calibration_payload.get("validation") or {}
+                if validation:
+                    player_ci = validation.get("date_cluster_ci_95", [float("nan"), float("nan")])
+                    player_cols = st.columns(4)
+                    player_cols[0].metric("Player OOS games", f"{validation.get('games', 0):,}")
+                    player_cols[1].metric("OOS dates", f"{validation.get('dates', 0):,}")
+                    player_cols[2].metric(
+                        "MAE change vs V5",
+                        f"{validation.get('mae_change_player_minus_v5', float('nan')):+.2f}",
+                    )
+                    player_cols[3].metric(
+                        "Validation gate",
+                        "PASS" if validation.get("gate_passed") else "SHADOW",
+                    )
+                    st.caption(
+                        f"Date-cluster 95% CI for player MAE change: "
+                        f"[{player_ci[0]:+.2f}, {player_ci[1]:+.2f}]"
+                    )
+                    st.json(validation)
             st.markdown("**Game-level player-strength contributions**")
             st.dataframe(diagnostics["game_features"], use_container_width=True, hide_index=True)
             st.markdown("**Full individual player rotation**")
