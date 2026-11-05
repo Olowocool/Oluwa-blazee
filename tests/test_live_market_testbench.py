@@ -10,6 +10,7 @@ from live_market_testbench_engine import (
     append_paper_observations,
     compose_predictions,
     evaluate_pace_challenger,
+    load_score_history,
     parse_current_totals_markets,
     team_schedule_features,
 )
