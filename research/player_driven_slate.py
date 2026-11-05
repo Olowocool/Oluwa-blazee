@@ -156,27 +156,27 @@ def build_player_scoring_projection(
                 team.expected_minutes * team.pts_per36 / 36.0,
                 np.nan,
             )
+            coverage_scale = 240.0 / profiled_minutes if profiled_minutes > 0 else np.nan
             team["player_expected_points"] = (
-                team.player_expected_points_pre_pace * pace_factor
-                if np.isfinite(pace_factor) else np.nan
+                team.player_expected_points_pre_pace * coverage_scale * pace_factor
+                if np.isfinite(pace_factor) and np.isfinite(coverage_scale) else np.nan
             )
             team["team_side"] = side
             team["pace_factor"] = pace_factor
             team["profiled_minutes_share"] = coverage
+            team["profile_coverage_scale"] = coverage_scale
             team["scoring_profile_eligible"] = profiled
-            player_outputs.append(team)
 
             complete = bool(
                 coverage >= minimum_profiled_minutes_share
                 and np.isfinite(pace_factor)
                 and team.loc[profiled, "player_expected_points"].notna().all()
             )
-            coverage_scale = 240.0 / profiled_minutes if profiled_minutes > 0 else np.nan
             expected_points = (
-                float(team.loc[profiled, "player_expected_points_pre_pace"].sum())
-                * coverage_scale * pace_factor
+                float(team.loc[profiled, "player_expected_points"].sum())
                 if complete else np.nan
             )
+            player_outputs.append(team)
             rapm_rows = team[team.expected_minutes.gt(0)]
             rapm_valid = rapm_rows.o_rapm.notna() & rapm_rows.d_rapm.notna()
             rapm_minutes = float(rapm_rows.loc[rapm_valid, "expected_minutes"].sum())
