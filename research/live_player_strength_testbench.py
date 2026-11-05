@@ -91,7 +91,7 @@ def _expected_possessions_from_v4_history(
     return expected
 
 
-def _build_predictions(captured_rows: list[dict]) -> pd.DataFrame:
+def _build_predictions(captured_rows: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
     if not captured_rows:
         raise ValueError("Capture the public odds board before generating player forecasts.")
     archive = pd.DataFrame(captured_rows)
@@ -117,6 +117,7 @@ def _build_predictions(captured_rows: list[dict]) -> pd.DataFrame:
     phase1_raw, _phase1_metadata = connect_and_load(last_season=max(target_seasons))
     team_map = load_team_id_map()
     output: list[dict] = []
+    player_output: list[dict] = []
 
     # Build each date's player state once. Every source adapter enforces a
     # strict pre-target cutoff; target-date player logs are never inputs.
@@ -138,6 +139,42 @@ def _build_predictions(captured_rows: list[dict]) -> pd.DataFrame:
             raise ValueError("Current-season RAPM contains same-day/future player history.")
 
         v5_cache: dict = {}
+        current_season = int(target.year + 1 if target.month >= 7 else target.year)
+        player_names = state["player_names"]
+        player_names = player_names[
+            pd.to_numeric(player_names.season, errors="coerce").eq(current_season)
+        ]
+        player_name_lookup = dict(zip(
+            player_names.player_id.astype(str), player_names.name.astype(str)
+        ))
+        team_name_lookup = dict(zip(
+            state["team_names"].team_id.astype(str),
+            state["team_names"].full_name.astype(str),
+        ))
+        for player in rotation_result["projections"].to_dict("records"):
+            game_key = str(player["game_id"])
+            team_id = str(player["team_id"])
+            fixture = target_games.loc[game_key]
+            side = "Home" if team_id == str(fixture["home_team_id"]) else "Away"
+            player_output.append({
+                "Game key": game_key,
+                "Target date": str(target.date()),
+                "Team": team_name_lookup.get(team_id, team_id),
+                "Side": side,
+                "Player": player_name_lookup.get(
+                    str(player["player_id"]), f'Unknown player {player["player_id"]}'
+                ),
+                "Player ID": str(player["player_id"]),
+                "Rotation rank": int(player["rotation_rank"]),
+                "Expected minutes": round(float(player["expected_minutes"]), 3),
+                "Baseline minutes": round(float(player["baseline_minutes"]), 3),
+                "Availability probability": round(float(player["availability_probability"]), 4),
+                "Official status": str(player["status"]),
+                "Offensive RAPM": round(float(player.get("o_rapm", 0.0)), 4),
+                "Defensive RAPM": round(float(player.get("d_rapm", 0.0)), 4),
+                "Offensive minutes contribution": round(float(player.get("o_delta_contribution", 0.0)), 5),
+                "Defensive minutes contribution": round(float(player.get("d_delta_contribution", 0.0)), 5),
+            })
         for quote in day_quotes.to_dict("records"):
             game_key = str(quote["game_key"])
             if game_key not in target_games.index:
@@ -233,7 +270,15 @@ def _build_predictions(captured_rows: list[dict]) -> pd.DataFrame:
         raise ValueError("No eligible player-strength forecasts were generated.")
     if result["Game key"].duplicated().any():
         raise RuntimeError("Duplicate game forecasts were generated.")
-    return result.sort_values("Tip (Lagos)").reset_index(drop=True)
+    player_detail = pd.DataFrame(player_output)
+    if player_detail.empty:
+        raise ValueError("No individual full-rotation player detail was produced.")
+    if player_detail.duplicated(["Game key", "Player ID"]).any():
+        raise RuntimeError("Duplicate player rows in the live full-rotation evidence.")
+    return (
+        result.sort_values("Tip (Lagos)").reset_index(drop=True),
+        player_detail.sort_values(["Game key", "Side", "Rotation rank"]).reset_index(drop=True),
+    )
 
 
 def render_player_strength_panel(captured_market_rows: list[dict]) -> None:
@@ -274,12 +319,13 @@ def render_player_strength_panel(captured_market_rows: list[dict]) -> None:
             "injury report, full rotations and point-in-time V5 baselines…"
         ):
             try:
-                st.session_state["player_strength_live_predictions"] = (
-                    _build_predictions(captured_market_rows)
-                )
+                predictions, player_detail = _build_predictions(captured_market_rows)
+                st.session_state["player_strength_live_predictions"] = predictions
+                st.session_state["player_strength_live_player_detail"] = player_detail
                 st.session_state["player_strength_live_error"] = None
             except Exception as exc:
                 st.session_state["player_strength_live_predictions"] = None
+                st.session_state["player_strength_live_player_detail"] = None
                 st.session_state["player_strength_live_error"] = (
                     f"{type(exc).__name__}: {exc}"
                 )
@@ -305,3 +351,14 @@ def render_player_strength_panel(captured_market_rows: list[dict]) -> None:
             "These are point-total shadow forecasts, not calibrated Over/Under probabilities. "
             "Directional differences are for prospective evaluation only. All decisions remain No Bet."
         )
+        player_detail = st.session_state.get("player_strength_live_player_detail")
+        if isinstance(player_detail, pd.DataFrame) and not player_detail.empty:
+            with st.expander("Individual player rotation and strength detail"):
+                st.dataframe(player_detail, use_container_width=True, hide_index=True)
+                st.download_button(
+                    "Download full player rotation evidence (CSV)",
+                    data=player_detail.to_csv(index=False).encode("utf-8"),
+                    file_name="nba_full_rotation_player_strength_evidence.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
