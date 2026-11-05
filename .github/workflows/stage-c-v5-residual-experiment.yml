@@ -1,9 +1,9 @@
-name: Stage C player intelligence versus frozen V5
+name: Isolated combined player calibration validation
 
 on:
   push:
     branches:
-      - "research/live-market-testbench"
+      - "research/player-calibration-validation"
     paths:
       - "research/stage_c_v5_residual_experiment.py"
       - ".github/workflows/stage-c-v5-residual-experiment.yml"
@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: research/live-market-testbench
+          ref: ${{ github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -41,12 +41,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "pandas<3" "numpy<3" duckdb scikit-learn scipy pyarrow
       - name: Compile experiment
-        run: python -m py_compile research/stage_c_v5_residual_experiment.py
+        run: python -m py_compile research/build_live_combined_player_calibration.py
       - name: Run Stage C versus frozen V5 prequential experiment
         env:
           PYTHONUNBUFFERED: "1"
           STAGE_C_ARTIFACT_DIR: outputs/research/stage_c_artifact
-        run: python research/stage_c_v5_residual_experiment.py
+        run: python research/build_live_combined_player_calibration.py
       - name: Commit generated live player-strength calibration
         run: |
           git config user.name "github-actions[bot]"
@@ -57,7 +57,7 @@ jobs:
             exit 0
           fi
           git commit -m "Add point-in-time live player-strength calibration"
-          git push origin HEAD:research/live-market-testbench
+          git push origin "HEAD:${GITHUB_REF#refs/heads/}"
       - name: Upload paired V5 comparison evidence
         uses: actions/upload-artifact@v6
         with:
