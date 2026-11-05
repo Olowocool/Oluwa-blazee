@@ -584,41 +584,53 @@ with tab_players:
             calibration_path = Path(__file__).resolve().parent / "research" / "live_player_strength_calibration.json"
             if calibration_path.is_file():
                 calibration_payload = json.loads(calibration_path.read_text(encoding="utf-8"))
-                st.markdown("**Player calibration parameter audit**")
-                st.caption(
-                    f"Artifact status: {calibration_payload.get('status', 'unknown')} · "
-                    f"Forecast enabled: {bool(calibration_payload.get('forecast_enabled', False))} · "
-                    "Ridge coefficients are standardized feature weights, not direct points-per-unit."
-                )
-                parameter_frame = pd.DataFrame({
-                    "Feature": calibration_payload.get("features", []),
-                    "Standardized Ridge coefficient": calibration_payload.get("ridge", {}).get("coefficients", []),
-                })
-                if not parameter_frame.empty:
-                    parameter_frame["Absolute coefficient"] = parameter_frame["Standardized Ridge coefficient"].abs()
-                    st.dataframe(
-                        parameter_frame.sort_values("Absolute coefficient", ascending=False),
-                        use_container_width=True, hide_index=True,
+                calibration_features = calibration_payload.get("features", [])
+                live_feature_columns = set(diagnostics["game_features"].columns)
+                feature_contract_matches = bool(calibration_features) and set(calibration_features).issubset(live_feature_columns)
+                if not feature_contract_matches:
+                    st.warning(
+                        "The stored calibration artifact predates the current live player-feature contract. "
+                        "Raw RAPM and rotation contributions are shown, but no player-adjusted total is emitted "
+                        "until the corrected historical recalibration is published."
                     )
-                validation = calibration_payload.get("validation") or {}
-                if validation:
-                    player_ci = validation.get("date_cluster_ci_95", [float("nan"), float("nan")])
-                    player_cols = st.columns(4)
-                    player_cols[0].metric("Player OOS games", f"{validation.get('games', 0):,}")
-                    player_cols[1].metric("OOS dates", f"{validation.get('dates', 0):,}")
-                    player_cols[2].metric(
-                        "MAE change vs V5",
-                        f"{validation.get('mae_change_player_minus_v5', float('nan')):+.2f}",
-                    )
-                    player_cols[3].metric(
-                        "Validation gate",
-                        "PASS" if validation.get("gate_passed") else "SHADOW",
-                    )
+                else:
+                    st.markdown("**Player calibration parameter audit**")
                     st.caption(
-                        f"Date-cluster 95% CI for player MAE change: "
-                        f"[{player_ci[0]:+.2f}, {player_ci[1]:+.2f}]"
+                        f"Artifact status: {calibration_payload.get('status', 'unknown')} · "
+                        f"Forecast enabled: {bool(calibration_payload.get('forecast_enabled', False))} · "
+                        f"Training cutoff exclusive: {calibration_payload.get('training_cutoff_exclusive', 'unknown')} · "
+                        "Ridge coefficients are standardized feature weights, not direct points-per-unit."
                     )
-                    st.json(validation)
+                    parameter_frame = pd.DataFrame({
+                        "Feature": calibration_features,
+                        "Standardized Ridge coefficient": calibration_payload.get("ridge", {}).get("coefficients", []),
+                    })
+                    if not parameter_frame.empty:
+                        parameter_frame["Absolute coefficient"] = parameter_frame["Standardized Ridge coefficient"].abs()
+                        st.dataframe(
+                            parameter_frame.sort_values("Absolute coefficient", ascending=False),
+                            use_container_width=True, hide_index=True,
+                        )
+                    validation = calibration_payload.get("validation") or {}
+                    if validation:
+                        player_ci = validation.get("date_cluster_ci_95", [float("nan"), float("nan")])
+                        player_cols = st.columns(4)
+                        player_cols[0].metric("Player OOS games", f"{validation.get('games', 0):,}")
+                        player_cols[1].metric("OOS dates", f"{validation.get('dates', 0):,}")
+                        player_cols[2].metric(
+                            "MAE change vs V5",
+                            f"{validation.get('mae_change_player_minus_v5', float('nan')):+.2f}",
+                        )
+                        player_cols[3].metric(
+                            "Validation gate",
+                            "PASS" if validation.get("gate_passed") else "SHADOW",
+                        )
+                        st.caption(
+                            f"Date-cluster 95% CI for player MAE change: "
+                            f"[{player_ci[0]:+.2f}, {player_ci[1]:+.2f}] · "
+                            "Negative MAE change favours the player challenger."
+                        )
+                        st.json(validation)
             st.markdown("**Game-level player-strength contributions**")
             st.dataframe(diagnostics["game_features"], use_container_width=True, hide_index=True)
             st.markdown("**Full individual player rotation**")
