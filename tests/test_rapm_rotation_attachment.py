@@ -8,7 +8,7 @@ RESEARCH_DIR = Path(__file__).resolve().parents[1] / "research"
 if str(RESEARCH_DIR) not in sys.path:
     sys.path.insert(0, str(RESEARCH_DIR))
 
-from research.v4_phase2_rotation import attach_rapm_ratings
+from research.v4_phase2_rotation import attach_rapm_ratings, configure_java_runtime
 
 
 def test_attach_rapm_ratings_populates_missing_columns_from_player_map():
@@ -44,3 +44,10 @@ def test_attach_rapm_ratings_fills_nan_but_preserves_valid_existing_values():
 def test_attach_rapm_ratings_rejects_missing_player_id():
     with pytest.raises(ValueError, match="player_id"):
         attach_rapm_ratings(pd.DataFrame({"name": ["Player"]}), {})
+
+
+def test_java_runtime_is_available_for_official_injury_pdf_parser():
+    import shutil
+
+    assert configure_java_runtime() is True
+    assert shutil.which("java") is not None
