@@ -26,6 +26,7 @@ on:
       - "tests/test_prospective_player_data.py"
       - "tests/test_rapm_rotation_attachment.py"
       - "research/v4_phase2_rotation.py"
+      - "research/stage_c_v5_residual_experiment.py"
       - "requirements-testbench.txt"
       - ".github/workflows/live-market-testbench-checks.yml"
 
