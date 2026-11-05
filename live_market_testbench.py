@@ -382,9 +382,10 @@ with tab_players:
         "240 regulation minutes."
     )
     st.warning(
-        "The player-adjusted total is enabled only when the checked RAPM calibration passes "
-        "chronological out-of-sample validation. V5+pace and V5+player are separate challengers; "
-        "do not add their adjustments together without a separately validated combined model."
+        "The player calibration may show an unvalidated shadow estimate so its parameter impact is visible. "
+        "It is eligible as a forecast only after passing chronological out-of-sample validation. "
+        "V5+pace and V5+player are separate challengers; do not add their adjustments together without "
+        "a separately validated combined model."
     )
     player_market = pd.DataFrame(st.session_state.captured_market_rows)
     if player_market.empty:
@@ -504,8 +505,12 @@ with tab_players:
                                 if player_adjusted_total is not None else None
                             ),
                             "Player calibration status": (
-                                "Validated challenger" if player_calibration.get("available")
-                                else player_calibration.get("reason", "Unavailable")
+                                "Validated challenger" if player_calibration.get("forecast_eligible")
+                                else (
+                                    "Unvalidated shadow estimate — not used in decisions"
+                                    if player_calibration.get("available")
+                                    else player_calibration.get("reason", "Unavailable")
+                                )
                             ),
                             "Player OOS games": (player_calibration.get("validation") or {}).get("games"),
                             "Player OOS dates": (player_calibration.get("validation") or {}).get("dates"),
