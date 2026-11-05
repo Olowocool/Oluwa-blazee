@@ -537,6 +537,7 @@ with tab_players:
                         )
                         game_features.append({
                             "Game": f"{fixture.away_team} @ {fixture.home_team}",
+                            **player_feature_values,
                             "V5 baseline total": round(float(model_parts["raw_total"]), 1),
                             "Projected matchup pace": pace.get("expected_matchup_pace_l10"),
                             "Pace adjustment (pts)": round(float(model_parts["composed"]["pace_adjustment_used"]), 2),
