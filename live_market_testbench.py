@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import tempfile
 from argparse import Namespace
@@ -15,8 +16,9 @@ from research.collect_public_odds_snapshots import PAGE_URL, parse_odds_page
 from research.objective5_market_comparison import run as run_objective5
 from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
-from live_market_testbench_engine import PACE_LAST10_BETA, apply_live_market_freshness, apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
+from live_market_testbench_engine import PACE_LAST10_BETA, apply_live_market_freshness, apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map, pace_component
 from research.prospective_player_profiles import PROFILE_FEATURES, aggregate_live_player_profile_features, load_live_player_profile_history
+from research.player_driven_slate import fetch_scheduled_nba_games, build_player_scoring_projection
 
 CAPTURE_MAX_PAGE_AGE_MINUTES = 75  # DunkAPI public board refreshes hourly.
 LIVE_MARKET_MAX_PAGE_AGE_MINUTES = 20  # Keep the stricter gate for live-market eligibility.
@@ -28,16 +30,72 @@ def cached_pace_history():
     """Cache the public possession-based pace source for one hour per app process."""
     return load_pace_history()
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_resource(ttl=3600, show_spinner=False)
 def cached_live_player_profile_history(player_ids: tuple[str, ...], target_date: str):
     """Cache strictly prior player-game profile rows for a target slate."""
     return load_live_player_profile_history(player_ids, target_date)
 
+@st.cache_resource(ttl=21600, max_entries=1, show_spinner=False)
+def cached_player_slate_inputs(target_date: str, fixture_records: tuple[tuple, ...]):
+    """Build one compact player slate per target date; never refit RAPM on reruns."""
+    import gc
+    from research.player_state_snapshot import load_player_state_snapshot
+    from research.prospective_rotation_projection import build_target_date_rotations
+
+    columns = [
+        "game_key", "game_date", "away_team", "home_team",
+        "commence_time_utc", "status",
+    ]
+    fixtures = pd.DataFrame(fixture_records, columns=columns)
+    fixtures["game_date"] = pd.to_datetime(fixtures["game_date"]).dt.normalize()
+    fixtures["commence_time_utc"] = pd.to_datetime(fixtures["commence_time_utc"], utc=True)
+
+    player_state = load_player_state_snapshot(target_date)
+    rotation_result = build_target_date_rotations(
+        player_state, fixtures, target_date, allow_unconfirmed_report=True
+    )
+    player_ids = tuple(sorted(
+        rotation_result["projections"].player_id.astype(str).unique()
+    ))
+    profile_history = load_live_player_profile_history(player_ids, target_date)
+    _, player_rows, profile_diagnostics = aggregate_live_player_profile_features(
+        rotation_result, target_date, profile_history
+    )
+    player_name_map = player_state["player_names"][
+        ["player_id", "name"]
+    ].drop_duplicates("player_id")
+    team_name_map = player_state["team_names"][
+        ["team_id", "full_name"]
+    ].drop_duplicates("team_id")
+    player_rows = player_rows.merge(
+        player_name_map, on="player_id", how="left", validate="many_to_one"
+    ).merge(
+        team_name_map, on="team_id", how="left", validate="many_to_one"
+    )
+    player_rows["minute_change"] = (
+        player_rows.expected_minutes - player_rows.baseline_minutes
+    )
+    prepared = {
+        "player_rows": player_rows,
+        "target_games": rotation_result["target_games"].copy(),
+        "player_state_diagnostics": player_state["diagnostics"],
+        "profile_diagnostics": profile_diagnostics,
+        "injury_report": rotation_result["report_metadata"],
+        "injury_manifest": rotation_result["manifest"].copy(),
+        "unmatched_injury_rows": rotation_result["unmatched_report_rows"].copy(),
+        "report_complete": bool(rotation_result["report_complete"]),
+    }
+    # Cache only compact slate outputs. Do not retain raw player logs, lineup
+    # stints, DuckDB frames, or full player-history dictionaries in Streamlit.
+    del player_state, rotation_result, profile_history, player_name_map, team_name_map
+    gc.collect()
+    return prepared
+
 st.title("NBA Totals — Real-Game Prediction & Research Bench")
-st.caption("Upcoming NBA game projections using frozen V5 scoring, live sportsbook totals, and chronological validation. Research only.")
+st.caption("Market-independent NBA player-driven game-total research. Select a scheduled date to inspect the players, projected minutes, individual scoring contributions, strength signals and pace mathematics.")
 st.warning(
     "No wagers are placed. No production model, live app, or paper-trading ledger is changed. "
-    "A live market quote is not automatically an eligible T−120 entry price, and this bench does not claim profitability."
+    "The Player-driven predictions tab is independent of sportsbook totals. Its outputs are research-only and are not connected to production or wager placement."
 )
 
 if "captured_market_rows" not in st.session_state:
@@ -111,7 +169,314 @@ if capture:
     except Exception as exc:
         st.error(f"Market capture failed: {type(exc).__name__}: {exc}")
 
-tab_live, tab_validation, tab_players, tab_guide = st.tabs(["Live market test", "Objectives 5–7 validation", "Player strength diagnostics", "How to use this bench"])
+tab_player_predictions, tab_live, tab_validation, tab_players, tab_guide = st.tabs(["Player-driven predictions", "Live market test", "Objectives 5–7 validation", "Player strength diagnostics", "How to use this bench"])
+
+with tab_player_predictions:
+    st.subheader("Market-independent player-driven NBA totals")
+    st.write("Choose an NBA date. The app fetches scheduled fixtures directly, builds each team's full player rotation from the official injury report, loads strictly pregame player profiles, and calculates a transparent player-based scoring candidate. No bookmaker totals or odds are used in this tab.")
+    prediction_date = st.date_input("NBA schedule date (US Eastern)", value=datetime.now().date(), key="player_driven_target_date")
+    st.caption("The date follows the NBA / US Eastern calendar. Player availability and rotation depend on the latest complete official injury report available for that date. Profile coverage scaling is shown explicitly; the candidate is withheld below 85% player-profile minute coverage.")
+    build_player_slate = st.button("Fetch games, list players and calculate totals", type="primary", use_container_width=True, key="build_player_driven_slate")
+    if build_player_slate:
+        st.session_state.player_driven_predictions = None
+        try:
+            with st.spinner("Fetching scheduled NBA games…"):
+                fixtures = fetch_scheduled_nba_games(prediction_date)
+            if fixtures.empty:
+                st.warning("No pregame NBA fixtures were returned for this date.")
+            else:
+                with st.spinner("Loading precomputed point-in-time player state and preparing this slate…"):
+                    fixture_records = tuple(
+                        (
+                            str(row.game_key), str(pd.Timestamp(row.game_date).date()),
+                            str(row.away_team), str(row.home_team),
+                            str(pd.Timestamp(row.commence_time_utc)),
+                            str(getattr(row, "status", "Scheduled")),
+                        )
+                        for row in fixtures.itertuples(index=False)
+                    )
+                    prepared = cached_player_slate_inputs(
+                        str(prediction_date), fixture_records
+                    )
+                    player_rows = prepared["player_rows"]
+                    player_state_diagnostics = prepared["player_state_diagnostics"]
+                    profile_diagnostics = prepared["profile_diagnostics"]
+                    target_games = prepared["target_games"]
+                    injury_report = prepared["injury_report"]
+                    injury_manifest = prepared["injury_manifest"]
+                    unmatched_injury_rows = prepared["unmatched_injury_rows"]
+                    report_complete = prepared["report_complete"]
+                    gc.collect()
+
+
+                with st.spinner("Calculating player scoring contributions and possession-based pace…"):
+                    pace_history = cached_pace_history()
+                    team_id_map = load_team_id_map()
+                    pace_by_game = {}
+                    for fixture in fixtures.itertuples(index=False):
+                        # Compute the possession-based pace signal directly.
+                        # Do not load score history or invoke the V5/H2H/rest
+                        # pipeline for this market-independent player model.
+                        pace_by_game[str(fixture.game_key)] = pace_component(
+                            fixture.home_team, fixture.away_team,
+                            prediction_date, pace_history, team_id_map,
+                        )
+                    player_scores, player_detail = build_player_scoring_projection(
+                        player_rows, target_games, pace_by_game,
+                        official_report_complete=report_complete,
+                    )
+                    fixture_display = fixtures[[
+                        "game_key", "home_team", "away_team", "commence_time_utc"
+                    ]].copy()
+                    fixture_display["game_id"] = fixture_display.game_key.astype(str)
+                    fixture_display = fixture_display.drop(columns="game_key")
+                    player_scores = player_scores.merge(
+                        fixture_display, on="game_id", how="left", validate="one_to_one"
+                    )
+                    player_detail["game_id"] = player_detail.game_id.astype(str)
+                    player_detail = player_detail.merge(
+                        fixture_display, on="game_id", how="left", validate="many_to_one"
+                    )
+                    st.session_state.player_driven_predictions = {
+                        "target_date": str(prediction_date),
+                        "fixtures": fixtures,
+                        "scores": player_scores,
+                        "players": player_detail,
+                        "player_state_diagnostics": player_state_diagnostics,
+                        "profile_diagnostics": profile_diagnostics,
+                        "injury_report": injury_report,
+                        "injury_manifest": injury_manifest,
+                        "unmatched_injury_rows": unmatched_injury_rows,
+                    }
+                st.success(f"Built player-driven projections for {len(fixtures)} scheduled games.")
+        except Exception as exc:
+            st.error(f"Player-driven slate stopped safely: {type(exc).__name__}: {exc}")
+            st.caption("No player total is emitted when the schedule, official injury report, rotation, point-in-time history, or model inputs are incomplete.")
+
+    slate = st.session_state.get("player_driven_predictions")
+    if slate:
+        st.markdown("**Scheduled games and independent model outputs**")
+        st.caption(
+            f"Target date: {slate['target_date']} · Official injury report: {slate['injury_report']} · "
+            f"Unmatched injury rows: {len(slate['unmatched_injury_rows'])}"
+        )
+        summary = slate["scores"].copy()
+        summary["Tip (Lagos)"] = pd.to_datetime(
+            summary.commence_time_utc, utc=True
+        ).dt.tz_convert("Africa/Lagos").dt.strftime("%d %b %H:%M")
+        summary = summary.rename(columns={
+            "home_team": "Home", "away_team": "Away",
+            "home_player_score": "Player model home points",
+            "away_player_score": "Player model away points",
+            "player_driven_total": "Player-driven total",
+            "home_profiled_minutes_share": "Home profile minutes coverage",
+            "home_profile_coverage_scale": "Home profile coverage scale",
+            "away_profile_coverage_scale": "Away profile coverage scale",
+            "away_profiled_minutes_share": "Away profile minutes coverage",
+            "home_rapm_profiled_minutes_share": "Home RAPM minutes coverage",
+            "away_rapm_profiled_minutes_share": "Away RAPM minutes coverage",
+            "home_offensive_rapm": "Home weighted offensive RAPM",
+            "home_defensive_rapm": "Home weighted defensive RAPM",
+            "away_offensive_rapm": "Away weighted offensive RAPM",
+            "away_defensive_rapm": "Away weighted defensive RAPM",
+            "matchup_pace": "Expected matchup pace",
+            "league_pace": "League pace",
+            "pace_factor": "Pace multiplier",
+            "home_player_baseline_points": "Home player baseline points",
+            "away_player_baseline_points": "Away player baseline points",
+            "home_rapm_adjustment_points": "Home RAPM adjustment points",
+            "away_rapm_adjustment_points": "Away RAPM adjustment points",
+        })
+        st.dataframe(summary[[
+            "Tip (Lagos)", "Away", "Home", "Player model away points",
+            "Player model home points", "Player-driven total",
+            "Home player baseline points", "Home RAPM adjustment points",
+            "Away player baseline points", "Away RAPM adjustment points",
+            "Expected matchup pace", "League pace", "Pace multiplier",
+            "Home profile minutes coverage", "Away profile minutes coverage",
+            "Home RAPM minutes coverage", "Away RAPM minutes coverage",
+            "Home profile coverage scale", "Away profile coverage scale",
+            "Home weighted offensive RAPM", "Home weighted defensive RAPM",
+            "Away weighted offensive RAPM", "Away weighted defensive RAPM",
+            "forecast_status",
+        ]], use_container_width=True, hide_index=True)
+        game_options = {
+            f"{row.away_team} @ {row.home_team}": str(row.game_id)
+            for row in slate["scores"].itertuples(index=False)
+        }
+        selected_game_label = st.selectbox(
+            "Inspect every player in a scheduled game", list(game_options),
+            key="player_driven_selected_game",
+        )
+        selected_game_id = game_options[selected_game_label]
+        game_summary = slate["scores"][
+            slate["scores"].game_id.eq(selected_game_id)
+        ].iloc[0]
+        st.markdown("**Visible scoring mathematics**")
+        st.latex(r"p_i = M_i \times \frac{PTS_{L20,i}}{36}")
+        st.latex(r"B_{team} = \left(\sum_{i \in eligible} p_i\right) \times \frac{240}{M_{profiled}} \times \frac{Pace_{matchup}}{Pace_{league}}")
+        st.latex(r"R_{team} = \frac{Pace_{matchup}}{100} \times \left[\sum_i \frac{M_i}{48} O_RAPM_i + \sum_j \frac{M_j}{48} D_RAPM_j\right]")
+        st.latex(r"P_{team} = B_{team} + R_{team}")
+        st.latex(r"P_{game} = P_{home} + P_{away}")
+        st.caption(
+            "Mᵢ is availability-adjusted projected minutes; PTS_L20,i/36 is the player's "
+            "prior-20-game points rate per 36 minutes. RAPM is converted directly from its "
+            "native points-per-100-possession units using projected player minutes and matchup pace. "
+            "Other box-score and shooting metrics remain visible explanatory profile signals; they are "
+            "not added again as separate point adjustments because that would double-count overlapping production."
+        )
+        team_cols = st.columns(3)
+        team_cols[0].metric(
+            "Player-driven total",
+            f"{game_summary.player_driven_total:.1f}"
+            if pd.notna(game_summary.player_driven_total) else "Withheld",
+        )
+        team_cols[1].metric(
+            "Pace multiplier",
+            f"{game_summary.pace_factor:.3f}"
+            if pd.notna(game_summary.pace_factor) else "Unavailable",
+        )
+        team_cols[2].metric(
+            "Profile coverage (home / away)",
+            f"{game_summary.home_profiled_minutes_share:.0%} / "
+            f"{game_summary.away_profiled_minutes_share:.0%}",
+        )
+        detail = slate["players"][
+            slate["players"].game_id.eq(selected_game_id)
+        ].copy()
+        detail["Player expected points"] = detail.player_expected_points.round(2)
+        detail["Player pre-pace points"] = detail.player_expected_points_pre_pace.round(2)
+        detail["Offensive RAPM points adjustment"] = detail.player_offensive_rapm_points_adjustment.round(3)
+        detail["Defensive RAPM effect on opponent points"] = detail.player_defensive_rapm_opponent_points_adjustment.round(3)
+        detail["Projected minutes"] = detail.expected_minutes.round(1)
+        detail["Minute change"] = (
+            detail.expected_minutes - detail.baseline_minutes
+        ).round(1)
+        detail["Availability %"] = (detail.availability_probability * 100).round(0)
+        for column in [
+            "pts_per36", "ast_per36", "tov_per36", "oreb_per36", "dreb_per36",
+            "stl_per36", "blk_per36", "ts_eligible", "usage_eligible",
+            "three_pa_share", "three_pct", "free_throw_rate",
+        ]:
+            if column in detail:
+                detail[column] = pd.to_numeric(detail[column], errors="coerce").round(3)
+        report_complete = bool(slate.get("injury_report", {}).get("complete", True))
+        points_label = "Player expected points" if report_complete else "Provisional points signal — not a forecast"
+        minutes_label = "Projected minutes" if report_complete else "Provisional minutes — availability unconfirmed"
+        if not report_complete:
+            detail = detail.rename(columns={
+                "Player expected points": points_label,
+                "Projected minutes": minutes_label,
+            })
+        detail = detail.rename(columns={
+            "full_name": "Team", "name": "Player", "status": "Official status",
+            "o_rapm": "Offensive RAPM", "d_rapm": "Defensive RAPM", "net_rapm": "Net RAPM",
+            "pts_per36": "L20 points / 36", "ast_per36": "L20 assists / 36",
+            "tov_per36": "L20 turnovers / 36",
+            "oreb_per36": "L20 offensive rebounds / 36",
+            "dreb_per36": "L20 defensive rebounds / 36",
+            "stl_per36": "L20 steals / 36",
+            "blk_per36": "L20 blocks / 36",
+            "ts_eligible": "L20 true shooting %",
+            "usage_eligible": "L20 usage %",
+            "three_pa_share": "L20 3PA share",
+            "three_pct": "L20 3P %",
+            "free_throw_rate": "L20 free-throw rate",
+            "profile_eligible": "Profile eligible",
+            "profile_through_date": "Profile through",
+            "rapm_available": "RAPM available",
+            "rapm_weighted_possessions": "RAPM weighted possessions",
+        })
+        wanted = [
+            "Team", "Player", "rotation_rank", "Official status", "Availability %",
+            minutes_label, "Minute change", "Player pre-pace points",
+            points_label, "Offensive RAPM points adjustment",
+            "Defensive RAPM effect on opponent points",
+            "Offensive RAPM", "Defensive RAPM", "Net RAPM",
+            "RAPM available", "RAPM weighted possessions",
+            "L20 points / 36", "L20 assists / 36", "L20 turnovers / 36",
+            "L20 offensive rebounds / 36", "L20 defensive rebounds / 36",
+            "L20 steals / 36", "L20 blocks / 36", "L20 true shooting %",
+            "L20 usage %", "L20 3PA share", "L20 3P %", "L20 free-throw rate",
+            "profile_eligible", "Profile through",
+        ]
+        st.markdown("**Full projected player list and individual contributions**" if slate["injury_report"].get("complete", True) else "**Provisional player list — official availability not confirmed**")
+        st.dataframe(
+            detail[[c for c in wanted if c in detail.columns]].sort_values(
+                ["Team", "rotation_rank"]
+            ),
+            use_container_width=True, hide_index=True,
+        )
+        st.download_button(
+            "Download player-driven slate and player contributions (CSV)",
+            data=slate["players"].to_csv(index=False).encode("utf-8"),
+            file_name=f"player_driven_slate_{slate['target_date']}.csv",
+            mime="text/csv", use_container_width=True,
+        )
+        with st.expander("All model parameters, settings and formulas", expanded=True):
+            from research import v4_phase2_rotation as rotation_parameters
+            st.markdown("**Rotation and availability settings**")
+            st.json({
+                "player_minutes_window_games": rotation_parameters.PLAYER_MINUTES_WINDOW,
+                "player_minutes_half_life_games": rotation_parameters.PLAYER_MINUTES_HALF_LIFE,
+                "minimum_recent_role_minutes": rotation_parameters.MIN_ROTATION_MINUTES,
+                "minute_budget_per_team": 240.0,
+                "maximum_minutes_per_player": 48.0,
+                "status_prior_strength_games": rotation_parameters.STATUS_PRIOR_STRENGTH,
+                "official_status_priors": rotation_parameters.STATUS_PRIORS,
+                "minimum_player_profiled_minutes_share": 0.85,
+                "minimum_RAPM_rated_minutes_share": 0.85,
+            })
+            st.markdown("**Player strength (RAPM) settings**")
+            st.json({
+                "ridge_alpha": rotation_parameters.RAPM_ALPHA,
+                "rating_recency_half_life_days": rotation_parameters.RATING_HALF_LIFE_DAYS,
+                "rating_refresh_days": rotation_parameters.RATING_REFRESH_DAYS,
+                "exposure_shrinkage_constant": rotation_parameters.RAPM_EXPOSURE_SHRINK,
+                "RAPM_output_units": "points per 100 possessions, shrunken by exposure",
+                "RAPM_role": "active scoring adjustment in native points-per-100-possession units; player minutes weight each player's on-court effect",
+            })
+            st.markdown("**Player form and skill inputs**")
+            st.json({
+                "player_form_window": "last 20 prior games",
+                "profile_minimum_games": 5,
+                "profile_minimum_minutes": 60.0,
+                "counting_rates": [
+                    "points / 36", "assists / 36", "turnovers / 36",
+                    "offensive rebounds / 36", "defensive rebounds / 36",
+                    "steals / 36", "blocks / 36",
+                ],
+                "efficiency_and_style": [
+                    "true shooting %", "usage %", "three-point attempt share",
+                    "three-point %", "free-throw rate",
+                ],
+                "profile_data_cutoff": "strictly before the selected NBA date",
+                "non_scoring_skill_signal_policy": "visible player diagnostics; no extra point coefficient is assigned because box-score production overlaps with points per 36 and RAPM",
+            })
+            st.markdown("**Pace and scoring equation**")
+            st.json({
+                "pace_input": "possession-based expected matchup pace, last 10",
+                "pace_baseline": "league pace prior",
+                "pace_multiplier": "matchup pace / league pace",
+                "player_points": "expected minutes × prior L20 points per 36 ÷ 36",
+                "base_team_points": "sum eligible player points × (240 / profiled minutes) × (matchup pace / league pace)",
+                "team_RAPM_points_adjustment": "(matchup pace / 100) × [sum(team player minutes / 48 × offensive RAPM) + sum(opponent player minutes / 48 × defensive RAPM)]",
+                "team_points": "base team points + team RAPM points adjustment",
+                "game_total": "home team points + away team points",
+                "minimum_profile_coverage": "85% of 240 team minutes on each side",
+            })
+            st.info("Scoring inputs: player points/36, projected minutes, coverage scaling, possession pace, and the native-unit RAPM adjustment. Assists, turnovers, rebounds, steals, blocks, true shooting, usage and shot profile are exposed as player diagnostics; they are not assigned invented point weights or added separately on top of observed scoring.")
+        with st.expander("Source coverage and point-in-time audit"):
+            st.json(slate["player_state_diagnostics"])
+            st.json(slate["profile_diagnostics"])
+            st.json(slate["injury_report"])
+            st.dataframe(slate["injury_manifest"], use_container_width=True, hide_index=True)
+        st.warning(
+            "This remains a research candidate, not a production or betting-enabled forecast. "
+            "The displayed total is built from player scoring rates, projected rotation minutes, pace, "
+            "and the explicit native-unit RAPM adjustment. Diagnostic player metrics are visible but are "
+            "not given arbitrary coefficients."
+        )
 
 with tab_live:
     st.subheader("Upcoming game predictions")
@@ -488,9 +853,9 @@ with tab_players:
             use_container_width=True,
         )
         if run_player_diagnostics:
-            with st.spinner("Rebuilding point-in-time RAPM and mapping the official injury report…"):
+            with st.spinner("Loading precomputed point-in-time RAPM and mapping the official injury report…"):
                 try:
-                    from research.prospective_player_data import build_pregame_player_state
+                    from research.player_state_snapshot import load_player_state_snapshot
                     from research.prospective_rotation_projection import build_target_date_rotations
                     if score_upload_live is not None:
                         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as score_handle:
@@ -503,7 +868,7 @@ with tab_players:
                     target_fixtures["game_date"] = pd.to_datetime(target_fixtures.game_date, errors="coerce").dt.normalize()
                     target_fixtures = target_fixtures[target_fixtures.game_date.eq(pd.Timestamp(player_target_date))]
                     target_fixtures = target_fixtures[["game_key", "game_date", "away_team", "home_team"]].drop_duplicates()
-                    player_state = build_pregame_player_state(player_target_date)
+                    player_state = load_player_state_snapshot(player_target_date)
                     rotation_result = build_target_date_rotations(player_state, target_fixtures, player_target_date)
                     rotation_rows = rotation_result["projections"].copy()
                     profile_player_ids = tuple(sorted(rotation_rows.player_id.astype(str).unique()))

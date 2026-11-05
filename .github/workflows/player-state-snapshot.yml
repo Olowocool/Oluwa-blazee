@@ -1,0 +1,53 @@
+name: Precompute prospective NBA player state
+on:
+  push:
+    branches:
+      - research/player-driven-game-predictions
+    paths:
+      - .github/workflows/player-state-snapshot.yml
+      - research/player_state_snapshot.py
+      - research/build_player_state_snapshot.py
+      - research/prospective_player_data.py
+      - research/prospective_rotation_projection.py
+      - research/v4_phase2_rotation.py
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: prospective-player-state-snapshot
+  cancel-in-progress: false
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/player-driven-game-predictions
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install research dependencies
+        run: python -m pip install -r requirements-testbench.txt
+      - name: Build point-in-time player state
+        run: |
+          TARGET_DATE="$(date -u +%F)"
+          echo "TARGET_DATE=$TARGET_DATE" >> "$GITHUB_ENV"
+          python research/build_player_state_snapshot.py --target-date "$TARGET_DATE"
+      - name: Publish compact snapshot on data-only branch
+        run: |
+          mkdir -p /tmp/player-state-publish
+          cp outputs/player_state_snapshot/latest.json.gz /tmp/player-state-publish/latest.json.gz
+          cp outputs/player_state_snapshot/latest.json.gz.manifest.json /tmp/player-state-publish/manifest.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan snapshot-publish
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/player-state-publish/latest.json.gz ./latest.json.gz
+          cp /tmp/player-state-publish/manifest.json ./manifest.json
+          git add latest.json.gz manifest.json
+          git commit -m "Publish NBA player-state snapshot $TARGET_DATE"
+          git push --force origin HEAD:refs/heads/research/player-state-snapshots

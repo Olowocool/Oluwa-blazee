@@ -28,12 +28,36 @@ def _parquet_url(source: str, table: str, season: int) -> str:
     return f"{BASE}/nba/{source}/{table}/season={season}/data.parquet"
 
 
-def _read(con, source: str, table: str, seasons: tuple[int, ...], columns: str) -> pd.DataFrame:
+def _read(
+    con, source: str, table: str, seasons: tuple[int, ...], columns: str,
+    where: str | None = None,
+) -> pd.DataFrame:
     paths = ",".join("'" + _parquet_url(source, table, s) + "'" for s in seasons)
-    return con.execute(
+    query = (
         f"SELECT {columns} FROM read_parquet([{paths}], "
         "hive_partitioning=true, hive_types={'season': INTEGER}, union_by_name=true)"
-    ).fetchdf()
+    )
+    if where:
+        query += f" WHERE {where}"
+    return con.execute(query).fetchdf()
+
+
+def _pregame_regular_game_filter(
+    seasons: tuple[int, ...], target: pd.Timestamp,
+    start_date: pd.Timestamp | None = None,
+) -> str:
+    paths = ",".join(
+        "'" + _parquet_url("stats", "games", season) + "'"
+        for season in seasons
+    )
+    return (
+        "CAST(game_id AS VARCHAR) IN ("
+        f"SELECT CAST(game_id AS VARCHAR) FROM read_parquet([{paths}], "
+        "hive_partitioning=true, hive_types={'season': INTEGER}, union_by_name=true) "
+        "WHERE lower(CAST(game_type AS VARCHAR)) = 'regular_season' "
+        + (f"AND CAST(game_date AS DATE) >= DATE '{start_date.date().isoformat()}' " if start_date is not None else "")
+        + f"AND CAST(game_date AS DATE) < DATE '{target.date().isoformat()}')"
+    )
 
 
 def normalize_source_frames(games, team_logs, player_logs, player_names,
@@ -118,33 +142,85 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
     import v4_phase2_rotation as phase2
 
     target = pd.Timestamp(target_date).normalize()
-    con = duckdb.connect()
+    # Keep DuckDB bounded and spill intermediate work to ephemeral disk. The
+    # Render testbench has a 512 MiB memory limit; unbounded in-memory scans can
+    # otherwise terminate the whole Streamlit process.
+    temp_dir = Path("/tmp/duckdb_player_state")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect(config={
+        "memory_limit": "256MB",
+        "temp_directory": str(temp_dir),
+        "threads": "2",
+    })
     try:
         con.execute("INSTALL httpfs")
         con.execute("LOAD httpfs")
         season_tuple = tuple(int(x) for x in seasons)
-        games = _read(con, "stats", "games", season_tuple,
-                      "season, game_id, game_date, game_type, home_team_id, away_team_id, neutral_site")
-        team_logs = _read(con, "stats", "team_game_logs", season_tuple,
-                          "season, game_id, game_date, team_id, opp_team_id, pts, poss, home")
-        player_logs = _read(con, "stats", "player_game_logs", season_tuple,
-                            "season, game_id, game_date, player_id, team_id, min")
+        regular_games = (
+            "lower(CAST(game_type AS VARCHAR)) = 'regular_season' "
+            f"AND CAST(game_date AS DATE) < DATE '{target.date().isoformat()}'"
+        )
+        eligible_game_ids = _pregame_regular_game_filter(season_tuple, target)
+        # Keep full player logs for rotation history, but bound expensive lineup
+        # reconstruction to one year. RAPM has a 60-day recency half-life.
+        rapm_window_start = target - pd.Timedelta(days=365)
+        rapm_game_ids = _pregame_regular_game_filter(season_tuple, target, rapm_window_start)
+        games = _read(
+            con, "stats", "games", season_tuple,
+            "season, game_id, game_date, game_type, home_team_id, away_team_id, neutral_site",
+            where=regular_games,
+        )
+        team_logs = _read(
+            con, "stats", "team_game_logs", season_tuple,
+            "season, game_id, game_date, team_id, opp_team_id, pts, poss, home",
+            where=rapm_game_ids,
+        )
+        player_logs = _read(
+            con, "stats", "player_game_logs", season_tuple,
+            "season, game_id, game_date, player_id, team_id, min",
+            where=eligible_game_ids,
+        )
         player_names = _read(con, "stats", "player_seasons", season_tuple,
                              "season, player_id, name")
         team_names = _read(con, "stats", "team_seasons", season_tuple,
                            "season, team_id, full_name")
-        rotations = _read(con, "stats", "game_rotations", tuple(seasons),
-                          "season, game_id, team_id, player_id, period, in_time, out_time, plus_minus, matches_box_score")
-        events = _read(con, "stats", "game_events", tuple(seasons),
-                       "season, game_id, period, time, team_id, pts")
+        rotations = _read(
+            con, "stats", "game_rotations", season_tuple,
+            "season, game_id, team_id, player_id, period, in_time, out_time, plus_minus, matches_box_score",
+            where=rapm_game_ids,
+        )
+        events = _read(
+            con, "stats", "game_events", season_tuple,
+            "season, game_id, period, time, team_id, pts",
+            where=f"{rapm_game_ids} AND TRY_CAST(pts AS DOUBLE) > 0 "
+                  "AND TRY_CAST(time AS DOUBLE) IS NOT NULL",
+        )
     finally:
         con.close()
 
     frames = normalize_source_frames(games, team_logs, player_logs, player_names,
                                      team_names, rotations, events, target)
+    # The normalized frames own the validated data now. Release the raw fetch
+    # frames before lineup reconstruction to reduce peak resident memory.
+    del games, team_logs, player_logs, player_names, team_names, rotations, events
+    import gc
+    gc.collect()
     g, t, p, pn, tn, r, e = frames
     p["min"] = pd.to_numeric(p["min"], errors="coerce").fillna(0.0)
+    team_hist, player_hist, first_seen = phase2.build_player_history(p)
+    # Drop the tuple's references too; deleting the local name alone would
+    # otherwise leave the full player log frame alive through `frames`.
+    frames = None
+    source_row_counts = {
+        "team_game_rows": int(len(t)), "player_game_rows": int(len(p)),
+        "rotation_rows": int(len(r)), "event_rows": int(len(e)),
+    }
+    del p
+    gc.collect()
     segments, segment_audit = phase2.build_lineup_segments(g, t, r, e)
+    # Release the high-volume event and rotation frames before sparse fitting.
+    del t, r, e, frames
+    gc.collect()
     segments["game_date"] = pd.to_datetime(segments.game_date).dt.normalize()
     if (segments.game_date >= target).any():
         raise RuntimeError("reconstructed RAPM stints contain same-day/future data")
@@ -157,37 +233,45 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
         raise RuntimeError(
             f"RAPM requires both season {current_season-1} and {current_season} stints"
         )
-    history = pd.concat([prior, current], ignore_index=True)
-    history = history[history.game_date < target].copy()
+    history = segments[
+        segments.season.isin([current_season - 1, current_season])
+        & segments.game_date.lt(target)
+    ].copy()
+    del current, prior, segments
+    gc.collect()
     if len(history) < 1000 or history.game_date.max() >= target:
         raise RuntimeError("Insufficient or non-pregame lineup history for RAPM")
     ratings = phase2.fit_player_rapm(history, target)
     if not ratings:
         raise RuntimeError("Point-in-time RAPM fit returned no player ratings")
-    team_hist, player_hist, first_seen = phase2.build_player_history(p)
     team_names_current = tn[tn.season.eq(current_season)].copy()
     if team_names_current.empty:
         raise RuntimeError(f"team_seasons has no rows for current season {current_season}")
+    player_names_current = pn[pn.season.eq(current_season)][["player_id", "name"]].drop_duplicates("player_id").copy()
     diagnostics = {
         "target_date": str(target.date()),
         "source_seasons": list(season_tuple),
         "completed_games": int(g.game_id.nunique()),
-        "team_game_rows": int(len(t)),
-        "player_game_rows": int(len(p)),
-        "rotation_rows": int(len(r)),
-        "event_rows": int(len(e)),
-        "validated_lineup_segments": int(len(segments)),
+        **source_row_counts,
+        "rapm_window_start": str(rapm_window_start.date()),
+        "rotation_games_in_rapm_window": int(segment_audit.get("regular_season_games_with_rotation_rows", 0)),
+        "validated_lineup_segments": int(len(history)),
         "rapm_history_segments": int(len(history)),
         "rapm_max_history_date": str(history.game_date.max().date()),
         "rapm_players_rated": int(len(ratings)),
         "segment_reconstruction": segment_audit,
         "same_day_or_future_source_rows": 0,
     }
+    # Keep compact player/team maps, histories, and completed game IDs
+    # needed by rotation projection. The rotation builder checks fixture-key
+    # collisions against state['games']; retain only that column.
+    completed_games = g[["game_id"]].drop_duplicates().copy()
+    del g, pn, tn, history
+    gc.collect()
     return {
-        "games": g, "team_logs": t, "player_logs": p,
-        "player_names": pn, "team_names": team_names_current,
-        "team_names_all": tn,
-        "rotations": r, "events": e, "segments": segments,
+        "games": completed_games,
+        "player_names": player_names_current,
+        "team_names": team_names_current,
         "rapm": ratings, "team_history": team_hist,
         "player_history": player_hist, "first_seen": first_seen,
         "diagnostics": diagnostics,

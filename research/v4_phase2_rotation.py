@@ -660,18 +660,23 @@ def attach_rapm_ratings(rotation: pd.DataFrame, rapm: dict) -> pd.DataFrame:
         raise ValueError("Rotation rows must contain player_id before RAPM attachment")
     result = rotation.copy()
     player_ids = result["player_id"].astype(str)
+    result["rapm_available"] = player_ids.map(lambda pid: str(pid) in rapm).astype(bool)
+    result["rapm_weighted_possessions"] = player_ids.map(
+        lambda pid: rapm.get(str(pid), {}).get("weighted_possessions", np.nan)
+    )
     for col in ("o_rapm", "d_rapm"):
         fallback = player_ids.map(
-            lambda pid: rapm.get(str(pid), {}).get(col, 0.0)
+            lambda pid: rapm.get(str(pid), {}).get(col, np.nan)
         )
         if col in result.columns:
             existing = pd.to_numeric(result[col], errors="coerce")
             result[col] = existing.where(existing.notna(), fallback)
         else:
             result[col] = fallback
-        result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0.0)
-        if not np.isfinite(result[col].to_numpy(dtype=float)).all():
-            raise RuntimeError(f"Non-finite RAPM values after attaching {col}")
+        result[col] = pd.to_numeric(result[col], errors="coerce")
+        rated = result["rapm_available"]
+        if not np.isfinite(result.loc[rated, col].to_numpy(dtype=float)).all():
+            raise RuntimeError(f"Non-finite fitted RAPM values after attaching {col}")
     return result
 
 
