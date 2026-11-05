@@ -208,6 +208,9 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
     g, t, p, pn, tn, r, e = frames
     p["min"] = pd.to_numeric(p["min"], errors="coerce").fillna(0.0)
     team_hist, player_hist, first_seen = phase2.build_player_history(p)
+    # Drop the tuple's references too; deleting the local name alone would
+    # otherwise leave the full player log frame alive through `frames`.
+    frames = None
     source_row_counts = {
         "team_game_rows": int(len(t)), "player_game_rows": int(len(p)),
         "rotation_rows": int(len(r)), "event_rows": int(len(e)),
