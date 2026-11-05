@@ -14,7 +14,7 @@ from research.collect_public_odds_snapshots import PAGE_URL, parse_odds_page
 from research.objective5_market_comparison import run as run_objective5
 from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
-from live_market_testbench_engine import calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
+from live_market_testbench_engine import apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
 
 CAPTURE_MAX_PAGE_AGE_MINUTES = 75  # DunkAPI public board refreshes hourly.
 LIVE_MARKET_MAX_PAGE_AGE_MINUTES = 20  # Keep the stricter gate for live-market eligibility.
@@ -375,9 +375,12 @@ with tab_players:
     else:
         target_dates = sorted(pd.to_datetime(player_market.game_date, errors="coerce").dropna().dt.date.astype(str).unique())
         player_target_date = st.selectbox("Player diagnostics target date", target_dates)
+        if score_upload_live is None:
+            st.info("Upload the historical NBA scores CSV in the Live market tab before building player-adjusted comparisons.")
         run_player_diagnostics = st.button(
             "Build player-strength and full-rotation diagnostics",
             type="primary",
+            disabled=(score_upload_live is None),
             use_container_width=True,
         )
         if run_player_diagnostics:
@@ -386,6 +389,10 @@ with tab_players:
                     from research.prospective_player_data import build_pregame_player_state
                     from research.prospective_rotation_projection import build_target_date_rotations
                     from live_market_testbench_engine import pace_component
+                    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as score_handle:
+                        score_handle.write(score_upload_live.getvalue())
+                        player_score_path = score_handle.name
+                    player_score_history = load_score_history(player_score_path)
                     target_fixtures = player_market.copy()
                     target_fixtures["game_date"] = pd.to_datetime(target_fixtures.game_date, errors="coerce").dt.normalize()
                     target_fixtures = target_fixtures[target_fixtures.game_date.eq(pd.Timestamp(player_target_date))]
@@ -405,6 +412,7 @@ with tab_players:
                     team_map = load_team_id_map()
                     pace_source = load_pace_history()
                     game_features = []
+                    v5_cache = {"v3": {}, "v4": {}}
                     for fixture in target_fixtures.itertuples(index=False):
                         target_game = rotation_result["target_games"]
                         target_game = target_game[target_game.game_id.astype(str).eq(str(fixture.game_key))]
@@ -417,24 +425,68 @@ with tab_players:
                                          summaries.team_id.astype(str).eq(str(ids.away_team_id))]
                         if len(home) != 1 or len(away) != 1:
                             raise RuntimeError(f"Missing home/away player-strength features for {fixture.game_key}")
-                        pace = pace_component(fixture.home_team, fixture.away_team, player_target_date, pace_source, team_map)
-                        total_feature_delta = float(
-                            home.iloc[0]["features"]["off_delta"] + home.iloc[0]["features"]["def_delta"]
-                            + away.iloc[0]["features"]["off_delta"] + away.iloc[0]["features"]["def_delta"]
+                        model_parts = calculate_game_components(
+                            fixture.home_team, fixture.away_team, player_target_date,
+                            player_score_history, pace_source, team_map, use_pace=True,
+                            h2h_mode="off", rest_mode="off", v5_cache=v5_cache,
+                        )
+                        pace = model_parts["pace"]
+                        home_features = home.iloc[0]["features"]
+                        away_features = away.iloc[0]["features"]
+                        player_feature_values = {
+                            "home_off_delta": float(home_features["off_delta"]),
+                            "home_def_delta": float(home_features["def_delta"]),
+                            "away_off_delta": float(away_features["off_delta"]),
+                            "away_def_delta": float(away_features["def_delta"]),
+                            "home_minutes_changed": float(home_features["minutes_changed"]),
+                            "away_minutes_changed": float(away_features["minutes_changed"]),
+                            "home_reported_out_minutes": float(home_features["reported_out_minutes"]),
+                            "away_reported_out_minutes": float(away_features["reported_out_minutes"]),
+                            "home_questionable_minutes": float(home_features["questionable_minutes"]),
+                            "away_questionable_minutes": float(away_features["questionable_minutes"]),
+                            "home_reported_players_without_prior_team_history": float(home_features["reported_players_without_prior_team_history"]),
+                            "away_reported_players_without_prior_team_history": float(away_features["reported_players_without_prior_team_history"]),
+                            "home_players_excluded_by_opposing_report": float(home_features["players_excluded_by_opposing_report"]),
+                            "away_players_excluded_by_opposing_report": float(away_features["players_excluded_by_opposing_report"]),
+                        }
+                        total_feature_delta = sum(
+                            player_feature_values[key]
+                            for key in ("home_off_delta", "home_def_delta", "away_off_delta", "away_def_delta")
                         )
                         raw_signal = (
                             float(pace["expected_matchup_pace_l10"]) / 100.0 * total_feature_delta
                             if pace.get("available") else None
                         )
+                        player_calibration = apply_player_strength_calibration(
+                            float(model_parts["raw_total"]), player_feature_values, player_target_date
+                        )
+                        player_adjusted_total = (
+                            player_calibration["player_adjusted_total"]
+                            if player_calibration.get("available") else None
+                        )
                         game_features.append({
                             "Game": f"{fixture.away_team} @ {fixture.home_team}",
+                            "V5 baseline total": round(float(model_parts["raw_total"]), 1),
                             "Projected matchup pace": pace.get("expected_matchup_pace_l10"),
-                            "Home offensive delta": home.iloc[0]["features"]["off_delta"],
-                            "Home defensive delta": home.iloc[0]["features"]["def_delta"],
-                            "Away offensive delta": away.iloc[0]["features"]["off_delta"],
-                            "Away defensive delta": away.iloc[0]["features"]["def_delta"],
+                            "Pace adjustment (pts)": round(float(model_parts["composed"]["pace_adjustment_used"]), 2),
+                            "V5 + pace total": round(float(model_parts["composed"]["selected_prediction"]), 1),
+                            "Home offensive delta": player_feature_values["home_off_delta"],
+                            "Home defensive delta": player_feature_values["home_def_delta"],
+                            "Away offensive delta": player_feature_values["away_off_delta"],
+                            "Away defensive delta": player_feature_values["away_def_delta"],
                             "Raw RAPM rotation signal (pts; uncalibrated)": raw_signal,
-                            "Player calibration": "Not fitted — excluded from forecast",
+                            "Player adjustment (pts)": (
+                                round(float(player_adjusted_total - model_parts["raw_total"]), 2)
+                                if player_adjusted_total is not None else None
+                            ),
+                            "V5 + player strength total": (
+                                round(float(player_adjusted_total), 1)
+                                if player_adjusted_total is not None else None
+                            ),
+                            "Player calibration status": (
+                                "Validated challenger" if player_calibration.get("available")
+                                else player_calibration.get("reason", "Unavailable")
+                            ),
                         })
                     st.session_state.player_diagnostics = {
                         "diagnostics": player_state["diagnostics"],
