@@ -8,9 +8,9 @@ import streamlit as st
 
 from live_market_testbench_engine import (
     calculate_game_components,
-    load_pace_history,
     load_team_id_map,
 )
+from research.v4_phase1_core import connect_and_load, weighted_recent_mean, PRIOR_STRENGTH_GAMES
 from research.build_prospective_pregame_records import build_v5_score_history
 from research.live_player_strength import (
     build_player_strength_features,
@@ -34,6 +34,63 @@ def _signal(edge: float) -> str:
     return "No clear directional difference"
 
 
+def _expected_possessions_from_v4_history(
+    raw: pd.DataFrame, target_date: str, home_team_id: str, away_team_id: str
+) -> float:
+    """Reproduce V4 Phase 1's expected_possessions feature for an upcoming fixture."""
+    target = pd.Timestamp(target_date).normalize()
+    season = int(target.year + 1 if target.month >= 7 else target.year)
+    required = {"season", "game_date", "game_id", "team_id", "fga", "fta", "oreb", "tov"}
+    missing = required - set(raw.columns)
+    if missing:
+        raise ValueError(f"V4 Phase 1 possession source missing fields: {sorted(missing)}")
+    d = raw.copy()
+    d["game_date"] = pd.to_datetime(d.game_date, errors="coerce").dt.normalize()
+    d["season"] = pd.to_numeric(d.season, errors="coerce")
+    d["team_id"] = d.team_id.astype(str)
+    for col in ("fga", "fta", "oreb", "tov"):
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+    d = d.dropna(subset=["game_date", "season", "fga", "fta", "oreb", "tov"])
+    d["formula_poss"] = d.fga + 0.44 * d.fta - d.oreb + d.tov
+    d = d[d.formula_poss.gt(0)].copy()
+    current = d[(d.season.eq(season)) & d.game_date.lt(target)].copy()
+    prior = d[d.season.eq(season - 1)].copy()
+    if current.duplicated(["season", "game_id", "team_id"]).any():
+        raise ValueError("Duplicate current-season team-game rows in V4 pace history")
+    home = current[current.team_id.eq(str(home_team_id))]
+    away = current[current.team_id.eq(str(away_team_id))]
+    home_n, away_n = len(home), len(away)
+    if min(home_n, away_n) < 5:
+        raise ValueError(
+            f"V4 Phase 1 pace warm-up incomplete for target teams: home={home_n}, away={away_n}; need 5 each"
+        )
+    prior_league = (
+        float(prior.formula_poss.mean()) if not prior.empty else 100.0
+    )
+    league = float(current.formula_poss.mean()) if not current.empty else prior_league
+    prior_by_team = {
+        str(team): weighted_recent_mean(group, "formula_poss")
+        for team, group in prior.groupby("team_id", sort=False)
+    }
+    home_now = weighted_recent_mean(home, "formula_poss")
+    away_now = weighted_recent_mean(away, "formula_poss")
+    home_previous = prior_by_team.get(str(home_team_id), prior_league)
+    away_previous = prior_by_team.get(str(away_team_id), prior_league)
+    blend = min(
+        0.90,
+        (0.5 * (home_n + away_n))
+        / (0.5 * (home_n + away_n) + PRIOR_STRENGTH_GAMES),
+    )
+    home_pace = blend * home_now + (1.0 - blend) * home_previous
+    away_pace = blend * away_now + (1.0 - blend) * away_previous
+    expected = float(
+        league + 0.5 * ((home_pace - league) + (away_pace - league))
+    )
+    if not pd.notna(expected) or not float("-inf") < expected < float("inf") or expected <= 0:
+        raise ValueError("V4 Phase 1 expected possessions are invalid")
+    return expected
+
+
 def _build_predictions(captured_rows: list[dict]) -> pd.DataFrame:
     if not captured_rows:
         raise ValueError("Capture the public odds board before generating player forecasts.")
@@ -51,7 +108,13 @@ def _build_predictions(captured_rows: list[dict]) -> pd.DataFrame:
         raise ValueError("A fresh DraftKings quote has an invalid fixture date.")
 
     calibration = load_calibration()
-    pace_history = load_pace_history()
+    # Use the same V4 Phase 1 possession feature definition used during Stage C
+    # training; do not substitute a differently weighted pace proxy at inference.
+    target_seasons = {
+        int(pd.Timestamp(value).year + 1 if pd.Timestamp(value).month >= 7 else pd.Timestamp(value).year)
+        for value in quotes.game_date
+    }
+    phase1_raw, _phase1_metadata = connect_and_load(last_season=max(target_seasons))
     team_map = load_team_id_map()
     output: list[dict] = []
 
@@ -99,15 +162,15 @@ def _build_predictions(captured_rows: list[dict]) -> pd.DataFrame:
 
             prediction = calculate_game_components(
                 str(quote["home_team"]), str(quote["away_team"]), target_date,
-                score_history, pace_history, team_map,
+                score_history, None, team_map,
                 use_pace=False, h2h_mode="off", rest_mode="off",
                 v5_cache=v5_cache,
             )
             if not prediction["point_in_time_cutoff"]:
                 raise ValueError(f"V5 history cutoff failed for {game_key}.")
-            expected_possessions = prediction["pace"].get("expected_matchup_pace_l10")
-            if not prediction["pace"].get("available") or expected_possessions is None:
-                raise ValueError(f"Expected possessions unavailable for {game_key}.")
+            expected_possessions = _expected_possessions_from_v4_history(
+                phase1_raw, target_date, home_id, away_id
+            )
 
             features = build_player_strength_features(
                 home_features, away_features, expected_possessions
