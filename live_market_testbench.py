@@ -237,7 +237,7 @@ with tab_live:
 
 with tab_validation:
     st.subheader("Run the complete historical validation")
-    st.write("Upload the historical score file and the saved market-snapshot archive. The archive can be downloaded from the Live market tab and combined across sessions.")
+    st.write("The bundled historical score file and verified recent score patches are used automatically. You can optionally upload a newer score file; the market archive can be downloaded from the Live market tab and combined across sessions.")
     score_upload = st.file_uploader("Optional: override the bundled historical NBA scores CSV", type=["csv"], key="score_validation")
     bundled_score_path = Path(__file__).resolve().parent / "data" / "historical_nba_scores.csv"
     score_history_available = score_upload is not None or bundled_score_path.is_file()
@@ -551,10 +551,11 @@ with tab_guide:
         """
         1. Open Real game predictions and capture the public odds board periodically. Capture at least one observation no later than 120 minutes before each game, then capture again later before tip.
         2. Download the market archive after each session. Keep your own copy because the free web service may restart and clear session data.
-        3. Upload your historical NBA score CSV and the combined market archive under Objectives 5–7 validation.
-        4. Run the three objectives together. Objective 5 enforces DraftKings, T−120, the 240-minute maximum entry age, 150 prior training games and 100 prior out-of-sample calibration errors.
-        5. Objective 6 only produces candidate decisions if the development evidence gate passes. Otherwise it returns No Bet.
-        6. Objective 7 settles only frozen holdout decisions. It requires at least 100 settled bets across 30 distinct dates before any positive-profitability evidence can be considered.
+        3. The bundled historical NBA score file and committed score patches load automatically; upload a newer score file only if you need to override them.
+        4. Use the Player strength diagnostics tab to inspect RAPM, expected minutes, official availability and the separately validated player challenger.
+        5. Run the three market objectives together. Objective 5 enforces DraftKings, T−120, the 240-minute maximum entry age, 150 prior training games and 100 prior out-of-sample calibration errors.
+        6. Objective 6 only produces candidate decisions if the development evidence gate passes. Otherwise it returns No Bet.
+        7. Objective 7 settles only frozen holdout decisions. It requires at least 100 settled bets across 30 distinct dates before any positive-profitability evidence can be considered.
         """
     )
     st.warning(
