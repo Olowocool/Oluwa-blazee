@@ -180,9 +180,9 @@ def test_pace_challenger_reports_paired_date_cluster_metrics(monkeypatch):
 
     history = pd.DataFrame([
         ["2025-12-30", "Boston Celtics", "Miami Heat", 110, 100],
-        ["2026-03-01", "Boston Celtics", "Miami Heat", 112, 105],
-        ["2026-03-01", "New York Knicks", "Chicago Bulls", 101, 99],
-        ["2026-03-02", "Boston Celtics", "Miami Heat", 108, 103],
+        ["2026-03-01", "Boston Celtics", "Miami Heat", 112, 99],
+        ["2026-03-01", "New York Knicks", "Chicago Bulls", 101, 110],
+        ["2026-03-02", "Boston Celtics", "Miami Heat", 108, 105],
     ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"])
     history["game_date"] = pd.to_datetime(history.game_date)
 
@@ -206,9 +206,9 @@ def test_pace_challenger_reports_paired_date_cluster_metrics(monkeypatch):
     assert len(rows) == 3
     assert summary["evaluation_games"] == 3
     assert summary["evaluation_dates"] == 2
-    assert summary["v5_baseline"]["mae"] == pytest.approx(5.0)
-    assert summary["v5_plus_pace"]["mae"] == pytest.approx(3.0)
-    assert summary["mae_change_pace_minus_v5"] == pytest.approx(-2.0)
+    assert summary["v5_baseline"]["mae"] == pytest.approx(5.0/3.0)
+    assert summary["v5_plus_pace"]["mae"] == pytest.approx(1.0)
+    assert summary["mae_change_pace_minus_v5"] == pytest.approx(-2.0/3.0)
     assert summary["strict_prior_date_history"] is True
 
 
