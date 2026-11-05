@@ -12,3 +12,4 @@ scipy
 rapidfuzz
 PyPDF2
 nbainjuries==1.1.1
+jdk4py==21.0.8.0
