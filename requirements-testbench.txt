@@ -8,3 +8,7 @@ scikit-learn
 beautifulsoup4
 lxml
 pyarrow
+scipy>=1.11
+rapidfuzz>=3
+PyPDF2>=3
+nbainjuries>=1.1.1
