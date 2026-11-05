@@ -285,3 +285,73 @@ def test_player_calibration_stays_disabled_when_validation_gate_fails(tmp_path):
 
     assert result["available"] is False
     assert "has not passed" in result["reason"]
+
+
+def test_bundled_score_history_applies_verified_patch_priority(tmp_path, monkeypatch):
+    import live_market_testbench_engine as engine
+
+    root = tmp_path
+    (root / "data").mkdir()
+    patch_dir = root / "research" / "data"
+    patch_dir.mkdir(parents=True)
+    pd.DataFrame([
+        ["2026-10-30", "Boston Celtics", "Chicago Bulls", 100, 99],
+    ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"]).to_csv(
+        root / "data" / "historical_nba_scores.csv", index=False
+    )
+    pd.DataFrame([
+        ["2026-10-30", "Boston Celtics", "Chicago Bulls", 125, 111],
+        ["2026-10-31", "Miami Heat", "Orlando Magic", 110, 101],
+    ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"]).to_csv(
+        patch_dir / "score_history_patch_2026-10-30.csv", index=False
+    )
+    monkeypatch.setattr(engine, "ROOT", root)
+
+    history = engine.load_score_history(patch_dir=patch_dir)
+
+    patched = history[history.game_date.eq(pd.Timestamp("2026-10-30"))].iloc[0]
+    assert patched.home_score == 125
+    assert patched.away_score == 111
+    assert len(history) == 2
+    assert history.attrs["source_conflict_overrides"] == 1
+
+
+def test_uploaded_score_history_overrides_repository_patch(tmp_path):
+    base = tmp_path / "uploaded.csv"
+    patch_dir = tmp_path / "patches"
+    patch_dir.mkdir()
+    pd.DataFrame([
+        ["2026-10-30", "Boston Celtics", "Chicago Bulls", 130, 110],
+    ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"]).to_csv(
+        base, index=False
+    )
+    pd.DataFrame([
+        ["2026-10-30", "Boston Celtics", "Chicago Bulls", 125, 111],
+    ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"]).to_csv(
+        patch_dir / "score_history_patch_2026-10-30.csv", index=False
+    )
+
+    history = load_score_history(base, patch_dir=patch_dir)
+
+    assert history.iloc[0].home_score == 130
+    assert history.iloc[0].away_score == 110
+
+
+def test_conflicting_score_patches_at_same_priority_fail_closed(tmp_path):
+    base = tmp_path / "base.csv"
+    patch_dir = tmp_path / "patches"
+    patch_dir.mkdir()
+    pd.DataFrame([
+        ["2026-10-29", "Boston Celtics", "Chicago Bulls", 100, 99],
+    ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"]).to_csv(
+        base, index=False
+    )
+    for name, home_score in [("a", 120), ("b", 121)]:
+        pd.DataFrame([
+            ["2026-10-30", "Boston Celtics", "Chicago Bulls", home_score, 110],
+        ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"]).to_csv(
+            patch_dir / f"score_history_patch_{name}.csv", index=False
+        )
+
+    with pytest.raises(ValueError, match="Conflicting scores within the same source priority"):
+        load_score_history(base, patch_dir=patch_dir)
