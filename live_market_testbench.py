@@ -38,7 +38,7 @@ st.title("NBA Totals — Real-Game Prediction & Research Bench")
 st.caption("Market-independent NBA player-driven game-total research. Select a scheduled date to inspect the players, projected minutes, individual scoring contributions, strength signals and pace mathematics.")
 st.warning(
     "No wagers are placed. No production model, live app, or paper-trading ledger is changed. "
-    "The Player-driven predictions tab does not use bookmaker totals or odds. All player-driven forecasts remain research candidates until chronological validation is complete."
+    "The Player-driven predictions tab is independent of sportsbook totals. Its outputs are research-only and are not connected to production or wager placement."
 )
 
 if "captured_market_rows" not in st.session_state:
