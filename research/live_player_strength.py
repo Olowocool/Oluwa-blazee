@@ -64,6 +64,18 @@ def load_calibration(path: str | Path | None = None) -> dict[str, Any]:
         raise ValueError("Calibration parameters must be numeric") from exc
     if not np.isfinite(numeric).all() or any(float(x) <= 0 for x in scales):
         raise ValueError("Calibration parameters contain non-finite or invalid values")
+    rapm_diagnostics = payload.get("rapm_feature_diagnostics")
+    if not isinstance(rapm_diagnostics, dict):
+        raise ValueError("Calibration lacks verified nonzero RAPM feature diagnostics")
+    for name in FEATURES[:4]:
+        item = rapm_diagnostics.get(name, {})
+        try:
+            nonzero_rows = int(item.get("nonzero_training_rows", 0))
+            feature_std = float(item.get("standard_deviation", 0.0))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"Invalid RAPM feature diagnostic: {name}") from exc
+        if nonzero_rows < 50 or not math.isfinite(feature_std) or feature_std <= 1e-8:
+            raise ValueError(f"Calibration has no usable variation in RAPM feature: {name}")
     if int(payload.get("training_games", 0)) < 300:
         raise ValueError("Calibration has fewer than 300 prior training games")
     return payload
