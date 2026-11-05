@@ -176,6 +176,9 @@ with tab_player_predictions:
                     player_scores = player_scores.merge(
                         fixture_display, on="game_id", how="left", validate="one_to_one"
                     ).merge(pd.DataFrame(internal_baselines), on="game_id", how="left", validate="one_to_one")
+                    player_scores["player_vs_v5pace_delta"] = (
+                        player_scores.player_driven_total - player_scores["V5 + pace reference"]
+                    )
                     player_detail["game_id"] = player_detail.game_id.astype(str)
                     player_detail = player_detail.merge(
                         fixture_display, on="game_id", how="left", validate="many_to_one"
@@ -224,6 +227,7 @@ with tab_player_predictions:
             "league_pace": "League pace",
             "pace_factor": "Pace multiplier",
             "V5 + pace reference": "Internal V5 + pace reference",
+            "player_vs_v5pace_delta": "Player model signal vs internal reference (pts)",
         })
         st.dataframe(summary[[
             "Tip (Lagos)", "Away", "Home", "Player model away points",
@@ -232,7 +236,8 @@ with tab_player_predictions:
             "Home profile minutes coverage", "Away profile minutes coverage", "Home profile coverage scale", "Away profile coverage scale",
             "Home weighted offensive RAPM", "Home weighted defensive RAPM",
             "Away weighted offensive RAPM", "Away weighted defensive RAPM",
-            "Internal V5 + pace reference", "forecast_status",
+            "V5 baseline total", "V5 pace adjustment", "Internal V5 + pace reference",
+            "Player model signal vs internal reference (pts)", "forecast_status",
         ]], use_container_width=True, hide_index=True)
         game_options = {
             f"{row.away_team} @ {row.home_team}": str(row.game_id)
