@@ -21,6 +21,12 @@ CAPTURE_MAX_PAGE_AGE_MINUTES = 75  # DunkAPI public board refreshes hourly.
 LIVE_MARKET_MAX_PAGE_AGE_MINUTES = 20  # Keep the stricter gate for live-market eligibility.
 
 st.set_page_config(page_title="NBA Totals Research Test Bench", page_icon="🏀", layout="wide")
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_pace_history():
+    """Cache the public possession-based pace source for one hour per app process."""
+    return load_pace_history()
+
 st.title("NBA Totals — Real-Game Prediction & Research Bench")
 st.caption("Upcoming NBA game projections using frozen V5 scoring, live sportsbook totals, and chronological validation. Research only.")
 st.warning(
@@ -141,7 +147,7 @@ with tab_live:
                 st.caption(f"Using bundled project score history: {len(history):,} games through {history.game_date.max().date()}.")
             team_map = load_team_id_map()
             try:
-                pace_history = load_pace_history()
+                pace_history = cached_pace_history()
             except Exception as pace_exc:
                 pace_history = None
                 st.warning(f"Pace source unavailable; showing V5 baseline without a pace adjustment. {type(pace_exc).__name__}: {pace_exc}")
@@ -300,7 +306,7 @@ with tab_validation:
                     pace_scores = load_score_history(score_path_for_pace)
                 else:
                     pace_scores = load_score_history()
-                pace_source = load_pace_history()
+                pace_source = cached_pace_history()
                 pace_team_map = load_team_id_map()
                 pace_rows, pace_summary = evaluate_pace_challenger(
                     pace_scores, pace_source, pace_team_map,
