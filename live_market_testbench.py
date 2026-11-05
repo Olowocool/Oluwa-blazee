@@ -196,8 +196,8 @@ with tab_live:
                 projections.append({
                     "Game": str(first["away_team"]) + " @ " + str(first["home_team"]),
                     "Tip (Lagos)": commence.tz_convert("Africa/Lagos").strftime("%d %b %H:%M"),
-                    "Projected away": round(float(v5["projected_away_points"]), 1),
-                    "Projected home": round(float(v5["projected_home_points"]), 1),
+                    "V5 away baseline points": round(float(v5["projected_away_points"]), 1),
+                    "V5 home baseline points": round(float(v5["projected_home_points"]), 1),
                     "V5 baseline total": round(float(prediction["raw_total"]), 1),
                     "Pace adjustment (pts)": round(float(prediction["composed"]["pace_adjustment_used"]), 2),
                     "Matchup pace": round(float(pace["expected_matchup_pace_l10"]), 2) if pace.get("available") else None,
