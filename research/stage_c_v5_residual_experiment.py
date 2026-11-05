@@ -228,7 +228,7 @@ def export_live_player_strength_calibration(data: pd.DataFrame) -> dict:
         col: int(rapm_values[col].abs().gt(1e-9).sum())
         for col in rapm_columns
     }
-    if not any(rapm_nonzero.values()):
+    if any(value <= 0 for value in rapm_nonzero.values()):
         raise RuntimeError(
             "RAPM/injury total-impact features are all zero in calibration data; "
             f"refusing to export a misleading player model. nonzero_rows={rapm_nonzero}"
