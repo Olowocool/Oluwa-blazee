@@ -335,9 +335,6 @@ with tab_player_predictions:
         )
 
 with tab_live:
-
-
-with tab_live:
     st.subheader("Upcoming game predictions")
     st.write("Capture the public odds board to compare the V5 and pace predictions with current sportsbook totals. The bundled historical score file is used automatically.")
     captured = pd.DataFrame(st.session_state.captured_market_rows)
