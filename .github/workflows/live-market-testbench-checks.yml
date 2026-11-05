@@ -10,6 +10,8 @@ on:
       - "research/prospective_rotation_projection.py"
       - "tests/test_live_market_testbench.py"
       - "tests/test_prospective_player_data.py"
+      - "tests/test_rapm_rotation_attachment.py"
+      - "research/v4_phase2_rotation.py"
       - "requirements.txt"
       - ".github/workflows/live-market-testbench-checks.yml"
   push:
@@ -41,7 +43,7 @@ jobs:
           pip install pytest
       - name: Compile research testbench modules
         run: |
-          python -m compileall -q live_market_testbench.py live_market_testbench_engine.py research/prospective_player_data.py research/prospective_rotation_projection.py research/prospective_player_snapshot.py
+          python -m compileall -q live_market_testbench.py live_market_testbench_engine.py research/prospective_player_data.py research/prospective_rotation_projection.py research/prospective_player_snapshot.py research/v4_phase2_rotation.py
       - name: Run testbench and player point-in-time tests
         run: |
-          pytest -q tests/test_live_market_testbench.py tests/test_prospective_player_data.py
+          pytest -q tests/test_live_market_testbench.py tests/test_prospective_player_data.py tests/test_rapm_rotation_attachment.py
