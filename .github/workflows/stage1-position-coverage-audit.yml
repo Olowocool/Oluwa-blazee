@@ -1,0 +1,41 @@
+name: Stage 1 Position Coverage Audit
+
+on:
+  push:
+    branches:
+      - research/live-market-testbench
+    paths:
+      - research/stage1_position_coverage_audit.py
+      - .github/workflows/stage1-position-coverage-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  position-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out research branch
+        uses: actions/checkout@v4
+        with:
+          ref: research/live-market-testbench
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install read-only audit dependency
+        run: python -m pip install --disable-pip-version-check duckdb
+
+      - name: Audit position coverage by season
+        run: python research/stage1_position_coverage_audit.py
+
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage1-position-coverage
+          path: outputs/research/stage1_position_coverage/position_coverage.json
+          if-no-files-found: error
+          retention-days: 30

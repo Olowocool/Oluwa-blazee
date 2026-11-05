@@ -109,6 +109,42 @@ class TotalsForwardPaperTradingTests(unittest.TestCase):
         self.assertFalse(report["probabilities_used"])
         self.assertFalse(report["live_betting_enabled"])
 
+    def test_export_preserves_later_pretip_prices_and_bookmaker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            picks_path = root / "totals_history.csv"
+            snapshots_path = root / "live_totals_market_snapshots.csv"
+            output_path = root / "evaluated_picks.csv"
+            write_csv(picks_path, PICK_FIELDS, [pick_row()])
+            write_csv(
+                snapshots_path,
+                SNAPSHOT_FIELDS,
+                [
+                    snapshot_row(),
+                    snapshot_row(
+                        snapshot_timestamp_utc="2026-10-29T18:10:00Z",
+                        market_last_update_utc="2026-10-29T18:09:30Z",
+                        total_line=222.5,
+                        over_odds=1.90,
+                        under_odds=1.94,
+                    ),
+                ],
+            )
+
+            report = evaluate_forward_paper_trading(
+                totals_history_path=picks_path,
+                market_snapshot_path=snapshots_path,
+                picks_output_path=output_path,
+            )
+            with output_path.open(encoding="utf-8", newline="") as handle:
+                row = next(csv.DictReader(handle))
+
+            self.assertEqual(report["eligible_picks"], 1)
+            self.assertEqual(float(row["latest_pre_tip_line"]), 222.5)
+            self.assertEqual(float(row["latest_pre_tip_over_odds"]), 1.90)
+            self.assertEqual(float(row["latest_pre_tip_under_odds"]), 1.94)
+            self.assertEqual(row["latest_pre_tip_bookmaker"], "DraftKings")
+
     def test_under_line_movement_uses_correct_clv_sign(self):
         pick = pick_row(
             pick_type="Under",

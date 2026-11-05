@@ -9,7 +9,7 @@ from totals_tracker import (
     load_totals_history
 )
 from totals_forward_paper_trading import evaluate_forward_paper_trading
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from prediction_history_logger import log_prediction
 from best_bet_selector_v2 import select_best_bet_v2
 from betting_guard import BETTING_VALIDATION_COMPLETE, actionable_bet_allowed, betting_gate_message
@@ -54,7 +54,7 @@ from auto_learning import summarize_learning, build_learning_dataset
 from auto_update_results import update_bet_results
 from uncertainty_engine import classify_uncertainty
 from best_bet_selector import select_best_bet
-API_URL = "https://oluwa-blazee-new.onrender.com"
+API_URL = os.getenv("NBA_API_URL", "https://oluwa-blazee-new.onrender.com").rstrip("/")
 STAKE = 100
 TEST_MODE = False
 
@@ -123,6 +123,14 @@ def canonical_team_name(name):
     return lookup.get(name.lower(), name)
 
 
+WAT_TIMEZONE = timezone(timedelta(hours=1))
+
+
+def wat_today():
+    """Return today's date in Nigeria's fixed West Africa Time (UTC+1)."""
+    return datetime.now(WAT_TIMEZONE).date()
+
+
 def parse_game_date(date_text):
     try:
         return datetime.strptime(date_text, "%m/%d/%Y").date()
@@ -134,7 +142,7 @@ def should_fetch_live_odds(date_text):
     game_date = parse_game_date(date_text)
     if game_date is None:
         return True
-    return game_date >= date.today()
+    return game_date >= wat_today()
 
 
 @st.cache_data(ttl=300)
@@ -217,6 +225,11 @@ def get_odds():
                     # Keep a complete Over/Under pair from one bookmaker and one line.
                     # Never combine Over from one book with Under from another.
                     if market_key == "totals":
+                        # Keep the prospective paper sample on one named book.
+                        # Missing DraftKings quotes fail closed; do not silently
+                        # substitute another bookmaker on another rerun/game.
+                        if str(bookmaker.get("key", "")).strip().casefold() != "draftkings":
+                            continue
                         outcomes = market.get("outcomes", [])
                         overs = [
                             item for item in outcomes
@@ -872,7 +885,7 @@ st.title("NBA Games")
 
 date_input = st.text_input(
     "Game Date (MM/DD/YYYY)",
-    value="05/21/2026"
+    value=wat_today().strftime("%m/%d/%Y")
 )
 
 # Clear previously loaded games when the date changes.
@@ -890,12 +903,36 @@ if st.button("Load Daily Predictions"):
             timeout=90
         )
 
-        if response.status_code != 200:
+        if response.status_code == 429:
+            # The research UI must not depend on the production API's inbound
+            # rate limit. On 429 only, call the same repository backend function
+            # in-process from this research service. Production is not changed.
+            st.warning(
+                "The shared backend is temporarily rate-limited. "
+                "Loading this research slate through the local research fallback."
+            )
+            try:
+                import app as local_research_backend
+                data = local_research_backend.predict_today(date_input)
+            except Exception as local_error:
+                st.error(
+                    "The local research schedule fallback also failed: "
+                    f"{local_error}"
+                )
+                st.stop()
+
+            if not isinstance(data, dict) or "games" not in data:
+                st.error("The local research fallback returned an invalid schedule response.")
+                st.stop()
+            st.caption("Schedule source: local research fallback (same repository backend code).")
+
+        elif response.status_code != 200:
             st.error(f"Prediction API failed with status {response.status_code}")
             st.write(response.text)
             st.stop()
 
-        data = response.json()
+        else:
+            data = response.json()
 
         st.session_state["daily_data"] = data
         st.session_state["last_loaded_date"] = date_input
@@ -1675,26 +1712,62 @@ if data and "games" in data and len(data["games"]) > 0:
                     []
                 )
             )
-        if st.button(
-            f"Save Totals Pick {game['away_team']} @ {game['home_team']}",
-            disabled=bookmaker_total is None,
-            help="Enter a valid sportsbook total line before saving a pick.",
+        # Capture every qualifying production-model signal automatically.
+        # This avoids human cherry-picking; the tracker keeps only the first
+        # qualifying forecast for each provider event.
+        paper_quote_ready = False
+        try:
+            _entry_time = pd.to_datetime(
+                odds.get("snapshot_timestamp_utc"), utc=True, errors="coerce"
+            )
+            _market_update_time = pd.to_datetime(
+                odds.get("market_last_update_utc"), utc=True, errors="coerce"
+            )
+            _forecast_time = pd.to_datetime(
+                totals_result.get("prediction_time_utc"), utc=True, errors="coerce"
+            )
+            _tipoff_time = pd.to_datetime(
+                odds.get("commence_time_utc"), utc=True, errors="coerce"
+            )
+            _over_price = float(odds.get("over_odds"))
+            _under_price = float(odds.get("under_odds"))
+            paper_quote_ready = bool(
+                valid_live_total_line is not None
+                and str(totals_bookmaker).strip().casefold() == "draftkings"
+                and str(odds.get("source_event_id") or "").strip()
+                and odds.get("snapshot_source") == "the-odds-api-v4-current-endpoint"
+                and not pd.isna(_entry_time)
+                and not pd.isna(_market_update_time)
+                and not pd.isna(_forecast_time)
+                and not pd.isna(_tipoff_time)
+                and _entry_time < _forecast_time < _tipoff_time
+                and _market_update_time <= _entry_time
+                and (_forecast_time - _entry_time).total_seconds() <= 300
+                and math.isfinite(_over_price)
+                and math.isfinite(_under_price)
+                and _over_price > 1.0
+                and _under_price > 1.0
+            )
+        except (TypeError, ValueError, OverflowError):
+            paper_quote_ready = False
+
+        if (
+            paper_quote_ready
+            and totals_result.get("recommendation") in {
+                "Strong Over", "Lean Over", "Strong Under", "Lean Under"
+            }
+            and not totals_result.get("experimental_adjustments_applied", False)
         ):
             try:
-                save_totals_pick(
+                paper_pick_saved = save_totals_pick(
                     game_date=active_date,
                     home_team=game["home_team"],
                     away_team=game["away_team"],
                     projected_total=totals_result["projected_total"],
-                    sportsbook_total=totals_result["bookmaker_total"],
+                    sportsbook_total=valid_live_total_line,
                     recommendation=totals_result["recommendation"],
                     prediction_time_utc=totals_result.get("prediction_time_utc"),
-                    commence_time_utc=(
-                        odds.get("commence_time_utc")
-                        or game.get("game_time")
-                        or game.get("commence_time_utc")
-                        or game.get("commence_time")
-                    ),
+                    commence_time_utc=odds.get("commence_time_utc"),
                     market_snapshot_time_utc=odds.get("snapshot_timestamp_utc"),
                     market_last_update_utc=odds.get("market_last_update_utc"),
                     market_snapshot_total_line=odds.get("total_line"),
@@ -1703,39 +1776,40 @@ if data and "games" in data and len(data["games"]) > 0:
                     totals_bookmaker=odds.get("totals_bookmaker"),
                     snapshot_source=odds.get("snapshot_source"),
                     source_event_id=odds.get("source_event_id"),
-                    experimental_adjustments_applied=totals_result.get(
-                        "experimental_adjustments_applied", False
-                    ),
+                    experimental_adjustments_applied=False,
                 )
-
-                log_prediction(
-                    prediction=totals_result,
-                    game_date=active_date,
-                    commence_time_utc=(
-                        odds.get("commence_time_utc")
-                        or game.get("game_time")
-                        or game.get("commence_time_utc")
-                        or game.get("commence_time")
-                    ),
-                    market_snapshot_time_utc=odds.get("snapshot_timestamp_utc"),
-                    market_last_update_utc=odds.get("market_last_update_utc"),
-                    market_snapshot_total_line=odds.get("total_line"),
-                    over_odds=odds.get("over_odds"),
-                    under_odds=odds.get("under_odds"),
-                    totals_bookmaker=odds.get("totals_bookmaker"),
-                    snapshot_source=odds.get("snapshot_source"),
-                    source_event_id=odds.get("source_event_id"),
-                )
-
-                st.success(
-                    "Totals pick and prediction history saved."
-                )
-
+                if paper_pick_saved:
+                    log_prediction(
+                        prediction=totals_result,
+                        game_date=active_date,
+                        commence_time_utc=odds.get("commence_time_utc"),
+                        market_snapshot_time_utc=odds.get("snapshot_timestamp_utc"),
+                        market_last_update_utc=odds.get("market_last_update_utc"),
+                        market_snapshot_total_line=odds.get("total_line"),
+                        over_odds=odds.get("over_odds"),
+                        under_odds=odds.get("under_odds"),
+                        totals_bookmaker=odds.get("totals_bookmaker"),
+                        snapshot_source=odds.get("snapshot_source"),
+                        source_event_id=odds.get("source_event_id"),
+                    )
+                    st.success(
+                        f"Paper signal automatically recorded: "
+                        f"{totals_result['recommendation']} at DraftKings "
+                        f"{valid_live_total_line}."
+                    )
+                else:
+                    st.caption(
+                        "This game already has its first qualifying paper signal recorded."
+                    )
             except Exception as e:
-                st.error(
-                    f"Saving was incomplete: {e}. "
-                    "Check both history files before retrying."
-                )
+                st.error(f"Prospective paper signal could not be saved: {e}")
+        elif totals_result.get("recommendation") in {
+            "Strong Over", "Lean Over", "Strong Under", "Lean Under"
+        }:
+            st.caption(
+                "Signal not included in the paper sample: a fresh, complete "
+                "DraftKings Over/Under quote and matching pre-tipoff timestamps are required."
+            )
 
         with st.expander("Totals Model Details"):
             st.json(totals_result)
@@ -2065,6 +2139,48 @@ if data and "games" in data and len(data["games"]) > 0:
 elif data:
     st.warning("No games returned from API.")
 
+st.subheader("Prospective Totals Paper Validation")
+st.caption(
+    "Uses only saved DraftKings entry snapshots and settled paper picks. "
+    "No live bets are placed and no missing prices are estimated."
+)
+if st.button("Refresh Forward Paper Results", key="refresh_forward_totals_paper_results"):
+    with st.spinner("Checking captured entry quotes and settled results..."):
+        paper_report = evaluate_forward_paper_trading()
+    st.session_state["forward_totals_paper_report"] = paper_report
+
+paper_report = st.session_state.get("forward_totals_paper_report")
+if paper_report:
+    if paper_report.get("status") == "error":
+        st.error(paper_report.get("message", "Paper evaluation failed."))
+    else:
+        report_cols = st.columns(4)
+        with report_cols[0]:
+            st.metric("Eligible settled picks", paper_report.get("eligible_picks", 0))
+        with report_cols[1]:
+            st.metric("Wins / Losses / Pushes", (
+                f"{paper_report.get('wins', 0)} / "
+                f"{paper_report.get('losses', 0)} / "
+                f"{paper_report.get('pushes', 0)}"
+            ))
+        with report_cols[2]:
+            roi = paper_report.get("roi_pct")
+            st.metric("Realized ROI", f"{roi:.2f}%" if roi is not None else "Not available")
+        with report_cols[3]:
+            clv = paper_report.get("mean_line_clv_points")
+            st.metric("Mean line CLV", f"{clv:+.2f}" if clv is not None else "Not available")
+        st.caption(
+            f"Seen: {paper_report.get('picks_seen', 0)} | "
+            f"Excluded: {paper_report.get('excluded_picks', 0)} | "
+            f"Stake risked: {paper_report.get('stake_risked', 0)} | "
+            f"Net profit: {paper_report.get('net_profit', 0)}"
+        )
+        if paper_report.get("excluded_by_reason"):
+            with st.expander("Paper record exclusions"):
+                st.json(paper_report["excluded_by_reason"])
+else:
+    st.info("No paper-results evaluation has been run in this session yet.")
+
 st.title("Autonomous Update System")
 
 st.subheader("Model Health Dashboard")
@@ -2224,6 +2340,20 @@ if st.button("Auto Grade Totals Bets"):
         st.success(
             f"Updated {result['updated_rows']} totals bets."
         )
+        if result.get("pending_rows", 0):
+            st.info(
+                f"{result['pending_rows']} pick(s) are still waiting for final scores."
+            )
+        if result.get("shared_api_unavailable", 0):
+            st.caption(
+                "The shared score API was unavailable; the research app used "
+                f"its local fallback for {result.get('local_fallback_calls', 0)} lookup(s)."
+            )
+        if result.get("not_found_rows", 0) or result.get("score_lookup_errors", 0):
+            st.warning(
+                f"Score lookups not resolved — not found: {result.get('not_found_rows', 0)}; "
+                f"errors: {result.get('score_lookup_errors', 0)}."
+            )
     else:
         st.error(
             result["message"]

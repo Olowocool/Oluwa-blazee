@@ -1,0 +1,6 @@
+model,bootstrap_replicates,mae_difference_vs_v5,mae_ci_low,mae_ci_high,probability_lower_mae,rmse_difference_vs_v5,rmse_ci_low,rmse_ci_high,probability_lower_rmse
+Legacy H2H 15% last-10,10000,-0.0360988,-0.0940806,0.0202415,0.8947,-0.0093994,-0.0679348,0.0485972,0.6262
+Learned H2H raw last-5,10000,-0.0137300,-0.0219297,-0.0053111,0.9993,-0.0101608,-0.0187944,-0.0013551,0.9884
+Learned H2H era-adjusted last-5,10000,-0.0074242,-0.0138439,-0.0009043,0.9867,-0.0069073,-0.0136430,-0.0001379,0.9770
+Learned H2H raw last-10,10000,-0.0082746,-0.0144236,-0.0021320,0.9960,-0.0060805,-0.0122668,-0.0000722,0.9762
+Learned H2H era-adjusted last-10 (dev-selected),10000,-0.0073597,-0.0165329,0.0017656,0.9449,-0.0070374,-0.0162744,0.0019608,0.9352

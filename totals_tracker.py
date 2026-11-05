@@ -107,6 +107,27 @@ def save_totals_pick(
     else:
         df = pd.DataFrame()
 
+    # The prospective paper sample records only the first qualifying forecast
+    # for each NBA event. Streamlit reruns and repeated button clicks must not
+    # turn one game into several apparently independent bets.
+    event_id = str(row.get("source_event_id") or "").strip()
+    if event_id and not df.empty and "source_event_id" in df.columns:
+        existing_event_ids = df["source_event_id"].fillna("").astype(str).str.strip()
+        same_event = existing_event_ids.eq(event_id)
+        for column in ("home_team", "away_team"):
+            if column in df.columns:
+                same_event &= (
+                    df[column].fillna("").astype(str).str.strip().str.casefold()
+                    == str(row[column]).strip().casefold()
+                )
+        if "game_date" in df.columns:
+            same_event &= (
+                df["game_date"].fillna("").astype(str).str.strip()
+                == str(game_date).strip()
+            )
+        if same_event.any():
+            return False
+
     df = pd.concat(
         [df, pd.DataFrame([row])],
         ignore_index=True

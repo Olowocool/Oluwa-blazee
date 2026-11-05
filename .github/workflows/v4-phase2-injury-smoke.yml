@@ -1,0 +1,40 @@
+name: NBA totals V4 Phase 2 injury archive smoke test
+
+on:
+  push:
+    branches:
+      - "research/nba-advanced-data-audit"
+    paths:
+      - "research/v4_phase2_injury_smoke.py"
+      - ".github/workflows/v4-phase2-injury-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  injury-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Java
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-jre-headless
+      - name: Install parser dependencies
+        run: python -m pip install --upgrade "pandas<3" "nbainjuries==1.1.1"
+      - name: Compile and smoke-test official reports
+        run: |
+          python -m py_compile research/v4_phase2_injury_smoke.py
+          python research/v4_phase2_injury_smoke.py
+      - name: Upload smoke-test output
+        uses: actions/upload-artifact@v6
+        with:
+          name: nba-totals-v4-phase2-injury-smoke
+          path: outputs/research/v4_phase2_injury_smoke/
+          if-no-files-found: error
+          retention-days: 30

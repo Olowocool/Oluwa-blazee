@@ -1,0 +1,59 @@
+name: Prospective current-season player data integration
+
+on:
+  push:
+    branches:
+      - "research/live-market-testbench"
+    paths:
+      - "research/prospective_player_data.py"
+      - "research/build_prospective_pregame_records.py"
+      - "research/audit_prospective_v5_history.py"
+      - "research/v4_phase2_rotation.py"
+      - "points_engine_v5.py"
+      - "points_engine_v3.py"
+      - "points_engine_v4.py"
+      - "points_engine.py"
+      - "team_name_utils.py"
+      - "data/historical_nba_scores.csv"
+      - "research/data/score_history_patch_*.csv"
+      - ".github/workflows/prospective-player-data-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  current-season-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/live-market-testbench
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install public-data and RAPM dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pandas<3" "numpy<3" duckdb scikit-learn scipy requests PyPDF2 rapidfuzz "nbainjuries==1.1.1" pyarrow
+      - name: Compile adapter and audited Phase 2 engine
+        run: |
+          python -m py_compile research/prospective_player_data.py
+          python -m py_compile research/prospective_rotation_projection.py
+          python -m py_compile research/build_prospective_pregame_records.py
+          python -m py_compile research/audit_prospective_v5_history.py
+          python -m py_compile research/v4_phase2_rotation.py
+      - name: Load current public partitions and fit strictly pregame RAPM
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          TARGET_DATE="$(date -u -d '+1 day' +%F)"
+          python research/audit_prospective_v5_history.py --target-date "$TARGET_DATE" --output outputs/research/prospective_v5_history_audit.json
+      - name: Upload non-sensitive readiness diagnostics
+        uses: actions/upload-artifact@v6
+        with:
+          name: prospective-current-season-player-data-and-v5-history
+          path: outputs/research/prospective_v5_history_audit.json
+          if-no-files-found: error
+          retention-days: 30
