@@ -35,6 +35,62 @@ def cached_live_player_profile_history(player_ids: tuple[str, ...], target_date:
     """Cache strictly prior player-game profile rows for a target slate."""
     return load_live_player_profile_history(player_ids, target_date)
 
+@st.cache_resource(ttl=21600, max_entries=1, show_spinner=False)
+def cached_player_slate_inputs(target_date: str, fixture_records: tuple[tuple, ...]):
+    """Build one compact player slate per target date; never refit RAPM on reruns."""
+    import gc
+    from research.prospective_player_data import build_pregame_player_state
+    from research.prospective_rotation_projection import build_target_date_rotations
+
+    columns = [
+        "game_key", "game_date", "away_team", "home_team",
+        "commence_time_utc", "status",
+    ]
+    fixtures = pd.DataFrame(fixture_records, columns=columns)
+    fixtures["game_date"] = pd.to_datetime(fixtures["game_date"]).dt.normalize()
+    fixtures["commence_time_utc"] = pd.to_datetime(fixtures["commence_time_utc"], utc=True)
+
+    player_state = build_pregame_player_state(target_date)
+    rotation_result = build_target_date_rotations(
+        player_state, fixtures, target_date, allow_unconfirmed_report=True
+    )
+    player_ids = tuple(sorted(
+        rotation_result["projections"].player_id.astype(str).unique()
+    ))
+    profile_history = load_live_player_profile_history(player_ids, target_date)
+    _, player_rows, profile_diagnostics = aggregate_live_player_profile_features(
+        rotation_result, target_date, profile_history
+    )
+    player_name_map = player_state["player_names"][
+        ["player_id", "name"]
+    ].drop_duplicates("player_id")
+    team_name_map = player_state["team_names"][
+        ["team_id", "full_name"]
+    ].drop_duplicates("team_id")
+    player_rows = player_rows.merge(
+        player_name_map, on="player_id", how="left", validate="many_to_one"
+    ).merge(
+        team_name_map, on="team_id", how="left", validate="many_to_one"
+    )
+    player_rows["minute_change"] = (
+        player_rows.expected_minutes - player_rows.baseline_minutes
+    )
+    prepared = {
+        "player_rows": player_rows,
+        "target_games": rotation_result["target_games"].copy(),
+        "player_state_diagnostics": player_state["diagnostics"],
+        "profile_diagnostics": profile_diagnostics,
+        "injury_report": rotation_result["report_metadata"],
+        "injury_manifest": rotation_result["manifest"].copy(),
+        "unmatched_injury_rows": rotation_result["unmatched_report_rows"].copy(),
+        "report_complete": bool(rotation_result["report_complete"]),
+    }
+    # Cache only compact slate outputs. Do not retain raw player logs, lineup
+    # stints, DuckDB frames, or full player-history dictionaries in Streamlit.
+    del player_state, rotation_result, profile_history, player_name_map, team_name_map
+    gc.collect()
+    return prepared
+
 st.title("NBA Totals — Real-Game Prediction & Research Bench")
 st.caption("Market-independent NBA player-driven game-total research. Select a scheduled date to inspect the players, projected minutes, individual scoring contributions, strength signals and pace mathematics.")
 st.warning(
@@ -129,28 +185,29 @@ with tab_player_predictions:
             if fixtures.empty:
                 st.warning("No pregame NBA fixtures were returned for this date.")
             else:
-                with st.spinner("Building point-in-time player strength, official availability and full rotations…"):
-                    from research.prospective_player_data import build_pregame_player_state
-                    from research.prospective_rotation_projection import build_target_date_rotations
-                    player_state = build_pregame_player_state(prediction_date)
-                    rotation_result = build_target_date_rotations(player_state, fixtures, prediction_date, allow_unconfirmed_report=True)
-                    player_ids = tuple(sorted(rotation_result["projections"].player_id.astype(str).unique()))
-                    profile_history = cached_live_player_profile_history(player_ids, str(prediction_date))
-                    _, player_rows, profile_diagnostics = aggregate_live_player_profile_features(
-                        rotation_result, prediction_date, profile_history
+                with st.spinner("Preparing player rotations and point-in-time player strength (reused for this slate)…"):
+                    fixture_records = tuple(
+                        (
+                            str(row.game_key), str(pd.Timestamp(row.game_date).date()),
+                            str(row.away_team), str(row.home_team),
+                            str(pd.Timestamp(row.commence_time_utc)),
+                            str(getattr(row, "status", "Scheduled")),
+                        )
+                        for row in fixtures.itertuples(index=False)
                     )
-                    player_name_map = player_state["player_names"][["player_id", "name"]].drop_duplicates("player_id")
-                    team_name_map = player_state["team_names"][["team_id", "full_name"]].drop_duplicates("team_id")
-                    player_rows = player_rows.merge(
-                        player_name_map, on="player_id", how="left", validate="many_to_one"
-                    ).merge(team_name_map, on="team_id", how="left", validate="many_to_one")
-                    player_rows["minute_change"] = player_rows.expected_minutes - player_rows.baseline_minutes
-                    player_state_diagnostics = player_state["diagnostics"]
-                    # The rotations and display maps are now independent of the
-                    # full source history; release the RAPM/source frames before
-                    # loading score and pace histories in this same process.
-                    del player_state, player_name_map, team_name_map, profile_history
+                    prepared = cached_player_slate_inputs(
+                        str(prediction_date), fixture_records
+                    )
+                    player_rows = prepared["player_rows"]
+                    player_state_diagnostics = prepared["player_state_diagnostics"]
+                    profile_diagnostics = prepared["profile_diagnostics"]
+                    target_games = prepared["target_games"]
+                    injury_report = prepared["injury_report"]
+                    injury_manifest = prepared["injury_manifest"]
+                    unmatched_injury_rows = prepared["unmatched_injury_rows"]
+                    report_complete = prepared["report_complete"]
                     gc.collect()
+
 
                 with st.spinner("Calculating player scoring contributions and possession-based pace…"):
                     pace_history = cached_pace_history()
@@ -165,8 +222,8 @@ with tab_player_predictions:
                             prediction_date, pace_history, team_id_map,
                         )
                     player_scores, player_detail = build_player_scoring_projection(
-                        player_rows, rotation_result["target_games"], pace_by_game,
-                        official_report_complete=rotation_result["report_complete"],
+                        player_rows, target_games, pace_by_game,
+                        official_report_complete=report_complete,
                     )
                     fixture_display = fixtures[[
                         "game_key", "home_team", "away_team", "commence_time_utc"
@@ -187,9 +244,9 @@ with tab_player_predictions:
                         "players": player_detail,
                         "player_state_diagnostics": player_state_diagnostics,
                         "profile_diagnostics": profile_diagnostics,
-                        "injury_report": rotation_result["report_metadata"],
-                        "injury_manifest": rotation_result["manifest"],
-                        "unmatched_injury_rows": rotation_result["unmatched_report_rows"],
+                        "injury_report": injury_report,
+                        "injury_manifest": injury_manifest,
+                        "unmatched_injury_rows": unmatched_injury_rows,
                     }
                 st.success(f"Built player-driven projections for {len(fixtures)} scheduled games.")
         except Exception as exc:
