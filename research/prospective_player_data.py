@@ -262,11 +262,14 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
         "segment_reconstruction": segment_audit,
         "same_day_or_future_source_rows": 0,
     }
-    # Keep only compact player/team maps and histories needed by rotation
-    # projection; raw source frames and stint tables are no longer retained.
+    # Keep compact player/team maps, histories, and completed game IDs
+    # needed by rotation projection. The rotation builder checks fixture-key
+    # collisions against state['games']; retain only that column.
+    completed_games = g[["game_id"]].drop_duplicates().copy()
     del g, pn, tn, history
     gc.collect()
     return {
+        "games": completed_games,
         "player_names": player_names_current,
         "team_names": team_names_current,
         "rapm": ratings, "team_history": team_hist,
