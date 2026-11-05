@@ -261,7 +261,7 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
     }
     # Keep only compact player/team maps and histories needed by rotation
     # projection; raw source frames and stint tables are no longer retained.
-    del g, p, pn, tn, history
+    del g, pn, tn, history
     gc.collect()
     return {
         "player_names": player_names_current,
