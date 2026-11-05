@@ -4,8 +4,15 @@ on:
   push:
     branches:
       - "research/live-market-testbench"
+      - "research/live-player-strength-integration"
     paths:
       - "live_market_testbench.py"
+      - "research/live_player_strength.py"
+      - "research/live_player_strength_testbench.py"
+      - "research/prospective_player_data.py"
+      - "research/prospective_rotation_projection.py"
+      - "research/build_prospective_pregame_records.py"
+      - "tests/test_live_player_strength.py"
       - "live_market_testbench_engine.py"
       - "points_engine.py"
       - "points_engine_v3.py"
@@ -32,7 +39,7 @@ jobs:
       - name: Check out test-bench branch
         uses: actions/checkout@v4
         with:
-          ref: research/live-market-testbench
+          ref: ${{ github.ref_name }}
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -52,7 +59,7 @@ jobs:
             points_engine_v5.py \
             team_name_utils.py
       - name: Run unit tests
-        run: python -m pytest -q tests/test_live_market_testbench.py
+        run: python -m pytest -q tests/test_live_market_testbench.py tests/test_live_player_strength.py
       - name: Verify bundled historical score history
         run: |
           python - <<'PY'
