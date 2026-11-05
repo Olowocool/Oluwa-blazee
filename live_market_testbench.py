@@ -288,6 +288,13 @@ with tab_player_predictions:
             detail.expected_minutes - detail.baseline_minutes
         ).round(1)
         detail["Availability %"] = (detail.availability_probability * 100).round(0)
+        for column in [
+            "pts_per36", "ast_per36", "tov_per36", "oreb_per36", "dreb_per36",
+            "stl_per36", "blk_per36", "ts_eligible", "usage_eligible",
+            "three_pa_share", "three_pct", "free_throw_rate",
+        ]:
+            if column in detail:
+                detail[column] = pd.to_numeric(detail[column], errors="coerce").round(3)
         report_complete = bool(slate.get("injury_report", {}).get("complete", True))
         points_label = "Player expected points" if report_complete else "Provisional points signal — not a forecast"
         minutes_label = "Projected minutes" if report_complete else "Provisional minutes — availability unconfirmed"
@@ -307,6 +314,9 @@ with tab_player_predictions:
             minutes_label, "Minute change", "Player pre-pace points",
             points_label, "Offensive RAPM", "Defensive RAPM",
             "L20 points / 36", "L20 assists / 36", "L20 turnovers / 36",
+            "L20 offensive rebounds / 36", "L20 defensive rebounds / 36",
+            "L20 steals / 36", "L20 blocks / 36", "L20 true shooting %",
+            "L20 usage %", "L20 3PA share", "L20 3P %", "L20 free-throw rate",
             "profile_eligible", "Profile through",
         ]
         st.markdown("**Full projected player list and individual contributions**" if slate["injury_report"].get("complete", True) else "**Provisional player list — official availability not confirmed**")
@@ -322,6 +332,55 @@ with tab_player_predictions:
             file_name=f"player_driven_slate_{slate['target_date']}.csv",
             mime="text/csv", use_container_width=True,
         )
+        with st.expander("All model parameters, settings and formulas", expanded=True):
+            from research import v4_phase2_rotation as rotation_parameters
+            st.markdown("**Rotation and availability settings**")
+            st.json({
+                "player_minutes_window_games": rotation_parameters.PLAYER_MINUTES_WINDOW,
+                "player_minutes_half_life_games": rotation_parameters.PLAYER_MINUTES_HALF_LIFE,
+                "minimum_recent_role_minutes": rotation_parameters.MIN_ROTATION_MINUTES,
+                "minute_budget_per_team": 240.0,
+                "maximum_minutes_per_player": 48.0,
+                "status_prior_strength_games": rotation_parameters.STATUS_PRIOR_STRENGTH,
+                "official_status_priors": rotation_parameters.STATUS_PRIORS,
+                "minimum_player_profiled_minutes_share": 0.85,
+            })
+            st.markdown("**Player strength (RAPM) settings**")
+            st.json({
+                "ridge_alpha": rotation_parameters.RAPM_ALPHA,
+                "rating_recency_half_life_days": rotation_parameters.RATING_HALF_LIFE_DAYS,
+                "rating_refresh_days": rotation_parameters.RATING_REFRESH_DAYS,
+                "exposure_shrinkage_constant": rotation_parameters.RAPM_EXPOSURE_SHRINK,
+                "RAPM_output_units": "points per 100 possessions, shrunken by exposure",
+                "RAPM_role": "visible player-strength signal; not yet converted to a scoring adjustment",
+            })
+            st.markdown("**Player form and skill inputs**")
+            st.json({
+                "player_form_window": "last 20 prior games",
+                "profile_minimum_games": 5,
+                "profile_minimum_minutes": 60.0,
+                "counting_rates": [
+                    "points / 36", "assists / 36", "turnovers / 36",
+                    "offensive rebounds / 36", "defensive rebounds / 36",
+                    "steals / 36", "blocks / 36",
+                ],
+                "efficiency_and_style": [
+                    "true shooting %", "usage %", "three-point attempt share",
+                    "three-point %", "free-throw rate",
+                ],
+                "profile_data_cutoff": "strictly before the selected NBA date",
+            })
+            st.markdown("**Pace and scoring equation**")
+            st.json({
+                "pace_input": "possession-based expected matchup pace, last 10",
+                "pace_baseline": "league pace prior",
+                "pace_multiplier": "matchup pace / league pace",
+                "player_points": "expected minutes × prior L20 points per 36 ÷ 36",
+                "team_points": "sum eligible player points × (240 / profiled minutes) × pace multiplier",
+                "game_total": "home team points + away team points",
+                "minimum_profile_coverage": "85% of 240 team minutes on each side",
+            })
+            st.warning("These are the configured values used by the current research candidate. RAPM, efficiency and style metrics are displayed as signals; only player points per 36, projected minutes and pace currently enter the numeric total.")
         with st.expander("Source coverage and point-in-time audit"):
             st.json(slate["player_state_diagnostics"])
             st.json(slate["profile_diagnostics"])
