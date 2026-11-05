@@ -429,10 +429,10 @@ with tab_players:
                         game_features.append({
                             "Game": f"{fixture.away_team} @ {fixture.home_team}",
                             "Projected matchup pace": pace.get("expected_matchup_pace_l10"),
-                            "Home offensive delta": home.iloc[0].features["off_delta"],
-                            "Home defensive delta": home.iloc[0].features["def_delta"],
-                            "Away offensive delta": away.iloc[0].features["off_delta"],
-                            "Away defensive delta": away.iloc[0].features["def_delta"],
+                            "Home offensive delta": home.iloc[0]["features"]["off_delta"],
+                            "Home defensive delta": home.iloc[0]["features"]["def_delta"],
+                            "Away offensive delta": away.iloc[0]["features"]["off_delta"],
+                            "Away defensive delta": away.iloc[0]["features"]["def_delta"],
                             "Raw RAPM rotation signal (pts; uncalibrated)": raw_signal,
                             "Player calibration": "Not fitted — excluded from forecast",
                         })
