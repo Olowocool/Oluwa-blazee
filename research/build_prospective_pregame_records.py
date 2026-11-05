@@ -124,23 +124,39 @@ def build_v5_score_history(
         & (history.home_team.astype(str).str.strip() != "")
         & (history.away_team.astype(str).str.strip() != "")
     ].copy()
+    # Source precedence is explicit and auditable: canonical archive < public
+    # current-season feed < manually maintained score patches. Patches are
+    # correction records; they may resolve a lower-priority disagreement, but
+    # conflicting rows within the same source tier always fail closed.
+    history["_history_priority"] = history["_history_source"].map(
+        lambda source: 2 if str(source).replace("\\\\", "/").startswith("research/data/score_history_patch_")
+        else 1 if str(source).startswith("public_current_season_") else 0
+    )
     keys = ["game_date", "home_team", "away_team"]
-    conflicts = history.groupby(keys)[["home_score", "away_score"]].nunique(dropna=False)
+    conflicts = history.groupby(keys + ["_history_priority"])[
+        ["home_score", "away_score"]
+    ].nunique(dropna=False)
     conflict_mask = (conflicts > 1).any(axis=1)
     if conflict_mask.any():
         conflict_keys = conflicts.index[conflict_mask][:10]
-        examples = history.set_index(keys).loc[conflict_keys].reset_index()
-        detail_cols = keys + ["home_score", "away_score", "_history_source"]
-        details = examples[detail_cols].to_dict("records")
+        examples = history.set_index(keys + ["_history_priority"]).loc[conflict_keys].reset_index()
+        details = examples[
+            keys + ["_history_priority", "home_score", "away_score", "_history_source"]
+        ].to_dict("records")
         raise ValueError(
-            "Conflicting scores found for duplicate V5 history fixtures; "
+            "Conflicting scores within the same V5 history source tier; "
             f"first_examples={json.dumps(details, default=str)}"
         )
-    history = history.drop_duplicates(keys, keep="last")
-    history = history[history.game_date < target].copy()
-    if history.empty:
+    selected = history.sort_values(["_history_priority", "_history_source"]).drop_duplicates(
+        keys, keep="last"
+    )
+    selected.attrs["source_conflict_overrides"] = int(
+        history.groupby(keys)[["home_score", "away_score"]].nunique(dropna=False).gt(1).any(axis=1).sum()
+    )
+    selected = selected[selected.game_date < target].copy()
+    if selected.empty:
         raise ValueError("No strictly pre-target V5 score history remains")
-    return history[["game_date", "home_team", "away_team", "home_score", "away_score"]].sort_values(
+    return selected[["game_date", "home_team", "away_team", "home_score", "away_score"]].sort_values(
         ["game_date", "home_team", "away_team"]
     ).reset_index(drop=True)
 
