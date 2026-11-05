@@ -233,18 +233,28 @@ def test_player_calibration_applies_only_after_validation_gate(tmp_path):
         "status": "validated_challenger",
         "forecast_enabled": True,
         "training_cutoff_exclusive": "2026-07-01",
-        "features": ["home_off_delta", "expected_possessions"],
-        "rapm_feature_nonzero_rows": {"home_off_delta": 40, "raw_injury_total_delta": 30},
-        "standardizer": {"mean": [0.0, 100.0], "scale": [1.0, 2.0]},
-        "ridge": {"intercept": 0.5, "coefficients": [2.0, 1.0]},
+        "features": [
+            "home_off_delta", "home_def_delta", "away_off_delta",
+            "away_def_delta", "expected_possessions",
+        ],
+        "rapm_feature_nonzero_rows": {
+            "home_off_delta": 40, "home_def_delta": 35,
+            "away_off_delta": 38, "away_def_delta": 33,
+        },
+        "standardizer": {"mean": [0.0, 0.0, 0.0, 0.0, 100.0],
+                         "scale": [1.0, 1.0, 1.0, 1.0, 2.0]},
+        "ridge": {"intercept": 0.5, "coefficients": [2.0, 0.0, 0.0, 0.0, 1.0]},
         "validation": {"gate_passed": True, "games": 700, "dates": 120},
     }
     path = tmp_path / "calibration.json"
     path.write_text(json.dumps(artifact), encoding="utf-8")
 
     result = apply_player_strength_calibration(
-        220.0, {"home_off_delta": 1.0, "expected_possessions": 102.0},
-        "2026-11-05", path,
+        220.0, {
+            "home_off_delta": 1.0, "home_def_delta": 0.0,
+            "away_off_delta": 0.0, "away_def_delta": 0.0,
+            "expected_possessions": 102.0,
+        }, "2026-11-05", path,
     )
 
     assert result["available"] is True
