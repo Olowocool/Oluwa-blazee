@@ -119,13 +119,18 @@ with tab_live:
 
     st.divider()
     st.subheader("Prediction stack: V5 baseline, market probabilities and evidence-gated decision")
-    score_upload_live = st.file_uploader("Upload historical NBA scores CSV to calculate V5 projections", type=["csv"], key="score_live")
-    if score_upload_live is not None and not captured.empty:
+    score_upload_live = st.file_uploader("Optional: upload a newer historical scores CSV (otherwise the bundled project history is used)", type=["csv"], key="score_live")
+    if not captured.empty:
         try:
-            with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as handle:
-                handle.write(score_upload_live.getvalue())
-                score_path = handle.name
-            history = load_score_history(score_path)
+            if score_upload_live is not None:
+                with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as handle:
+                    handle.write(score_upload_live.getvalue())
+                    score_path = handle.name
+                history = load_score_history(score_path)
+                st.caption("Using your uploaded score-history override.")
+            else:
+                history = load_score_history()
+                st.caption(f"Using bundled project score history: {len(history):,} games through {history.game_date.max().date()}.")
             team_map = load_team_id_map()
             pace_history = load_pace_history()
             latest_rows = captured.sort_values("observed_at_utc").groupby(["game_key", "bookmaker"], as_index=False).tail(1)
@@ -227,13 +232,15 @@ with tab_live:
             )
         except Exception as exc:
             st.error(f"V5 projection could not be calculated: {type(exc).__name__}: {exc}")
-    elif score_upload_live is None:
-        st.caption("Upload the historical score file and capture the current odds board to generate projected team scores, total points, market differences, and directional Over/Under signals for upcoming games.")
+    else:
+        st.caption("Capture the current odds board to generate projected team scores, pace-adjusted totals, market differences and directional Over/Under signals. The bundled score history is used by default.")
 
 with tab_validation:
     st.subheader("Run the complete historical validation")
     st.write("Upload the historical score file and the saved market-snapshot archive. The archive can be downloaded from the Live market tab and combined across sessions.")
-    score_upload = st.file_uploader("Historical NBA scores CSV", type=["csv"], key="score_validation")
+    score_upload = st.file_uploader("Optional: override the bundled historical NBA scores CSV", type=["csv"], key="score_validation")
+    bundled_score_path = Path(__file__).resolve().parent / "data" / "historical_nba_scores.csv"
+    score_history_available = score_upload is not None or bundled_score_path.is_file()
     snapshot_upload = st.file_uploader("Market snapshots archive CSV", type=["csv"], key="snapshots_validation")
     captured_frame = pd.DataFrame(st.session_state.captured_market_rows)
     if snapshot_upload is not None:
@@ -261,16 +268,19 @@ with tab_validation:
 
     run_pace_validation = st.button(
         "Run historical V5 vs V5 + pace evaluation",
-        disabled=(score_upload is None),
+        disabled=(not score_history_available),
         use_container_width=True,
     )
     if run_pace_validation:
         with st.spinner("Building point-in-time possession features and evaluating the pace challenger…"):
             try:
-                with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as handle:
-                    handle.write(score_upload.getvalue())
-                    score_path_for_pace = handle.name
-                pace_scores = load_score_history(score_path_for_pace)
+                if score_upload is not None:
+                    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as handle:
+                        handle.write(score_upload.getvalue())
+                        score_path_for_pace = handle.name
+                    pace_scores = load_score_history(score_path_for_pace)
+                else:
+                    pace_scores = load_score_history()
                 pace_source = load_pace_history()
                 pace_team_map = load_team_id_map()
                 pace_rows, pace_summary = evaluate_pace_challenger(
@@ -299,7 +309,7 @@ with tab_validation:
     run_validation = st.button(
         "Run Objectives 5, 6 and 7",
         type="primary",
-        disabled=(score_upload is None or archive.empty),
+        disabled=(not score_history_available or archive.empty),
         use_container_width=True,
     )
     if run_validation:
@@ -309,7 +319,10 @@ with tab_validation:
                     root = Path(temp)
                     score_path = root / "historical_nba_scores.csv"
                     snapshot_path = root / "market_snapshots.csv"
-                    score_path.write_bytes(score_upload.getvalue())
+                    if score_upload is not None:
+                        score_path.write_bytes(score_upload.getvalue())
+                    else:
+                        score_path.write_bytes(bundled_score_path.read_bytes())
                     archive.to_csv(snapshot_path, index=False)
                     empty_patch_dir = root / "empty_score_patches"
                     empty_patch_dir.mkdir()
@@ -375,12 +388,9 @@ with tab_players:
     else:
         target_dates = sorted(pd.to_datetime(player_market.game_date, errors="coerce").dropna().dt.date.astype(str).unique())
         player_target_date = st.selectbox("Player diagnostics target date", target_dates)
-        if score_upload_live is None:
-            st.info("Upload the historical NBA scores CSV in the Live market tab before building player-adjusted comparisons.")
         run_player_diagnostics = st.button(
             "Build player-strength and full-rotation diagnostics",
             type="primary",
-            disabled=(score_upload_live is None),
             use_container_width=True,
         )
         if run_player_diagnostics:
@@ -388,10 +398,13 @@ with tab_players:
                 try:
                     from research.prospective_player_data import build_pregame_player_state
                     from research.prospective_rotation_projection import build_target_date_rotations
-                    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as score_handle:
-                        score_handle.write(score_upload_live.getvalue())
-                        player_score_path = score_handle.name
-                    player_score_history = load_score_history(player_score_path)
+                    if score_upload_live is not None:
+                        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as score_handle:
+                            score_handle.write(score_upload_live.getvalue())
+                            player_score_path = score_handle.name
+                        player_score_history = load_score_history(player_score_path)
+                    else:
+                        player_score_history = load_score_history()
                     target_fixtures = player_market.copy()
                     target_fixtures["game_date"] = pd.to_datetime(target_fixtures.game_date, errors="coerce").dt.normalize()
                     target_fixtures = target_fixtures[target_fixtures.game_date.eq(pd.Timestamp(player_target_date))]
