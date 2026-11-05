@@ -147,9 +147,9 @@ def build_v5_score_history(
             "Conflicting scores within the same V5 history source tier; "
             f"first_examples={json.dumps(details, default=str)}"
         )
-    selected = history.sort_values(["_history_priority", "_history_source"]).drop_duplicates(
-        keys, keep="first"
-    )
+    selected = history.sort_values(
+        ["_history_priority", "_history_source"], ascending=[False, True]
+    ).drop_duplicates(keys, keep="first")
     selected.attrs["source_conflict_overrides"] = int(
         history.groupby(keys)[["home_score", "away_score"]].nunique(dropna=False).gt(1).any(axis=1).sum()
     )
