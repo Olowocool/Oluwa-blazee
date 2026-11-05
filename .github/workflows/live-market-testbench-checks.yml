@@ -23,7 +23,9 @@ on:
       - "research/prospective_rotation_projection.py"
       - "tests/test_live_market_testbench.py"
       - "tests/test_prospective_player_data.py"
-      - "requirements.txt"
+      - "tests/test_rapm_rotation_attachment.py"
+      - "research/v4_phase2_rotation.py"
+      - "requirements-testbench.txt"
       - ".github/workflows/live-market-testbench-checks.yml"
 
 jobs:
