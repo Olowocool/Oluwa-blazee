@@ -118,7 +118,7 @@ with tab_live:
         )
 
     st.divider()
-    st.subheader("Prediction stack: V5 baseline, market probabilities and evidence-gated decision")
+    st.subheader("Prediction stack: V5 baseline + possession-based pace challenger")
     score_upload_live = st.file_uploader("Optional: upload a newer historical scores CSV (otherwise the bundled project history is used)", type=["csv"], key="score_live")
     if not captured.empty:
         try:
@@ -132,7 +132,11 @@ with tab_live:
                 history = load_score_history()
                 st.caption(f"Using bundled project score history: {len(history):,} games through {history.game_date.max().date()}.")
             team_map = load_team_id_map()
-            pace_history = load_pace_history()
+            try:
+                pace_history = load_pace_history()
+            except Exception as pace_exc:
+                pace_history = None
+                st.warning(f"Pace source unavailable; showing V5 baseline without a pace adjustment. {type(pace_exc).__name__}: {pace_exc}")
             latest_rows = captured.sort_values("observed_at_utc").groupby(["game_key", "bookmaker"], as_index=False).tail(1)
             projections = []
             cache = {"v3": {}, "v4": {}}
@@ -421,7 +425,11 @@ with tab_players:
                     player_rows["defensive_rapm_minute_delta"] = player_rows.d_delta_contribution
                     summaries = pd.DataFrame(rotation_result["summaries"])
                     team_map = load_team_id_map()
-                    pace_source = load_pace_history()
+                    try:
+                        pace_source = load_pace_history()
+                    except Exception as pace_exc:
+                        pace_source = None
+                        st.warning(f"Pace source unavailable; player diagnostics will show RAPM features without a pace-derived raw signal. {type(pace_exc).__name__}: {pace_exc}")
                     game_features = []
                     v5_cache = {"v3": {}, "v4": {}}
                     for fixture in target_fixtures.itertuples(index=False):
