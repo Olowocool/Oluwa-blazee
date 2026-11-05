@@ -51,10 +51,12 @@ def build_v5_score_history(
         raise FileNotFoundError(f"Canonical V5 historical score file not found: {base_path}")
     base_frame = pd.read_csv(base_path)
     base_frame["_history_source"] = str(base_path)
+    base_frame["_history_priority"] = 0
     frames = [base_frame]
     for path in sorted(patches_path.glob("score_history_patch_*.csv")):
         patch_frame = pd.read_csv(path)
         patch_frame["_history_source"] = str(path)
+        patch_frame["_history_priority"] = 2
         frames.append(patch_frame)
 
     games = state["games"].copy()
@@ -107,6 +109,7 @@ def build_v5_score_history(
         raise ValueError("Current-season V5 history has unmapped teams or missing scores")
     current_history = current[["game_date", "home_team", "away_team", "home_score", "away_score"]].copy()
     current_history["_history_source"] = f"public_current_season_{current_season}"
+    current_history["_history_priority"] = 1
     frames.append(current_history)
 
     history = pd.concat(frames, ignore_index=True)
@@ -128,10 +131,6 @@ def build_v5_score_history(
     # current-season feed < manually maintained score patches. Patches are
     # correction records; they may resolve a lower-priority disagreement, but
     # conflicting rows within the same source tier always fail closed.
-    history["_history_priority"] = history["_history_source"].map(
-        lambda source: 2 if "/research/data/score_history_patch_" in ("/" + str(source).replace("\\\\", "/").lstrip("/"))
-        else 1 if str(source).startswith("public_current_season_") else 0
-    )
     keys = ["game_date", "home_team", "away_team"]
     conflicts = history.groupby(keys + ["_history_priority"])[
         ["home_score", "away_score"]
