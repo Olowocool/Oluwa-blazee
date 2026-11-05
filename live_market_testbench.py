@@ -305,7 +305,7 @@ with tab_player_predictions:
             })
         detail = detail.rename(columns={
             "full_name": "Team", "name": "Player", "status": "Official status",
-            "o_rapm": "Offensive RAPM", "d_rapm": "Defensive RAPM",
+            "o_rapm": "Offensive RAPM", "d_rapm": "Defensive RAPM", "net_rapm": "Net RAPM",
             "pts_per36": "L20 points / 36", "ast_per36": "L20 assists / 36",
             "tov_per36": "L20 turnovers / 36",
             "oreb_per36": "L20 offensive rebounds / 36",
@@ -323,7 +323,7 @@ with tab_player_predictions:
         wanted = [
             "Team", "Player", "rotation_rank", "Official status", "Availability %",
             minutes_label, "Minute change", "Player pre-pace points",
-            points_label, "Offensive RAPM", "Defensive RAPM",
+            points_label, "Offensive RAPM", "Defensive RAPM", "Net RAPM",
             "L20 points / 36", "L20 assists / 36", "L20 turnovers / 36",
             "L20 offensive rebounds / 36", "L20 defensive rebounds / 36",
             "L20 steals / 36", "L20 blocks / 36", "L20 true shooting %",
