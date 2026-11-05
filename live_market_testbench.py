@@ -213,6 +213,8 @@ with tab_player_predictions:
             "away_player_score": "Player model away points",
             "player_driven_total": "Player-driven total",
             "home_profiled_minutes_share": "Home profile minutes coverage",
+            "home_profile_coverage_scale": "Home profile coverage scale",
+            "away_profile_coverage_scale": "Away profile coverage scale",
             "away_profiled_minutes_share": "Away profile minutes coverage",
             "home_offensive_rapm": "Home weighted offensive RAPM",
             "home_defensive_rapm": "Home weighted defensive RAPM",
@@ -245,8 +247,8 @@ with tab_player_predictions:
             slate["scores"].game_id.eq(selected_game_id)
         ].iloc[0]
         st.markdown("**Visible scoring mathematics**")
-        st.latex(r"p_i = M_i \\times \\frac{PTS_{L20,i}/36}{1}")
-        st.latex(r"P_{team} = \\left(\\sum_{i \\in eligible} p_i\\right) \\times \\frac{Pace_{matchup}}{Pace_{league}}")
+        st.latex(r"p_i = M_i \times \frac{PTS_{L20,i}}{36}")
+        st.latex(r"P_{team} = \left(\sum_{i \in eligible} p_i\right) \times \frac{240}{M_{profiled}} \times \frac{Pace_{matchup}}{Pace_{league}}")
         st.latex(r"P_{game} = P_{home} + P_{away}")
         st.caption(
             "Mᵢ is availability-adjusted projected minutes; PTS_L20,i/36 is the player's "
