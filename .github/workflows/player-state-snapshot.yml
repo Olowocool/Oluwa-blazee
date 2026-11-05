@@ -35,18 +35,19 @@ jobs:
       - name: Build point-in-time player state
         run: |
           TARGET_DATE="$(date -u +%F)"
+          echo "TARGET_DATE=$TARGET_DATE" >> "$GITHUB_ENV"
           python research/build_player_state_snapshot.py --target-date "$TARGET_DATE"
       - name: Publish compact snapshot on data-only branch
-        env:
-          TARGET_DATE: ${{ env.TARGET_DATE }}
         run: |
+          mkdir -p /tmp/player-state-publish
+          cp outputs/player_state_snapshot/latest.json.gz /tmp/player-state-publish/latest.json.gz
+          cp outputs/player_state_snapshot/latest.json.gz.manifest.json /tmp/player-state-publish/manifest.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout --orphan snapshot-publish
           git rm -rf . >/dev/null 2>&1 || true
-          mkdir -p .
-          cp outputs/player_state_snapshot/latest.json.gz ./latest.json.gz
-          cp outputs/player_state_snapshot/latest.json.gz.manifest.json ./manifest.json
+          cp /tmp/player-state-publish/latest.json.gz ./latest.json.gz
+          cp /tmp/player-state-publish/manifest.json ./manifest.json
           git add latest.json.gz manifest.json
-          git commit -m "Publish NBA player-state snapshot ${TARGET_DATE}"
+          git commit -m "Publish NBA player-state snapshot $TARGET_DATE"
           git push --force origin HEAD:refs/heads/research/player-state-snapshots
