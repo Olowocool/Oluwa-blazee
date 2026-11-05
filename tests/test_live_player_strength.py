@@ -19,6 +19,10 @@ def sample_calibration():
         "training_last_date": "2026-06-30",
         "training_games": 900,
         "features": list(FEATURES),
+        "rapm_feature_diagnostics": {
+            name: {"nonzero_training_rows": 500, "standard_deviation": 0.25}
+            for name in FEATURES[:4]
+        },
         "imputer": {"statistics": [0.0] * len(FEATURES)},
         "standardizer": {"mean": [0.0] * len(FEATURES),
                          "scale": [1.0] * len(FEATURES)},
@@ -67,3 +71,23 @@ def test_loader_rejects_future_training_cutoff(tmp_path):
 def test_prediction_rejects_missing_features():
     with pytest.raises(ValueError, match="keys/order"):
         predict_player_adjusted_total(228.0, {"home_off_delta": 1.0}, sample_calibration())
+
+
+def test_loader_rejects_calibration_without_real_rapm_signal(tmp_path):
+    payload = sample_calibration()
+    payload["rapm_feature_diagnostics"]["home_off_delta"] = {
+        "nonzero_training_rows": 0, "standard_deviation": 0.0
+    }
+    path = tmp_path / "calibration.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="no usable variation in RAPM"):
+        load_calibration(path)
+
+
+def test_loader_rejects_legacy_calibration_missing_rapm_diagnostics(tmp_path):
+    payload = sample_calibration()
+    payload.pop("rapm_feature_diagnostics")
+    path = tmp_path / "calibration.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="lacks verified nonzero RAPM"):
+        load_calibration(path)
