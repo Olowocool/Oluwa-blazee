@@ -53,6 +53,15 @@ if "last_pace_rows" not in st.session_state:
 if "player_diagnostics" not in st.session_state:
     st.session_state.player_diagnostics = None
 
+pace_evidence_path = Path(__file__).resolve().parent / "research" / "live_market_pace_backtest_summary.json"
+if st.session_state.last_pace_validation is None and pace_evidence_path.is_file():
+    try:
+        st.session_state.last_pace_validation = json.loads(
+            pace_evidence_path.read_text(encoding="utf-8")
+        )
+    except Exception:
+        st.session_state.last_pace_validation = None
+
 with st.sidebar:
     st.subheader("Live market capture")
     st.write("Source: DunkAPI public NBA odds board. This does not use paid DunkAPI API credits.")
@@ -443,6 +452,30 @@ with tab_players:
         "production, betting or staking decisions. V5+pace and V5+player are separate challengers; do not "
         "add their adjustments together without a separately validated combined model."
     )
+    calibration_path = Path(__file__).resolve().parent / "research" / "live_player_strength_calibration.json"
+    if calibration_path.is_file():
+        historical_calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
+        historical_validation = historical_calibration.get("validation") or {}
+        if historical_validation:
+            historical_ci = historical_validation.get("date_cluster_ci_95", [float("nan"), float("nan")])
+            historical_cols = st.columns(4)
+            historical_cols[0].metric("Player OOS games", f"{historical_validation.get('games', 0):,}")
+            historical_cols[1].metric("OOS dates", f"{historical_validation.get('dates', 0):,}")
+            historical_cols[2].metric(
+                "MAE change vs V5",
+                f"{historical_validation.get('mae_change_player_minus_v5', float('nan')):+.2f}",
+            )
+            historical_cols[3].metric(
+                "Historical gate",
+                "PASS" if historical_validation.get("gate_passed") else "SHADOW",
+            )
+            st.caption(
+                f"Combined player challenger date-cluster 95% CI: "
+                f"[{historical_ci[0]:+.2f}, {historical_ci[1]:+.2f}] · "
+                f"Artifact status: {historical_calibration.get('status')} · "
+                f"Forecast enabled: {bool(historical_calibration.get('forecast_enabled'))}. "
+                "This remains a research-only shadow estimate."
+            )
     player_market = pd.DataFrame(st.session_state.captured_market_rows)
     if player_market.empty:
         st.info("Capture a market snapshot first to load the upcoming fixtures.")
