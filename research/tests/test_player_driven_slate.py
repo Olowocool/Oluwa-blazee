@@ -93,6 +93,21 @@ class PlayerDrivenSlateTests(unittest.TestCase):
             places=6,
         )
 
+    def test_incomplete_official_report_withholds_total_even_with_good_profiles(self):
+        target_games = pd.DataFrame([{
+            "game_id": "g1", "home_team_id": "home", "away_team_id": "away"
+        }])
+        pace = {"g1": {
+            "available": True,
+            "expected_matchup_pace_l10": 100.0,
+            "league_pace_prior": 100.0,
+        }}
+        summary, _ = build_player_scoring_projection(
+            self._players(9), target_games, pace, official_report_complete=False
+        )
+        self.assertTrue(pd.isna(summary.iloc[0].player_driven_total))
+        self.assertIn("injury report incomplete", summary.iloc[0].forecast_status)
+
     def test_inadequate_profile_coverage_withholds_candidate_total(self):
         target_games = pd.DataFrame([{
             "game_id": "g1", "home_team_id": "home", "away_team_id": "away"
