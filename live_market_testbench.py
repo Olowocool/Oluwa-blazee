@@ -15,7 +15,7 @@ from research.collect_public_odds_snapshots import PAGE_URL, parse_odds_page
 from research.objective5_market_comparison import run as run_objective5
 from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
-from live_market_testbench_engine import PACE_LAST10_BETA, apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
+from live_market_testbench_engine import PACE_LAST10_BETA, apply_live_market_freshness, apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
 
 CAPTURE_MAX_PAGE_AGE_MINUTES = 75  # DunkAPI public board refreshes hourly.
 LIVE_MARKET_MAX_PAGE_AGE_MINUTES = 20  # Keep the stricter gate for live-market eligibility.
@@ -101,15 +101,8 @@ with tab_live:
     else:
         captured["observed_at_utc"] = pd.to_datetime(captured["observed_at_utc"], utc=True, errors="coerce")
         latest = captured.sort_values("observed_at_utc").groupby(["game_key", "bookmaker"], as_index=False).tail(1)
-        now_utc = pd.Timestamp.now(tz="UTC")
-        latest["published_as_of_utc"] = pd.to_datetime(latest["published_as_of_utc"], utc=True, errors="coerce")
-        latest["commence_time_utc"] = pd.to_datetime(latest["commence_time_utc"], utc=True, errors="coerce")
-        latest["Observation age (min)"] = (now_utc - latest["observed_at_utc"]).dt.total_seconds() / 60.0
-        latest["Publication age (min)"] = (now_utc - latest["published_as_of_utc"]).dt.total_seconds() / 60.0
-        latest["Live quote eligible"] = (
-            latest["Observation age (min)"].between(0, LIVE_MARKET_MAX_PAGE_AGE_MINUTES)
-            & latest["Publication age (min)"].between(0, LIVE_MARKET_MAX_PAGE_AGE_MINUTES)
-            & latest["commence_time_utc"].gt(now_utc)
+        latest = apply_live_market_freshness(
+            latest, max_age_minutes=LIVE_MARKET_MAX_PAGE_AGE_MINUTES
         )
         display = latest[[
             "game_date", "commence_time_utc", "away_team", "home_team", "bookmaker",
