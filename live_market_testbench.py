@@ -151,20 +151,15 @@ with tab_player_predictions:
                     team_id_map = load_team_id_map()
                     model_cache = {"v3": {}, "v4": {}}
                     pace_by_game = {}
-                    internal_baselines = []
                     for fixture in fixtures.itertuples(index=False):
                         parts = calculate_game_components(
                             fixture.home_team, fixture.away_team, prediction_date,
                             score_history, pace_history, team_id_map, use_pace=True,
                             h2h_mode="off", rest_mode="off", v5_cache=model_cache,
                         )
+                        # Reuse only the possession-based pace estimate. The
+                        # player-driven tab does not display or use V5 totals.
                         pace_by_game[str(fixture.game_key)] = parts["pace"]
-                        internal_baselines.append({
-                            "game_id": str(fixture.game_key),
-                            "V5 baseline total": float(parts["raw_total"]),
-                            "V5 + pace reference": float(parts["composed"]["selected_prediction"]),
-                            "V5 pace adjustment": float(parts["composed"]["pace_adjustment_used"]),
-                        })
                     player_scores, player_detail = build_player_scoring_projection(
                         player_rows, rotation_result["target_games"], pace_by_game,
                         official_report_complete=rotation_result["report_complete"],
@@ -176,9 +171,6 @@ with tab_player_predictions:
                     fixture_display = fixture_display.drop(columns="game_key")
                     player_scores = player_scores.merge(
                         fixture_display, on="game_id", how="left", validate="one_to_one"
-                    ).merge(pd.DataFrame(internal_baselines), on="game_id", how="left", validate="one_to_one")
-                    player_scores["player_vs_v5pace_delta"] = (
-                        player_scores.player_driven_total - player_scores["V5 + pace reference"]
                     )
                     player_detail["game_id"] = player_detail.game_id.astype(str)
                     player_detail = player_detail.merge(
@@ -227,18 +219,21 @@ with tab_player_predictions:
             "matchup_pace": "Expected matchup pace",
             "league_pace": "League pace",
             "pace_factor": "Pace multiplier",
-            "V5 + pace reference": "Internal V5 + pace reference",
-            "player_vs_v5pace_delta": "Player model signal vs internal reference (pts)",
+            "home_player_baseline_points": "Home player baseline points",
+            "away_player_baseline_points": "Away player baseline points",
+            "home_rapm_adjustment_points": "Home RAPM adjustment points",
+            "away_rapm_adjustment_points": "Away RAPM adjustment points",
         })
         st.dataframe(summary[[
             "Tip (Lagos)", "Away", "Home", "Player model away points",
             "Player model home points", "Player-driven total",
+            "Home player baseline points", "Home RAPM adjustment points",
+            "Away player baseline points", "Away RAPM adjustment points",
             "Expected matchup pace", "League pace", "Pace multiplier",
             "Home profile minutes coverage", "Away profile minutes coverage", "Home profile coverage scale", "Away profile coverage scale",
             "Home weighted offensive RAPM", "Home weighted defensive RAPM",
             "Away weighted offensive RAPM", "Away weighted defensive RAPM",
-            "V5 baseline total", "V5 pace adjustment", "Internal V5 + pace reference",
-            "Player model signal vs internal reference (pts)", "forecast_status",
+            "forecast_status",
         ]], use_container_width=True, hide_index=True)
         game_options = {
             f"{row.away_team} @ {row.home_team}": str(row.game_id)
@@ -254,13 +249,16 @@ with tab_player_predictions:
         ].iloc[0]
         st.markdown("**Visible scoring mathematics**")
         st.latex(r"p_i = M_i \times \frac{PTS_{L20,i}}{36}")
-        st.latex(r"P_{team} = \left(\sum_{i \in eligible} p_i\right) \times \frac{240}{M_{profiled}} \times \frac{Pace_{matchup}}{Pace_{league}}")
+        st.latex(r"B_{team} = \left(\sum_{i \in eligible} p_i\right) \times \frac{240}{M_{profiled}} \times \frac{Pace_{matchup}}{Pace_{league}}")
+        st.latex(r"R_{team} = \frac{Pace_{matchup}}{100} \times \left[\sum_i \frac{M_i}{48} O_RAPM_i + \sum_j \frac{M_j}{48} D_RAPM_j\right]")
+        st.latex(r"P_{team} = B_{team} + R_{team}")
         st.latex(r"P_{game} = P_{home} + P_{away}")
         st.caption(
             "Mᵢ is availability-adjusted projected minutes; PTS_L20,i/36 is the player's "
-            "prior-20-game points rate per 36 minutes. The pace multiplier uses both teams' "
-            "strictly pregame possession-based pace. RAPM values are visible strength signals, "
-            "not yet converted into points because the combined player calibration has not passed its historical gate."
+            "prior-20-game points rate per 36 minutes. RAPM is converted directly from its "
+            "native points-per-100-possession units using projected player minutes and matchup pace. "
+            "Other box-score and shooting metrics remain visible explanatory profile signals; they are "
+            "not added again as separate point adjustments because that would double-count overlapping production."
         )
         team_cols = st.columns(3)
         team_cols[0].metric(
@@ -283,6 +281,8 @@ with tab_player_predictions:
         ].copy()
         detail["Player expected points"] = detail.player_expected_points.round(2)
         detail["Player pre-pace points"] = detail.player_expected_points_pre_pace.round(2)
+        detail["Offensive RAPM points adjustment"] = detail.player_offensive_rapm_points_adjustment.round(3)
+        detail["Defensive RAPM effect on opponent points"] = detail.player_defensive_rapm_opponent_points_adjustment.round(3)
         detail["Projected minutes"] = detail.expected_minutes.round(1)
         detail["Minute change"] = (
             detail.expected_minutes - detail.baseline_minutes
@@ -323,7 +323,9 @@ with tab_player_predictions:
         wanted = [
             "Team", "Player", "rotation_rank", "Official status", "Availability %",
             minutes_label, "Minute change", "Player pre-pace points",
-            points_label, "Offensive RAPM", "Defensive RAPM", "Net RAPM",
+            points_label, "Offensive RAPM points adjustment",
+            "Defensive RAPM effect on opponent points",
+            "Offensive RAPM", "Defensive RAPM", "Net RAPM",
             "L20 points / 36", "L20 assists / 36", "L20 turnovers / 36",
             "L20 offensive rebounds / 36", "L20 defensive rebounds / 36",
             "L20 steals / 36", "L20 blocks / 36", "L20 true shooting %",
@@ -363,7 +365,7 @@ with tab_player_predictions:
                 "rating_refresh_days": rotation_parameters.RATING_REFRESH_DAYS,
                 "exposure_shrinkage_constant": rotation_parameters.RAPM_EXPOSURE_SHRINK,
                 "RAPM_output_units": "points per 100 possessions, shrunken by exposure",
-                "RAPM_role": "visible player-strength signal; not yet converted to a scoring adjustment",
+                "RAPM_role": "active scoring adjustment in native points-per-100-possession units; player minutes weight each player's on-court effect",
             })
             st.markdown("**Player form and skill inputs**")
             st.json({
@@ -387,21 +389,23 @@ with tab_player_predictions:
                 "pace_baseline": "league pace prior",
                 "pace_multiplier": "matchup pace / league pace",
                 "player_points": "expected minutes × prior L20 points per 36 ÷ 36",
-                "team_points": "sum eligible player points × (240 / profiled minutes) × pace multiplier",
+                "base_team_points": "sum eligible player points × (240 / profiled minutes) × (matchup pace / league pace)",
+                "team_RAPM_points_adjustment": "(matchup pace / 100) × [sum(team player minutes / 48 × offensive RAPM) + sum(opponent player minutes / 48 × defensive RAPM)]",
+                "team_points": "base team points + team RAPM points adjustment",
                 "game_total": "home team points + away team points",
                 "minimum_profile_coverage": "85% of 240 team minutes on each side",
             })
-            st.warning("These are the configured values used by the current research candidate. RAPM, efficiency and style metrics are displayed as signals; only player points per 36, projected minutes and pace currently enter the numeric total.")
+            st.info("Scoring inputs: player points/36, projected minutes, coverage scaling, possession pace, and the native-unit RAPM adjustment. Assists, turnovers, rebounds, steals, blocks, true shooting, usage and shot profile are exposed as player diagnostics; they are not assigned invented point weights or added separately on top of observed scoring.")
         with st.expander("Source coverage and point-in-time audit"):
             st.json(slate["player_state_diagnostics"])
             st.json(slate["profile_diagnostics"])
             st.json(slate["injury_report"])
             st.dataframe(slate["injury_manifest"], use_container_width=True, hide_index=True)
         st.warning(
-            "This is the first transparent player-driven candidate, not a validated final model. "
-            "It uses the latest official injury report and prior player scoring rates; RAPM is displayed "
-            "as a strength signal but is not yet included in the score adjustment. The player scoring "
-            "candidate must pass chronological historical evaluation before being treated as a reliable forecast."
+            "This remains a research candidate, not a production or betting-enabled forecast. "
+            "The displayed total is built from player scoring rates, projected rotation minutes, pace, "
+            "and the explicit native-unit RAPM adjustment. Diagnostic player metrics are visible but are "
+            "not given arbitrary coefficients."
         )
 
 with tab_live:
