@@ -16,6 +16,9 @@ from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
 from live_market_testbench_engine import calculate_game_components, load_score_history, load_team_id_map
 
+CAPTURE_MAX_PAGE_AGE_MINUTES = 75  # DunkAPI public board refreshes hourly.
+LIVE_MARKET_MAX_PAGE_AGE_MINUTES = 20  # Keep the stricter gate for live-market eligibility.
+
 st.set_page_config(page_title="NBA Totals Research Test Bench", page_icon="🏀", layout="wide")
 st.title("NBA Totals — Real-Game Prediction & Research Bench")
 st.caption("Upcoming NBA game projections using frozen V5 scoring, live sportsbook totals, and chronological validation. Research only.")
@@ -35,7 +38,7 @@ with st.sidebar:
     st.subheader("Live market capture")
     st.write("Source: DunkAPI public NBA odds board. This does not use paid DunkAPI API credits.")
     capture = st.button("Capture current market snapshot", type="primary", use_container_width=True)
-    st.caption("Capture repeatedly before tip-off. Objective 5 selects only valid DraftKings observations at least 120 minutes before tip.")
+    st.caption("The public board refreshes hourly. Capture archives the latest published page up to 75 minutes old; quotes older than 20 minutes are clearly marked as archive-only and must not be treated as fresh live-market inputs. Objective 5 separately enforces its T−120 entry rule.")
     st.divider()
     st.subheader("Research rules")
     st.write("Bookmaker: DraftKings")
@@ -48,15 +51,35 @@ with st.sidebar:
 
 if capture:
     try:
-        response = requests.get(PAGE_URL, headers={"User-Agent": "OluwaBlazee-NBA-Research-TestBench/1.0"}, timeout=30)
+        response = requests.get(
+            PAGE_URL,
+            headers={
+                "User-Agent": "OluwaBlazee-NBA-Research-TestBench/1.0",
+                "Accept": "text/html",
+                "Cache-Control": "no-cache, no-store, max-age=0",
+                "Pragma": "no-cache",
+            },
+            timeout=30,
+        )
         response.raise_for_status()
         now = datetime.now(timezone.utc)
-        rows, meta = parse_odds_page(response.text, retrieved_at=now)
+        rows, meta = parse_odds_page(
+            response.text,
+            retrieved_at=now,
+            max_page_age_minutes=CAPTURE_MAX_PAGE_AGE_MINUTES,
+        )
         existing = {(r.get("game_key"), r.get("bookmaker"), r.get("observed_at_utc")) for r in st.session_state.captured_market_rows}
         added = [r for r in rows if (r.get("game_key"), r.get("bookmaker"), r.get("observed_at_utc")) not in existing]
         st.session_state.captured_market_rows.extend(added)
         st.session_state.last_capture_meta = meta
-        st.success(f"Captured {len(added)} bookmaker observations across {meta.get('games_seen', 0)} listed games.")
+        st.success(f"Archived {len(added)} bookmaker observations across {meta.get('games_seen', 0)} listed games.")
+        if float(meta.get("page_age_minutes", 0)) > LIVE_MARKET_MAX_PAGE_AGE_MINUTES:
+            st.warning(
+                f"This page was published {meta['page_age_minutes']} minutes ago. "
+                f"It has been saved for the research archive, but it is older than the "
+                f"{LIVE_MARKET_MAX_PAGE_AGE_MINUTES}-minute live-market freshness limit. "
+                "Do not treat it as a fresh live-market quote."
+            )
     except Exception as exc:
         st.error(f"Market capture failed: {type(exc).__name__}: {exc}")
 
@@ -77,7 +100,8 @@ with tab_live:
             st.caption(
                 f"Published as of {st.session_state.last_capture_meta.get('published_as_of_utc')} · "
                 f"Observed {st.session_state.last_capture_meta.get('observed_at_utc')} · "
-                f"Page age {st.session_state.last_capture_meta.get('page_age_minutes')} minutes"
+                f"Page age {st.session_state.last_capture_meta.get('page_age_minutes')} minutes · "
+                f"Live-market freshness limit {LIVE_MARKET_MAX_PAGE_AGE_MINUTES} minutes"
             )
         st.download_button(
             "Download captured market archive (CSV)",
