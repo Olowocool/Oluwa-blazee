@@ -87,6 +87,7 @@ def build_player_scoring_projection(
     pace_by_game: dict[str, dict[str, Any]],
     *,
     minimum_profiled_minutes_share: float = MIN_PROFILED_MINUTES_SHARE,
+    official_report_complete: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Calculate transparent player-minute scoring candidates and team totals.
 
@@ -168,7 +169,8 @@ def build_player_scoring_projection(
             team["scoring_profile_eligible"] = profiled
 
             complete = bool(
-                coverage >= minimum_profiled_minutes_share
+                official_report_complete
+                and coverage >= minimum_profiled_minutes_share
                 and np.isfinite(pace_factor)
                 and team.loc[profiled, "player_expected_points"].notna().all()
             )
@@ -225,7 +227,11 @@ def build_player_scoring_projection(
             "pace_factor": pace_factor,
             "home_minutes": team_results["home"]["projected_minutes"],
             "away_minutes": team_results["away"]["projected_minutes"],
-            "forecast_status": "candidate — not yet historically calibrated" if complete_game else "withheld — insufficient profile/pace coverage",
+            "forecast_status": (
+                "candidate — not yet historically calibrated" if complete_game
+                else "withheld — official injury report incomplete" if not official_report_complete
+                else "withheld — insufficient profile/pace coverage"
+            ),
         })
 
     detail = pd.concat(player_outputs, ignore_index=True) if player_outputs else pd.DataFrame()
