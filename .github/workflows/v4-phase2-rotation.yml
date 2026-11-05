@@ -7,6 +7,7 @@ on:
       - "research/live-player-strength-integration"
     paths:
       - "research/v4_phase2_rotation.py"
+      - "tests/test_v4_phase2_rotation_rapm.py"
       - "research/v4_phase1_core.py"
       - "research/build_player_intelligence_profiles.py"
       - "research/build_player_intelligence_ratings.py"
@@ -40,7 +41,7 @@ jobs:
       - name: Install research dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "pandas<3" "numpy<3" duckdb scikit-learn scipy requests PyPDF2 rapidfuzz "nbainjuries==1.1.1" pyarrow
+          python -m pip install "pandas<3" "numpy<3" duckdb scikit-learn scipy requests PyPDF2 rapidfuzz "nbainjuries==1.1.1" pyarrow pytest
       - name: Compile player and Phase 2 implementations
         run: |
           python -m py_compile research/build_player_intelligence_profiles.py
