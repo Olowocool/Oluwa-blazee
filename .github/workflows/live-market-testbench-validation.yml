@@ -9,6 +9,8 @@ on:
       - "live_market_testbench.py"
       - "research/live_player_strength.py"
       - "research/live_player_strength_testbench.py"
+      - "research/official_injury_report.py"
+      - "tests/test_official_injury_report.py"
       - "research/prospective_player_data.py"
       - "research/prospective_rotation_projection.py"
       - "research/build_prospective_pregame_records.py"
@@ -63,14 +65,16 @@ jobs:
             research/prospective_player_data.py \
             research/prospective_rotation_projection.py \
             research/build_prospective_pregame_records.py \
-            research/v4_phase2_rotation.py
+            research/v4_phase2_rotation.py \
+            research/official_injury_report.py
       - name: Run unit tests
-        run: python -m pytest -q tests/test_live_market_testbench.py tests/test_live_player_strength.py tests/test_live_player_strength_testbench.py tests/test_v4_phase2_rotation_rapm.py
+        run: python -m pytest -q tests/test_live_market_testbench.py tests/test_live_player_strength.py tests/test_live_player_strength_testbench.py tests/test_v4_phase2_rotation_rapm.py tests/test_official_injury_report.py
       - name: Smoke-test player-strength inference imports
         run: |
           python - <<'PY'
           import research.live_player_strength
           import research.live_player_strength_testbench
+          import research.official_injury_report
           import research.prospective_player_data
           import research.prospective_rotation_projection
           import research.build_prospective_pregame_records
