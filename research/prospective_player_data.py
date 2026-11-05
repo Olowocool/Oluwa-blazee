@@ -42,7 +42,10 @@ def _read(
     return con.execute(query).fetchdf()
 
 
-def _pregame_regular_game_filter(seasons: tuple[int, ...], target: pd.Timestamp) -> str:
+def _pregame_regular_game_filter(
+    seasons: tuple[int, ...], target: pd.Timestamp,
+    start_date: pd.Timestamp | None = None,
+) -> str:
     paths = ",".join(
         "'" + _parquet_url("stats", "games", season) + "'"
         for season in seasons
@@ -52,7 +55,8 @@ def _pregame_regular_game_filter(seasons: tuple[int, ...], target: pd.Timestamp)
         f"SELECT CAST(game_id AS VARCHAR) FROM read_parquet([{paths}], "
         "hive_partitioning=true, hive_types={'season': INTEGER}, union_by_name=true) "
         "WHERE lower(CAST(game_type AS VARCHAR)) = 'regular_season' "
-        f"AND CAST(game_date AS DATE) < DATE '{target.date().isoformat()}')"
+        + (f"AND CAST(game_date AS DATE) >= DATE '{start_date.date().isoformat()}' " if start_date is not None else "")
+        + f"AND CAST(game_date AS DATE) < DATE '{target.date().isoformat()}')"
     )
 
 
@@ -157,6 +161,10 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
             f"AND CAST(game_date AS DATE) < DATE '{target.date().isoformat()}'"
         )
         eligible_game_ids = _pregame_regular_game_filter(season_tuple, target)
+        # Keep full player logs for rotation history, but bound expensive lineup
+        # reconstruction to one year. RAPM has a 60-day recency half-life.
+        rapm_window_start = target - pd.Timedelta(days=365)
+        rapm_game_ids = _pregame_regular_game_filter(season_tuple, target, rapm_window_start)
         games = _read(
             con, "stats", "games", season_tuple,
             "season, game_id, game_date, game_type, home_team_id, away_team_id, neutral_site",
@@ -165,7 +173,7 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
         team_logs = _read(
             con, "stats", "team_game_logs", season_tuple,
             "season, game_id, game_date, team_id, opp_team_id, pts, poss, home",
-            where=eligible_game_ids,
+            where=rapm_game_ids,
         )
         player_logs = _read(
             con, "stats", "player_game_logs", season_tuple,
@@ -179,12 +187,12 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
         rotations = _read(
             con, "stats", "game_rotations", season_tuple,
             "season, game_id, team_id, player_id, period, in_time, out_time, plus_minus, matches_box_score",
-            where=eligible_game_ids,
+            where=rapm_game_ids,
         )
         events = _read(
             con, "stats", "game_events", season_tuple,
             "season, game_id, period, time, team_id, pts",
-            where=f"{eligible_game_ids} AND TRY_CAST(pts AS DOUBLE) > 0 "
+            where=f"{rapm_game_ids} AND TRY_CAST(pts AS DOUBLE) > 0 "
                   "AND TRY_CAST(time AS DOUBLE) IS NOT NULL",
         )
     finally:
@@ -204,6 +212,9 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
         "rotation_rows": int(len(r)), "event_rows": int(len(e)),
     }
     segments, segment_audit = phase2.build_lineup_segments(g, t, r, e)
+    # Release the high-volume event and rotation frames before sparse fitting.
+    del t, r, e, frames
+    gc.collect()
     segments["game_date"] = pd.to_datetime(segments.game_date).dt.normalize()
     if (segments.game_date >= target).any():
         raise RuntimeError("reconstructed RAPM stints contain same-day/future data")
@@ -216,8 +227,12 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
         raise RuntimeError(
             f"RAPM requires both season {current_season-1} and {current_season} stints"
         )
-    history = pd.concat([prior, current], ignore_index=True)
-    history = history[history.game_date < target].copy()
+    history = segments[
+        segments.season.isin([current_season - 1, current_season])
+        & segments.game_date.lt(target)
+    ].copy()
+    del segments
+    gc.collect()
     if len(history) < 1000 or history.game_date.max() >= target:
         raise RuntimeError("Insufficient or non-pregame lineup history for RAPM")
     ratings = phase2.fit_player_rapm(history, target)
@@ -233,20 +248,22 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
         "source_seasons": list(season_tuple),
         "completed_games": int(g.game_id.nunique()),
         **source_row_counts,
-        "rotation_rows": int(len(r)),
-        "event_rows": int(len(e)),
-        "validated_lineup_segments": int(len(segments)),
+        "rapm_window_start": str(rapm_window_start.date()),
+        "rotation_games_in_rapm_window": int(segment_audit.get("regular_season_games_with_rotation_rows", 0)),
+        "validated_lineup_segments": int(len(history)),
         "rapm_history_segments": int(len(history)),
         "rapm_max_history_date": str(history.game_date.max().date()),
         "rapm_players_rated": int(len(ratings)),
         "segment_reconstruction": segment_audit,
         "same_day_or_future_source_rows": 0,
     }
+    # Keep only compact player/team maps and histories needed by rotation
+    # projection; raw source frames and stint tables are no longer retained.
+    del g, p, pn, tn, history
+    gc.collect()
     return {
-        "games": g, "team_logs": t, "player_logs": p,
-        "player_names": pn, "team_names": team_names_current,
-        "team_names_all": tn,
-        "rotations": r, "events": e, "segments": segments,
+        "player_names": player_names_current,
+        "team_names": team_names_current,
         "rapm": ratings, "team_history": team_hist,
         "player_history": player_hist, "first_seen": first_seen,
         "diagnostics": diagnostics,
