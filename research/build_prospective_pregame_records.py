@@ -15,9 +15,14 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+# This script imports sibling research modules as top-level modules. Keep the
+# research directory on sys.path even when ROOT is inserted ahead of it.
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(1, str(ROOT))
 
 from prospective_player_snapshot import (
     immutable_snapshot,
