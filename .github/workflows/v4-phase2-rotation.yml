@@ -6,6 +6,7 @@ on:
       - "research/live-market-testbench"
     paths:
       - "research/v4_phase2_rotation.py"
+      - "research/stage_c_v5_residual_experiment.py"
       - "research/v4_phase1_core.py"
       - "research/build_player_intelligence_profiles.py"
       - "research/build_player_intelligence_ratings.py"
