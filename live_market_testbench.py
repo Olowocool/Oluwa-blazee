@@ -15,6 +15,7 @@ from research.objective5_market_comparison import run as run_objective5
 from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
 from live_market_testbench_engine import calculate_game_components, load_score_history, load_team_id_map
+from research.live_player_strength_testbench import render_player_strength_panel
 
 st.set_page_config(page_title="NBA Totals Research Test Bench", page_icon="🏀", layout="wide")
 st.title("NBA Totals — Real-Game Prediction & Research Bench")
@@ -191,6 +192,8 @@ with tab_live:
             st.error(f"V5 projection could not be calculated: {type(exc).__name__}: {exc}")
     elif score_upload_live is None:
         st.caption("Upload the historical score file and capture the current odds board to generate projected team scores, total points, market differences, and directional Over/Under signals for upcoming games.")
+
+    render_player_strength_panel(st.session_state.captured_market_rows)
 
 with tab_validation:
     st.subheader("Run the complete historical validation")
