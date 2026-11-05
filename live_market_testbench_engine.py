@@ -65,6 +65,42 @@ def _as_date(value: Any) -> pd.Timestamp:
     return parsed.normalize()
 
 
+
+def apply_live_market_freshness(
+    quotes: pd.DataFrame,
+    *,
+    now_utc: Any = None,
+    max_age_minutes: float = 20.0,
+) -> pd.DataFrame:
+    """Mark quotes eligible only when observation and page-publication ages are fresh."""
+    required = {"observed_at_utc", "published_as_of_utc", "commence_time_utc"}
+    missing = required.difference(quotes.columns)
+    if missing:
+        raise ValueError(f"Market quote frame is missing freshness fields: {sorted(missing)}")
+    max_age = _finite_float(max_age_minutes)
+    if max_age is None or max_age <= 0:
+        raise ValueError("max_age_minutes must be a positive finite number.")
+    now = pd.Timestamp.now(tz="UTC") if now_utc is None else pd.Timestamp(now_utc)
+    if now.tzinfo is None:
+        raise ValueError("now_utc must include a timezone.")
+    now = now.tz_convert("UTC")
+    result = quotes.copy()
+    for column in required:
+        result[column] = pd.to_datetime(result[column], utc=True, errors="coerce")
+    result["Observation age (min)"] = (
+        now - result["observed_at_utc"]
+    ).dt.total_seconds() / 60.0
+    result["Publication age (min)"] = (
+        now - result["published_as_of_utc"]
+    ).dt.total_seconds() / 60.0
+    result["Live quote eligible"] = (
+        result["Observation age (min)"].between(0.0, max_age)
+        & result["Publication age (min)"].between(0.0, max_age)
+        & result["commence_time_utc"].gt(now)
+    )
+    return result
+
+
 def nba_season_start_year(value: Any) -> int:
     ts = _as_date(value)
     return int(ts.year if ts.month >= 10 else ts.year - 1)
