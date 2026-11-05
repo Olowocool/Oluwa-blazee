@@ -705,11 +705,11 @@ def apply_player_strength_calibration(
             "reason": "Player challenger has not passed the chronological out-of-sample accuracy gate.",
             "validation": validation,
         }
+    names = payload.get("features") or []
     nonzero = payload.get("rapm_feature_nonzero_rows") or {}
     required_rapm = names[:4]
     if not required_rapm or any(int(nonzero.get(name, 0)) <= 0 for name in required_rapm):
         return {"available": False, "reason": "Calibration artifact lacks non-zero training coverage for all four home/away offensive and defensive RAPM features."}
-    names = payload.get("features") or []
     means = np.asarray(payload.get("standardizer", {}).get("mean", []), dtype=float)
     scales = np.asarray(payload.get("standardizer", {}).get("scale", []), dtype=float)
     coefficients = np.asarray(payload.get("ridge", {}).get("coefficients", []), dtype=float)
