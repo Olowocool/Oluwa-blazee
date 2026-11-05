@@ -174,40 +174,75 @@ def build_player_scoring_projection(
                 and np.isfinite(pace_factor)
                 and team.loc[profiled, "player_expected_points"].notna().all()
             )
-            expected_points = (
+            baseline_points = (
                 float(team.loc[profiled, "player_expected_points"].sum())
                 if complete else np.nan
             )
-            player_outputs.append(team)
             rapm_rows = team[team.expected_minutes.gt(0)]
             rapm_valid = rapm_rows.o_rapm.notna() & rapm_rows.d_rapm.notna()
             rapm_minutes = float(rapm_rows.loc[rapm_valid, "expected_minutes"].sum())
-            off_rapm = (
-                float(np.average(
-                    rapm_rows.loc[rapm_valid, "o_rapm"],
-                    weights=rapm_rows.loc[rapm_valid, "expected_minutes"],
-                )) if rapm_valid.any() and rapm_minutes > 0 else np.nan
+            # RAPM coefficients are points per 100 possessions. Since a full
+            # team rotation contains 240 player-minutes, minutes/48 weights
+            # each player's on-court impact into a five-player lineup effect.
+            off_rapm_p100 = (
+                float((rapm_rows.loc[rapm_valid, "expected_minutes"] / 48.0
+                       * rapm_rows.loc[rapm_valid, "o_rapm"]).sum())
+                if rapm_valid.any() and rapm_minutes > 0 else np.nan
             )
-            def_rapm = (
-                float(np.average(
-                    rapm_rows.loc[rapm_valid, "d_rapm"],
-                    weights=rapm_rows.loc[rapm_valid, "expected_minutes"],
-                )) if rapm_valid.any() and rapm_minutes > 0 else np.nan
+            def_rapm_p100 = (
+                float((rapm_rows.loc[rapm_valid, "expected_minutes"] / 48.0
+                       * rapm_rows.loc[rapm_valid, "d_rapm"]).sum())
+                if rapm_valid.any() and rapm_minutes > 0 else np.nan
             )
+            team["player_offensive_rapm_points_adjustment"] = (
+                team.expected_minutes / 48.0 * team.o_rapm * matchup_pace / 100.0
+                if np.isfinite(matchup_pace) else np.nan
+            )
+            team["player_defensive_rapm_opponent_points_adjustment"] = (
+                team.expected_minutes / 48.0 * team.d_rapm * matchup_pace / 100.0
+                if np.isfinite(matchup_pace) else np.nan
+            )
+            player_outputs.append(team)
             team_results[side] = {
-                "expected_points": expected_points,
+                "baseline_points": baseline_points,
+                "expected_points": np.nan,
+                "rapm_adjustment_points": np.nan,
                 "profiled_minutes_share": coverage,
                 "offensive_rapm_minutes_weighted": off_rapm,
                 "defensive_rapm_minutes_weighted": def_rapm,
+                "offensive_rapm_p100": off_rapm_p100,
+                "defensive_rapm_p100": def_rapm_p100,
                 "complete": complete,
                 "projected_minutes": minutes_total,
                 "profiled_minutes": profiled_minutes,
                 "profile_coverage_scale": coverage_scale,
             }
 
+        # Offense RAPM is the scoring team's impact; opponent defense RAPM
+        # is the opposing lineup's impact on points allowed. Both coefficients
+        # already have points-per-100-possession units, so no fitted weight is
+        # invented: convert directly using the matchup possession estimate.
+        for side, opponent in (("home", "away"), ("away", "home")):
+            if (team_results[side]["complete"] and team_results[opponent]["complete"]
+                    and np.isfinite(matchup_pace)
+                    and np.isfinite(team_results[side]["offensive_rapm_p100"])
+                    and np.isfinite(team_results[opponent]["defensive_rapm_p100"])):
+                adjustment = matchup_pace / 100.0 * (
+                    team_results[side]["offensive_rapm_p100"]
+                    + team_results[opponent]["defensive_rapm_p100"]
+                )
+                team_results[side]["rapm_adjustment_points"] = float(adjustment)
+                team_results[side]["expected_points"] = float(
+                    team_results[side]["baseline_points"] + adjustment
+                )
+
         complete_game = team_results["home"]["complete"] and team_results["away"]["complete"]
         summaries.append({
             "game_id": game_id,
+            "home_player_baseline_points": team_results["home"]["baseline_points"],
+            "away_player_baseline_points": team_results["away"]["baseline_points"],
+            "home_rapm_adjustment_points": team_results["home"]["rapm_adjustment_points"],
+            "away_rapm_adjustment_points": team_results["away"]["rapm_adjustment_points"],
             "home_player_score": team_results["home"]["expected_points"],
             "away_player_score": team_results["away"]["expected_points"],
             "player_driven_total": (
