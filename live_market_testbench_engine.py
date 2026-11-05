@@ -295,7 +295,7 @@ def load_pace_history() -> dict[str, Any]:
         int(datasets["team_game_logs"]["last_season"]),
         int(datasets["games"]["last_season"]),
     )
-    start = max(first, last - 2)
+    start = max(first, last - 3)
     seasons = list(range(start, last + 1))
     if not seasons:
         raise RuntimeError("NBA possession source has no usable recent seasons.")
