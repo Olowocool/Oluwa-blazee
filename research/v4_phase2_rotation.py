@@ -628,6 +628,25 @@ def status_probability(status, history, game_date):
     return float((played + STATUS_PRIOR_STRENGTH * prior) / (n + STATUS_PRIOR_STRENGTH))
 
 
+def attach_player_rapm_ratings(rotation: pd.DataFrame, rapm: dict) -> pd.DataFrame:
+    """Attach fitted player RAPM values; absent columns must not mask the lookup."""
+    if "player_id" not in rotation.columns:
+        raise ValueError("Rotation rows require player_id before RAPM attachment")
+    result = rotation.copy()
+    player_ids = result["player_id"].astype(str)
+    for column in ("o_rapm", "d_rapm"):
+        mapped = player_ids.map(
+            lambda player_id: rapm.get(str(player_id), {}).get(column, 0.0)
+        )
+        if column in result.columns:
+            existing = pd.to_numeric(result[column], errors="coerce")
+            result[column] = existing.where(existing.notna(), mapped)
+        else:
+            result[column] = mapped
+        result[column] = pd.to_numeric(result[column], errors="coerce").fillna(0.0)
+    return result
+
+
 def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reported_ids, team_hist, player_hist, first_seen, actual_lookup, rapm, team_actual_totals):
     candidate_ids = {
         pid for (tid, pid), first in first_seen.items()
@@ -695,11 +714,7 @@ def rotation_for_team(game_id, team_id, game_date, report_rows, opposing_reporte
         "is_rotation_tail": False,
     })
     d["is_rotation_tail"] = d["is_rotation_tail"].fillna(False).astype(bool)
-    for col in ("o_rapm", "d_rapm"):
-        if col not in d:
-            d[col] = 0.0
-        fallback = d["player_id"].map(lambda pid: rapm.get(str(pid), {}).get(col, 0.0))
-        d[col] = d[col].fillna(fallback).fillna(0.0)
+    d = attach_player_rapm_ratings(d, rapm)
     d["o_delta_contribution"] = (d.expected_minutes - d.baseline_minutes) / 48.0 * d.o_rapm
     d["d_delta_contribution"] = (d.expected_minutes - d.baseline_minutes) / 48.0 * d.d_rapm
     features = {
