@@ -368,3 +368,35 @@ def test_conflicting_score_patches_at_same_priority_fail_closed(tmp_path):
 
     with pytest.raises(ValueError, match="Conflicting scores within the same source priority"):
         load_score_history(base, patch_dir=patch_dir)
+
+
+def test_stale_player_calibration_contract_fails_closed_without_stopping_diagnostics(tmp_path):
+    import json
+
+    names = [
+        "home_off_delta", "home_def_delta", "away_off_delta", "away_def_delta",
+        "raw_injury_total_delta", "expected_possessions",
+    ]
+    artifact = {
+        "schema_version": "stage-c-live-player-strength-calibration-v1",
+        "status": "research_shadow_only",
+        "forecast_enabled": False,
+        "training_cutoff_exclusive": "2026-07-01",
+        "features": names,
+        "rapm_feature_nonzero_rows": {name: 5 for name in names[:4]},
+        "standardizer": {"mean": [0.0] * 6, "scale": [1.0] * 6},
+        "ridge": {"intercept": 0.0, "coefficients": [0.1] * 6},
+        "validation": {"gate_passed": False},
+    }
+    path = tmp_path / "calibration.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    result = apply_player_strength_calibration(
+        220.0, {
+            "home_off_delta": 1.0, "home_def_delta": 0.0,
+            "away_off_delta": 0.0, "away_def_delta": 0.0,
+        }, "2026-11-05", path,
+    )
+
+    assert result["available"] is False
+    assert "feature contract differs" in result["reason"]
