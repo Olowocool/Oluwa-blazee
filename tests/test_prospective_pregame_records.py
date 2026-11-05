@@ -103,6 +103,46 @@ class ProspectivePregameRecordTests(unittest.TestCase):
             self.assertEqual(current.home_score, 112)
             self.assertEqual(current.away_score, 108)
 
+    def test_verified_score_patch_overrides_conflicting_public_feed(self):
+        state = {
+            "games": pd.DataFrame([{
+                "season": 2027, "game_id": "okc-dal-20261028", "game_date": "2026-10-28",
+                "home_team_id": "DAL", "away_team_id": "OKC",
+            }]),
+            "team_logs": pd.DataFrame([
+                {"season": 2027, "game_id": "okc-dal-20261028", "team_id": "DAL", "pts": 118},
+                {"season": 2027, "game_id": "okc-dal-20261028", "team_id": "OKC", "pts": 96},
+            ]),
+            "team_names": pd.DataFrame([
+                {"season": 2027, "team_id": "DAL", "full_name": "Dallas Mavericks"},
+                {"season": 2027, "team_id": "OKC", "full_name": "Oklahoma City Thunder"},
+            ]),
+            "team_names_all": pd.DataFrame([
+                {"season": 2027, "team_id": "DAL", "full_name": "Dallas Mavericks"},
+                {"season": 2027, "team_id": "OKC", "full_name": "Oklahoma City Thunder"},
+            ]),
+        }
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            base = root / "historical.csv"
+            base.write_text(
+                "game_date,home_team,away_team,home_score,away_score\\n",
+                encoding="utf-8",
+            )
+            patches = root / "research" / "data"
+            patches.mkdir(parents=True)
+            (patches / "score_history_patch_verified.csv").write_text(
+                "game_date,home_team,away_team,home_score,away_score\\n"
+                "2026-10-28,Dallas Mavericks,Oklahoma City Thunder,120,96\\n",
+                encoding="utf-8",
+            )
+            history = build_v5_score_history(
+                state, "2026-11-05", base_history_path=base, patch_dir=patches
+            )
+            game = history.iloc[0]
+            self.assertEqual(game.home_score, 120)
+            self.assertEqual(game.away_score, 96)
+
     def test_joins_market_report_and_both_team_rotations(self):
         records = build_pregame_records(
             self.quotes, self.state, self.rotation, self.target, "2026-11-05T20:05:00Z"
