@@ -675,6 +675,137 @@ def calculate_game_components(
     }
 
 
+
+def evaluate_pace_challenger(
+    score_history: pd.DataFrame,
+    pace_history: dict[str, Any],
+    team_id_map: dict[str, str],
+    *,
+    bootstrap_resamples: int = 2000,
+    seed: int = 73,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Chronological paired V5 vs V5+pace evaluation on supported source seasons.
+
+    Every game uses score history strictly before its target date and pace inputs
+    are independently filtered to the same strict cutoff by pace_component().
+    Confidence intervals resample game dates, not individual games.
+    """
+    required = {"game_date", "home_team", "away_team", "home_score", "away_score"}
+    missing = required - set(score_history.columns)
+    if missing:
+        raise ValueError(f"Score history missing columns: {sorted(missing)}")
+    if bootstrap_resamples < 100:
+        raise ValueError("At least 100 date-cluster bootstrap resamples are required.")
+    history = score_history.copy()
+    history["game_date"] = pd.to_datetime(history["game_date"], errors="coerce").dt.normalize()
+    for col in ("home_score", "away_score"):
+        history[col] = pd.to_numeric(history[col], errors="coerce")
+    if history[["game_date", "home_score", "away_score"]].isna().any().any():
+        raise ValueError("Score history contains invalid dates or scores.")
+    history = history.sort_values("game_date").reset_index(drop=True)
+    supported = set(int(x) for x in pace_history.get("seasons_loaded", []))
+    rows: list[dict[str, Any]] = []
+    skipped_unsupported = 0
+    skipped_unavailable = 0
+    failed = 0
+    cache: dict[str, Any] = {"v3": {}, "v4": {}}
+    prior_by_date: dict[pd.Timestamp, pd.DataFrame] = {}
+    for row in history.itertuples(index=False):
+        target = pd.Timestamp(row.game_date).normalize()
+        season_end = nba_season_start_year(target) + 1
+        if season_end not in supported:
+            skipped_unsupported += 1
+            continue
+        if target not in prior_by_date:
+            prior_by_date[target] = history.loc[history.game_date < target].copy()
+        prior = prior_by_date[target]
+        if prior.empty or not (prior.game_date < target).all():
+            failed += 1
+            continue
+        try:
+            result = calculate_game_components(
+                str(row.home_team), str(row.away_team), target, prior,
+                pace_history, team_id_map, use_pace=True,
+                h2h_mode="off", rest_mode="off", v5_cache=cache,
+            )
+            if not result["pace"].get("available"):
+                skipped_unavailable += 1
+                continue
+            baseline = float(result["raw_total"])
+            challenger = float(result["composed"]["selected_prediction"])
+            actual = float(row.home_score) + float(row.away_score)
+            if not np.isfinite([baseline, challenger, actual]).all():
+                failed += 1
+                continue
+            rows.append({
+                "game_date": target,
+                "home_team": str(row.home_team),
+                "away_team": str(row.away_team),
+                "actual_total": actual,
+                "v5_total": baseline,
+                "pace_adjustment": float(result["pace"]["adjustment"]),
+                "pace_adjusted_total": challenger,
+                "expected_matchup_pace": float(result["pace"]["expected_matchup_pace_l10"]),
+                "league_pace_prior": float(result["pace"]["league_pace_prior"]),
+                "history_cutoff": str(target.date()),
+            })
+        except Exception:
+            failed += 1
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        raise ValueError(
+            "No games could be evaluated with available point-in-time pace data. "
+            f"unsupported_season_games={skipped_unsupported}, "
+            f"pace_unavailable_games={skipped_unavailable}, failed_games={failed}"
+        )
+
+    def metrics(prediction: np.ndarray, actual: np.ndarray) -> dict[str, float]:
+        error = prediction - actual
+        return {
+            "games": int(len(error)),
+            "mae": float(np.mean(np.abs(error))),
+            "rmse": float(np.sqrt(np.mean(error ** 2))),
+            "bias_prediction_minus_actual": float(np.mean(error)),
+            "within_5_points_pct": float(np.mean(np.abs(error) <= 5.0) * 100.0),
+            "within_10_points_pct": float(np.mean(np.abs(error) <= 10.0) * 100.0),
+        }
+
+    actual = frame.actual_total.to_numpy(dtype=float)
+    base = frame.v5_total.to_numpy(dtype=float)
+    adjusted = frame.pace_adjusted_total.to_numpy(dtype=float)
+    frame["v5_absolute_error"] = np.abs(base - actual)
+    frame["pace_absolute_error"] = np.abs(adjusted - actual)
+    frame["absolute_error_change_pace_minus_v5"] = frame.pace_absolute_error - frame.v5_absolute_error
+    date_groups = [
+        g.absolute_error_change_pace_minus_v5.to_numpy(dtype=float)
+        for _, g in frame.groupby("game_date", sort=True)
+    ]
+    rng = np.random.default_rng(seed)
+    bootstrap = np.empty(bootstrap_resamples, dtype=float)
+    for i in range(bootstrap_resamples):
+        chosen = rng.integers(0, len(date_groups), size=len(date_groups))
+        bootstrap[i] = np.concatenate([date_groups[j] for j in chosen]).mean()
+    lo, hi = np.quantile(bootstrap, [0.025, 0.975])
+    summary = {
+        "status": "evaluated",
+        "source_seasons": sorted(supported),
+        "evaluation_games": int(len(frame)),
+        "evaluation_dates": int(frame.game_date.nunique()),
+        "unsupported_season_games": int(skipped_unsupported),
+        "pace_unavailable_games": int(skipped_unavailable),
+        "failed_games": int(failed),
+        "v5_baseline": metrics(base, actual),
+        "v5_plus_pace": metrics(adjusted, actual),
+        "mae_change_pace_minus_v5": float(np.mean(np.abs(adjusted - actual) - np.abs(base - actual))),
+        "mae_change_date_cluster_bootstrap_95_ci": [float(lo), float(hi)],
+        "bootstrap_resamples": int(bootstrap_resamples),
+        "bootstrap_seed": int(seed),
+        "interpretation": "Negative MAE change favours V5+pace; positive favours V5. CI crossing zero is inconclusive.",
+        "strict_prior_date_history": bool((pd.to_datetime(frame.history_cutoff) == pd.to_datetime(frame.game_date)).all()),
+    }
+    return frame, summary
+
+
 def parse_current_totals_markets(
     events: list[dict[str, Any]],
     *,
