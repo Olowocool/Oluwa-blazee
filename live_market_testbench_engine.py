@@ -876,7 +876,9 @@ def evaluate_pace_challenger(
     for target_value, day_rows in history.groupby("game_date", sort=True):
         target = pd.Timestamp(target_value).normalize()
         season_end = nba_season_start_year(target) + 1
-        if season_end not in supported:
+        if season_end not in supported or (season_end - 1) not in supported:
+            # A target season requires its prior-season pace anchor; do not
+            # waste V5 calculations on a season the pace challenger cannot score.
             skipped_unsupported += int(len(day_rows))
             continue
         # Keep only one date's prior-history frame in memory at a time.
