@@ -814,6 +814,7 @@ def evaluate_pace_challenger(
                 "expected_matchup_pace": float(result["pace"]["expected_matchup_pace_l10"]),
                 "league_pace_prior": float(result["pace"]["league_pace_prior"]),
                 "history_cutoff": str(target.date()),
+                "prior_max_date": str(pd.Timestamp(prior.game_date.max()).date()),
             })
         except Exception:
             failed += 1
@@ -867,7 +868,7 @@ def evaluate_pace_challenger(
         "bootstrap_resamples": int(bootstrap_resamples),
         "bootstrap_seed": int(seed),
         "interpretation": "Negative MAE change favours V5+pace; positive favours V5. CI crossing zero is inconclusive.",
-        "strict_prior_date_history": bool((pd.to_datetime(frame.history_cutoff) == pd.to_datetime(frame.game_date)).all()),
+        "strict_prior_date_history": bool((pd.to_datetime(frame.prior_max_date) < pd.to_datetime(frame.game_date)).all()),
     }
     return frame, summary
 
