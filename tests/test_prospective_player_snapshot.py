@@ -36,6 +36,21 @@ class ProspectiveSnapshotTests(unittest.TestCase):
         d=self.odds(); d.loc[0,"observed_at_utc"]="2026-11-04T20:00:00Z"
         with self.assertRaises(ValueError): latest_draftkings_quotes(d,self.now)
 
+    def test_stale_publication_fails_even_when_observation_is_fresh(self):
+        d=self.odds()
+        d.loc[0,"published_as_of_utc"]="2026-11-04T21:30:00Z"
+        d.loc[0,"observed_at_utc"]="2026-11-04T21:59:00Z"
+        with self.assertRaisesRegex(ValueError, "both publication-age and observation-age"):
+            latest_draftkings_quotes(d,self.now)
+
+    def test_fresh_publication_and_observation_pass(self):
+        d=self.odds()
+        d.loc[0,"published_as_of_utc"]="2026-11-04T21:50:00Z"
+        d.loc[0,"observed_at_utc"]="2026-11-04T21:58:00Z"
+        q=latest_draftkings_quotes(d,self.now)
+        self.assertEqual(len(q),1)
+        self.assertEqual(float(q.iloc[0].publication_age_minutes),10.0)
+
     def test_team_alias_mapping(self):
         teams=pd.DataFrame([{"team_id":"1","full_name":"Los Angeles Clippers"},{"team_id":"2","full_name":"Los Angeles Lakers"}])
         self.assertEqual(map_odds_teams("LA Clippers","Los Angeles Lakers",teams),("1","2"))
