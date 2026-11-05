@@ -189,20 +189,20 @@ def test_pace_challenger_reports_paired_date_cluster_metrics(monkeypatch):
     ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"])
     history["game_date"] = pd.to_datetime(history.game_date)
 
-    def fake_components(home, away, target, prior, pace_history, team_map, **kwargs):
-        assert (prior.game_date < pd.Timestamp(target)).all()
+    def fake_v5(home, away, prior, *, game_date, _prepared_cache):
+        assert (prior.game_date < pd.Timestamp(game_date)).all()
+        return {"raw_total": 210.0, "history_cutoff": pd.Timestamp(game_date)}
+
+    def fake_pace(home, away, target, pace_history, team_map):
         return {
-            "raw_total": 210.0,
-            "composed": {"selected_prediction": 212.0},
-            "pace": {
-                "available": True,
-                "adjustment": 2.0,
-                "expected_matchup_pace_l10": 100.5,
-                "league_pace_prior": 99.8,
-            },
+            "available": True,
+            "adjustment": 2.0,
+            "expected_matchup_pace_l10": 100.5,
+            "league_pace_prior": 99.8,
         }
 
-    monkeypatch.setattr(engine, "calculate_game_components", fake_components)
+    monkeypatch.setattr(engine, "calculate_matchup_points_v5", fake_v5)
+    monkeypatch.setattr(engine, "pace_component", fake_pace)
     rows, summary = evaluate_pace_challenger(
         history, {"seasons_loaded": [2025, 2026]}, {}, bootstrap_resamples=200, seed=9
     )
