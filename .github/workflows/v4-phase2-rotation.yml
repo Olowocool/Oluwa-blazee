@@ -8,6 +8,8 @@ on:
       - ".github/workflows/v4-phase2-rotation.yml"
       - "research/v4_phase2_rotation.py"
       - "research/stage_c_v5_residual_experiment.py"
+      - "research/prospective_player_profiles.py"
+      - "research/build_live_combined_player_calibration.py"
       - "research/v4_phase1_core.py"
       - "research/build_player_intelligence_profiles.py"
       - "research/build_player_intelligence_ratings.py"
@@ -82,13 +84,13 @@ jobs:
         run: python research/v4_phase2_rotation.py
       - name: Build Stage C point-in-time player impact features
         run: python research/build_player_impact_features.py
-      - name: Refit player calibration after RAPM attachment regression fix
+      - name: Refit combined RAPM and player-profile calibration
         env:
           PYTHONUNBUFFERED: "1"
           STAGE_C_ARTIFACT_DIR: outputs/research
         run: |
-          python -m py_compile research/stage_c_v5_residual_experiment.py
-          python research/stage_c_v5_residual_experiment.py
+          python -m py_compile research/stage_c_v5_residual_experiment.py research/prospective_player_profiles.py research/build_live_combined_player_calibration.py
+          python research/build_live_combined_player_calibration.py
       - name: Commit corrected live player-strength calibration
         run: |
           git config user.name "github-actions[bot]"

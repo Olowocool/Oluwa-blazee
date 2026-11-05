@@ -780,7 +780,7 @@ def apply_player_strength_calibration(
     target_date: Any,
     calibration_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Apply only a chronologically validated RAPM/injury calibration artifact."""
+    """Apply the frozen Stage C player calibration with its training-time imputer."""
     source = Path(calibration_path) if calibration_path else ROOT / "research" / "live_player_strength_calibration.json"
     if not source.is_file():
         return {"available": False, "reason": "Validated player calibration artifact is missing."}
@@ -805,14 +805,17 @@ def apply_player_strength_calibration(
     means = np.asarray(payload.get("standardizer", {}).get("mean", []), dtype=float)
     scales = np.asarray(payload.get("standardizer", {}).get("scale", []), dtype=float)
     coefficients = np.asarray(payload.get("ridge", {}).get("coefficients", []), dtype=float)
+    imputer_statistics = np.asarray(
+        payload.get("imputer", {}).get("statistics", np.zeros(len(names))), dtype=float
+    )
     intercept = _finite_float(payload.get("ridge", {}).get("intercept"))
     if (
         not names or len(set(names)) != len(names)
         or len(means) != len(names) or len(scales) != len(names)
-        or len(coefficients) != len(names)
+        or len(coefficients) != len(names) or len(imputer_statistics) != len(names)
         or not np.isfinite(means).all() or not np.isfinite(scales).all()
-        or not np.isfinite(coefficients).all() or np.any(scales <= 0)
-        or intercept is None
+        or not np.isfinite(coefficients).all() or not np.isfinite(imputer_statistics).all()
+        or np.any(scales <= 0) or intercept is None
     ):
         raise ValueError("Player calibration artifact has invalid scaler or coefficient dimensions.")
     missing = [name for name in names if name not in feature_values]
@@ -822,9 +825,14 @@ def apply_player_strength_calibration(
             "reason": f"Calibration artifact feature contract differs from live inputs: {missing}",
             "validation": validation,
         }
-    values = np.asarray([_finite_float(feature_values[name]) for name in names], dtype=float)
+    raw_values = np.asarray(
+        [_finite_float(feature_values[name], default=np.nan) for name in names],
+        dtype=float,
+    )
+    imputed_mask = ~np.isfinite(raw_values)
+    values = np.where(imputed_mask, imputer_statistics, raw_values)
     if not np.isfinite(values).all():
-        raise ValueError("Player calibration input contains non-finite features.")
+        raise ValueError("Player calibration inputs remain non-finite after training-time imputation.")
     predicted_v5_error = float(intercept + np.dot((values - means) / scales, coefficients))
     adjusted_total = float(v5_total) - predicted_v5_error
     if not np.isfinite([v5_total, predicted_v5_error, adjusted_total]).all():
@@ -835,6 +843,7 @@ def apply_player_strength_calibration(
         "status": payload.get("status", "research_shadow_only"),
         "predicted_v5_error": predicted_v5_error,
         "player_adjusted_total": adjusted_total,
+        "imputed_features": [name for name, missing_value in zip(names, imputed_mask) if missing_value],
         "training_cutoff_exclusive": str(cutoff.date()),
         "validation": validation,
     }

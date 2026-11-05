@@ -227,6 +227,50 @@ def test_pace_challenger_fails_when_no_supported_games():
 
 
 
+def test_player_calibration_uses_training_imputer_for_missing_profile_value(tmp_path):
+    import json
+
+    artifact = {
+        "schema_version": "stage-c-live-player-strength-calibration-v1",
+        "status": "research_shadow_only",
+        "forecast_enabled": False,
+        "training_cutoff_exclusive": "2026-07-01",
+        "features": [
+            "home_off_delta", "home_def_delta", "away_off_delta",
+            "away_def_delta", "home_profile_expected_pts",
+        ],
+        "rapm_feature_nonzero_rows": {
+            "home_off_delta": 10, "home_def_delta": 10,
+            "away_off_delta": 10, "away_def_delta": 10,
+        },
+        "imputer": {"statistics": [0.0, 0.0, 0.0, 0.0, 10.0]},
+        "standardizer": {
+            "mean": [0.0, 0.0, 0.0, 0.0, 10.0],
+            "scale": [1.0, 1.0, 1.0, 1.0, 2.0],
+        },
+        "ridge": {"intercept": 0.5, "coefficients": [0.0, 0.0, 0.0, 0.0, 1.0]},
+        "validation": {"gate_passed": False},
+    }
+    path = tmp_path / "combined_player_calibration.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+    result = apply_player_strength_calibration(
+        220.0,
+        {
+            "home_off_delta": 0.1,
+            "home_def_delta": 0.2,
+            "away_off_delta": 0.3,
+            "away_def_delta": 0.4,
+            "home_profile_expected_pts": np.nan,
+        },
+        "2026-11-05",
+        path,
+    )
+    assert result["available"] is True
+    assert result["forecast_eligible"] is False
+    assert result["player_adjusted_total"] == pytest.approx(219.5)
+    assert result["imputed_features"] == ["home_profile_expected_pts"]
+
+
 def test_player_calibration_applies_only_after_validation_gate(tmp_path):
     import json
 

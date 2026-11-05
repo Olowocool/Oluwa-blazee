@@ -16,6 +16,7 @@ from research.objective5_market_comparison import run as run_objective5
 from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
 from live_market_testbench_engine import PACE_LAST10_BETA, apply_live_market_freshness, apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
+from research.prospective_player_profiles import PROFILE_FEATURES, aggregate_live_player_profile_features, load_live_player_profile_history
 
 CAPTURE_MAX_PAGE_AGE_MINUTES = 75  # DunkAPI public board refreshes hourly.
 LIVE_MARKET_MAX_PAGE_AGE_MINUTES = 20  # Keep the stricter gate for live-market eligibility.
@@ -26,6 +27,11 @@ st.set_page_config(page_title="NBA Totals Research Test Bench", page_icon="🏀"
 def cached_pace_history():
     """Cache the public possession-based pace source for one hour per app process."""
     return load_pace_history()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_live_player_profile_history(player_ids: tuple[str, ...], target_date: str):
+    """Cache strictly prior player-game profile rows for a target slate."""
+    return load_live_player_profile_history(player_ids, target_date)
 
 st.title("NBA Totals — Real-Game Prediction & Research Bench")
 st.caption("Upcoming NBA game projections using frozen V5 scoring, live sportsbook totals, and chronological validation. Research only.")
@@ -432,10 +438,10 @@ with tab_players:
         "240 regulation minutes."
     )
     st.warning(
-        "The player calibration may show an unvalidated shadow estimate so its parameter impact is visible. "
-        "It is eligible as a forecast only after passing chronological out-of-sample validation. "
-        "V5+pace and V5+player are separate challengers; do not add their adjustments together without "
-        "a separately validated combined model."
+        "The player calibration is a research-only shadow estimate. Historical out-of-sample accuracy is "
+        "reported, but historical player sources are not fully archived as-of-game; it is not used for "
+        "production, betting or staking decisions. V5+pace and V5+player are separate challengers; do not "
+        "add their adjustments together without a separately validated combined model."
     )
     player_market = pd.DataFrame(st.session_state.captured_market_rows)
     if player_market.empty:
@@ -466,7 +472,17 @@ with tab_players:
                     target_fixtures = target_fixtures[["game_key", "game_date", "away_team", "home_team"]].drop_duplicates()
                     player_state = build_pregame_player_state(player_target_date)
                     rotation_result = build_target_date_rotations(player_state, target_fixtures, player_target_date)
-                    player_rows = rotation_result["projections"].copy()
+                    rotation_rows = rotation_result["projections"].copy()
+                    profile_player_ids = tuple(sorted(rotation_rows.player_id.astype(str).unique()))
+                    with st.spinner("Loading strictly pregame player skill profiles from public player-game history…"):
+                        profile_history = cached_live_player_profile_history(
+                            profile_player_ids, player_target_date
+                        )
+                    profile_features_by_game, player_rows, profile_diagnostics = (
+                        aggregate_live_player_profile_features(
+                            rotation_result, player_target_date, profile_history
+                        )
+                    )
                     player_name_map = player_state["player_names"][["player_id", "name"]].drop_duplicates("player_id")
                     team_name_map = player_state["team_names"][["team_id", "full_name"]].drop_duplicates("team_id")
                     player_rows = player_rows.merge(player_name_map, on="player_id", how="left").merge(
@@ -520,6 +536,12 @@ with tab_players:
                             "home_players_excluded_by_opposing_report": float(home_features["players_excluded_by_opposing_report"]),
                             "away_players_excluded_by_opposing_report": float(away_features["players_excluded_by_opposing_report"]),
                         }
+                        profile_features = profile_features_by_game.get(str(fixture.game_key))
+                        if profile_features is None or set(profile_features) != set(PROFILE_FEATURES):
+                            raise RuntimeError(
+                                f"Live player-profile feature contract is incomplete for {fixture.game_key}"
+                            )
+                        player_feature_values.update(profile_features)
                         total_feature_delta = sum(
                             player_feature_values[key]
                             for key in ("home_off_delta", "home_def_delta", "away_off_delta", "away_def_delta")
@@ -556,13 +578,11 @@ with tab_players:
                                 if player_adjusted_total is not None else None
                             ),
                             "Player calibration status": (
-                                "Validated challenger" if player_calibration.get("forecast_eligible")
-                                else (
-                                    "Unvalidated shadow estimate — not used in decisions"
-                                    if player_calibration.get("available")
-                                    else player_calibration.get("reason", "Unavailable")
-                                )
+                                "Research shadow — not used in decisions"
+                                if player_calibration.get("available")
+                                else player_calibration.get("reason", "Unavailable")
                             ),
+                            "Player profile fields imputed": len(player_calibration.get("imputed_features", [])),
                             "Player OOS games": (player_calibration.get("validation") or {}).get("games"),
                             "Player OOS dates": (player_calibration.get("validation") or {}).get("dates"),
                             "Player MAE change vs V5": (player_calibration.get("validation") or {}).get("mae_change_player_minus_v5"),
@@ -571,6 +591,7 @@ with tab_players:
                     st.session_state.player_diagnostics = {
                         "diagnostics": player_state["diagnostics"],
                         "injury_report": rotation_result["report_metadata"],
+                        "profile_diagnostics": profile_diagnostics,
                         "game_features": pd.DataFrame(game_features),
                         "players": player_rows,
                     }
@@ -582,12 +603,14 @@ with tab_players:
             diagnostics = st.session_state.player_diagnostics
             st.markdown("**Pregame source and RAPM diagnostics**")
             st.json(diagnostics["diagnostics"])
+            st.markdown("**Point-in-time player skill-profile coverage**")
+            st.json(diagnostics["profile_diagnostics"])
             calibration_path = Path(__file__).resolve().parent / "research" / "live_player_strength_calibration.json"
             if calibration_path.is_file():
                 calibration_payload = json.loads(calibration_path.read_text(encoding="utf-8"))
                 calibration_features = calibration_payload.get("features", [])
                 live_feature_columns = set(diagnostics["game_features"].columns)
-                feature_contract_matches = len(calibration_features) == 14 and len(set(calibration_features)) == 14 and set(calibration_features).issubset(live_feature_columns)
+                feature_contract_matches = len(calibration_features) == 40 and len(set(calibration_features)) == 40 and set(calibration_features).issubset(live_feature_columns)
                 if not feature_contract_matches:
                     st.warning(
                         "The stored calibration artifact predates the current live player-feature contract. "
@@ -640,6 +663,10 @@ with tab_players:
                 "availability_probability", "baseline_minutes", "expected_minutes",
                 "minute_change", "o_rapm", "d_rapm",
                 "offensive_rapm_minute_delta", "defensive_rapm_minute_delta",
+                "profile_eligible", "profile_through_date", "prior_game_days",
+                "l20_pts_per36", "l20_ast_per36", "l20_tov_per36",
+                "l20_oreb_per36", "l20_dreb_per36", "l20_stl_per36",
+                "l20_blk_per36", "l20_ts_pct", "l20_usg_pct",
             ]].rename(columns={
                 "game_id": "Game", "full_name": "Team", "name": "Player",
                 "rotation_rank": "Rotation rank", "status": "Official status",
@@ -649,6 +676,18 @@ with tab_players:
                 "d_rapm": "Defensive RAPM (pts/100 poss)",
                 "offensive_rapm_minute_delta": "Offensive RAPM × minute delta (pts/100 poss)",
                 "defensive_rapm_minute_delta": "Defensive RAPM × minute delta (pts/100 poss)",
+                "profile_eligible": "Profile eligible",
+                "profile_through_date": "Profile through date",
+                "prior_game_days": "Prior player game-days",
+                "l20_pts_per36": "L20 points / 36",
+                "l20_ast_per36": "L20 assists / 36",
+                "l20_tov_per36": "L20 turnovers / 36",
+                "l20_oreb_per36": "L20 offensive rebounds / 36",
+                "l20_dreb_per36": "L20 defensive rebounds / 36",
+                "l20_stl_per36": "L20 steals / 36",
+                "l20_blk_per36": "L20 blocks / 36",
+                "l20_ts_pct": "L20 true shooting",
+                "l20_usg_pct": "L20 usage",
             })
             st.dataframe(display_players, use_container_width=True, hide_index=True)
             st.download_button(
