@@ -6,6 +6,7 @@ import pytest
 from live_market_testbench_engine import (
     _h2h_features,
     _rest_adjustments,
+    apply_live_market_freshness,
     apply_player_strength_calibration,
     append_paper_observations,
     compose_predictions,
@@ -400,3 +401,35 @@ def test_stale_player_calibration_contract_fails_closed_without_stopping_diagnos
 
     assert result["available"] is False
     assert "feature contract differs" in result["reason"]
+
+
+def test_live_quote_requires_fresh_observation_and_publication_and_future_tip():
+    now = pd.Timestamp("2026-11-05T10:00:00Z")
+    quotes = pd.DataFrame([
+        {
+            "observed_at_utc": "2026-11-05T09:50:00Z",
+            "published_as_of_utc": "2026-11-05T09:45:00Z",
+            "commence_time_utc": "2026-11-05T12:00:00Z",
+        },
+        {
+            "observed_at_utc": "2026-11-05T09:55:00Z",
+            "published_as_of_utc": "2026-11-05T09:25:00Z",
+            "commence_time_utc": "2026-11-05T12:00:00Z",
+        },
+        {
+            "observed_at_utc": "2026-11-05T09:30:00Z",
+            "published_as_of_utc": "2026-11-05T09:55:00Z",
+            "commence_time_utc": "2026-11-05T12:00:00Z",
+        },
+        {
+            "observed_at_utc": "2026-11-05T09:50:00Z",
+            "published_as_of_utc": "2026-11-05T09:45:00Z",
+            "commence_time_utc": "2026-11-05T09:59:00Z",
+        },
+    ])
+
+    result = apply_live_market_freshness(quotes, now_utc=now, max_age_minutes=20)
+
+    assert result["Live quote eligible"].tolist() == [True, False, False, False]
+    assert result.loc[0, "Observation age (min)"] == pytest.approx(10.0)
+    assert result.loc[0, "Publication age (min)"] == pytest.approx(15.0)
