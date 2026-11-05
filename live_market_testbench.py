@@ -132,7 +132,7 @@ with tab_player_predictions:
                     from research.prospective_player_data import build_pregame_player_state
                     from research.prospective_rotation_projection import build_target_date_rotations
                     player_state = build_pregame_player_state(prediction_date)
-                    rotation_result = build_target_date_rotations(player_state, fixtures, prediction_date)
+                    rotation_result = build_target_date_rotations(player_state, fixtures, prediction_date, allow_unconfirmed_report=True)
                     player_ids = tuple(sorted(rotation_result["projections"].player_id.astype(str).unique()))
                     profile_history = cached_live_player_profile_history(player_ids, str(prediction_date))
                     _, player_rows, profile_diagnostics = aggregate_live_player_profile_features(
@@ -166,7 +166,8 @@ with tab_player_predictions:
                             "V5 pace adjustment": float(parts["composed"]["pace_adjustment_used"]),
                         })
                     player_scores, player_detail = build_player_scoring_projection(
-                        player_rows, rotation_result["target_games"], pace_by_game
+                        player_rows, rotation_result["target_games"], pace_by_game,
+                        official_report_complete=rotation_result["report_complete"],
                     )
                     fixture_display = fixtures[[
                         "game_key", "home_team", "away_team", "commence_time_utc"
@@ -287,7 +288,7 @@ with tab_player_predictions:
             detail.expected_minutes - detail.baseline_minutes
         ).round(1)
         detail["Availability %"] = (detail.availability_probability * 100).round(0)
-        detail = detail.rename(columns={
+        if not slate.get("injury_report", {}).get("complete", True):\n            detail = detail.rename(columns={"Player expected points": "Provisional points signal — not a forecast"})\n        detail = detail.rename(columns={
             "full_name": "Team", "name": "Player", "status": "Official status",
             "o_rapm": "Offensive RAPM", "d_rapm": "Defensive RAPM",
             "pts_per36": "L20 points / 36", "ast_per36": "L20 assists / 36",
@@ -300,7 +301,7 @@ with tab_player_predictions:
             "L20 points / 36", "L20 assists / 36", "L20 turnovers / 36",
             "profile_eligible", "Profile through",
         ]
-        st.markdown("**Full projected player list and individual contributions**")
+        st.markdown("**Full projected player list and individual contributions**" if slate["injury_report"].get("complete", True) else "**Provisional player list — official availability not confirmed**")
         st.dataframe(
             detail[[c for c in wanted if c in detail.columns]].sort_values(
                 ["Team", "rotation_rank"]
