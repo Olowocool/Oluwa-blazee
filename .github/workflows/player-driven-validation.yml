@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - research/player-driven-game-predictions
+  pull_request:
+    branches:
+      - research/live-market-testbench
 
 permissions:
   contents: read
