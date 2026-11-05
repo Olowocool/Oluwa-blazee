@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
@@ -67,6 +67,24 @@ jobs:
         run: python research/v4_phase2_rotation.py
       - name: Build Stage C point-in-time player impact features
         run: python research/build_player_impact_features.py
+      - name: Refit player calibration after RAPM attachment regression fix
+        env:
+          PYTHONUNBUFFERED: "1"
+          STAGE_C_ARTIFACT_DIR: outputs/research
+        run: |
+          python -m py_compile research/stage_c_v5_residual_experiment.py
+          python research/stage_c_v5_residual_experiment.py
+      - name: Commit corrected live player-strength calibration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add research/live_player_strength_calibration.json
+          if git diff --cached --quiet; then
+            echo "Calibration unchanged; no commit required."
+            exit 0
+          fi
+          git commit -m "Refit live player calibration with corrected RAPM features"
+          git push origin HEAD:research/live-market-testbench
       - name: Upload full-rotation Stage C build evidence
         uses: actions/upload-artifact@v6
         with:
@@ -75,6 +93,7 @@ jobs:
             outputs/research/v4_phase2/
             outputs/research/player_intelligence_profiles/
             outputs/research/player_intelligence_stage_c/
+            outputs/research/stage_c_v5_comparison/
           if-no-files-found: error
           retention-days: 30
       - name: Download immutable frozen V5 prequential predictions
