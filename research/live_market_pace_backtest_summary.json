@@ -1,0 +1,43 @@
+{
+  "generated_at_utc": "2026-11-05T11:12:28.366Z",
+  "source_commit": "ea8200d90d51b1b95def6b12a920e6a66defe1a1",
+  "workflow_run_id": 42016099817,
+  "method": "Chronological point-in-time V5 versus V5+pace comparison; 2,000 date-cluster bootstrap resamples; all features strictly prior to target date.",
+  "status": "evaluated",
+  "source_seasons": [
+    2024,
+    2025,
+    2026,
+    2027
+  ],
+  "evaluation_games": 2542,
+  "evaluation_dates": 338,
+  "unsupported_season_games": 61344,
+  "pace_unavailable_games": 0,
+  "failed_games": 0,
+  "v5_baseline": {
+    "games": 2542,
+    "mae": 15.10107002360346,
+    "rmse": 18.931124468525397,
+    "bias_prediction_minus_actual": -0.5919669551534219,
+    "within_5_points_pct": 20.10228166797797,
+    "within_10_points_pct": 40.12588512981904
+  },
+  "v5_plus_pace": {
+    "games": 2542,
+    "mae": 14.929269495332889,
+    "rmse": 18.777542905895007,
+    "bias_prediction_minus_actual": -1.458206958848647,
+    "within_5_points_pct": 21.28245476003147,
+    "within_10_points_pct": 41.50275373721479
+  },
+  "mae_change_pace_minus_v5": -0.17180052827057224,
+  "mae_change_date_cluster_bootstrap_95_ci": [
+    -0.23399595764875047,
+    -0.1084187912125763
+  ],
+  "bootstrap_resamples": 2000,
+  "bootstrap_seed": 73,
+  "interpretation": "Negative MAE change favours V5+pace; positive favours V5. CI crossing zero is inconclusive.",
+  "strict_prior_date_history": true
+}
