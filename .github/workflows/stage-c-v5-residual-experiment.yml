@@ -12,10 +12,10 @@ on:
       artifact_run_id:
         description: "Successful Phase 2 / Stage C workflow run ID"
         required: true
-        default: "41907289358"
+        default: "41927525239"
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
@@ -32,9 +32,9 @@ jobs:
       - name: Download immutable Stage C evidence
         uses: actions/download-artifact@v4
         with:
-          name: nba-player-intelligence-stage-c
+          name: nba-player-intelligence-stage-c-full-rotation
           path: outputs/research/stage_c_artifact
-          run-id: ${{ inputs.artifact_run_id || '41907289358' }}
+          run-id: ${{ inputs.artifact_run_id || '41927525239' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install research dependencies
         run: |
@@ -47,6 +47,17 @@ jobs:
           PYTHONUNBUFFERED: "1"
           STAGE_C_ARTIFACT_DIR: outputs/research/stage_c_artifact
         run: python research/stage_c_v5_residual_experiment.py
+      - name: Commit generated live player-strength calibration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add research/live_player_strength_calibration.json
+          if git diff --cached --quiet; then
+            echo "Calibration file unchanged; no commit required."
+            exit 0
+          fi
+          git commit -m "Add point-in-time live player-strength calibration"
+          git push origin HEAD:research/live-market-testbench
       - name: Upload paired V5 comparison evidence
         uses: actions/upload-artifact@v6
         with:

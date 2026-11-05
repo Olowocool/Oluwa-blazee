@@ -209,6 +209,74 @@ def pipeline():
     ])
 
 
+def export_live_player_strength_calibration(data: pd.DataFrame) -> dict:
+    """Fit a frozen live RAPM/injury correction using only completed pre-2026-27 games."""
+    cutoff = pd.Timestamp("2026-07-01")
+    train = data.loc[pd.to_datetime(data.game_date).dt.normalize() < cutoff].copy()
+    train = train.dropna(subset=["v5_total", "actual_total"])
+    if len(train) < MIN_TRAIN_GAMES:
+        raise RuntimeError(f"Insufficient pre-2026-27 calibration rows: {len(train)}")
+    if train.duplicated(["season", "game_id"]).any():
+        raise RuntimeError("Duplicate historical game rows in player-strength calibration")
+    if not (pd.to_datetime(train.game_date).dt.normalize() < cutoff).all():
+        raise RuntimeError("Player-strength calibration includes same-day/future rows")
+
+    features = list(RAPM_INJURY_FEATURES)
+    model = pipeline()
+    target = train.v5_total.astype(float) - train.actual_total.astype(float)
+    model.fit(train[features], target)
+    imputer, scaler, ridge = (
+        model.named_steps["imputer"], model.named_steps["scale"], model.named_steps["ridge"]
+    )
+    payload = {
+        "schema_version": "stage-c-live-player-strength-calibration-v1",
+        "status": "research_shadow_only",
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "training_cutoff_exclusive": cutoff.date().isoformat(),
+        "training_first_date": pd.to_datetime(train.game_date).min().date().isoformat(),
+        "training_last_date": pd.to_datetime(train.game_date).max().date().isoformat(),
+        "training_games": int(len(train)),
+        "training_dates": int(pd.to_datetime(train.game_date).dt.normalize().nunique()),
+        "feature_family": "Stage C RAPM + injury + full-rotation features",
+        "features": features,
+        "imputer": {"strategy": "constant", "fill_value": 0.0,
+                    "statistics": [float(x) for x in imputer.statistics_]},
+        "standardizer": {"mean": [float(x) for x in scaler.mean_],
+                         "scale": [float(x) for x in scaler.scale_]},
+        "ridge": {"alpha": float(RIDGE_ALPHA), "intercept": float(ridge.intercept_),
+                  "coefficients": [float(x) for x in ridge.coef_]},
+        "target": "frozen_v5_total_minus_actual_total",
+        "prediction_formula": "player_adjusted_total = frozen_v5_total - predicted_v5_error",
+        "point_in_time_policy": "training date strictly before target; live player/RAPM history strictly before target",
+        "betting_enabled": False,
+        "probabilities_calibrated": False,
+        "profitability_claim": False,
+        "v5_modified": False,
+        "production_modified": False,
+        "paper_ledger_modified": False,
+    }
+    if not all(np.isfinite(payload["standardizer"]["mean"])):
+        raise RuntimeError("Non-finite player-strength calibration means")
+    if not all(np.isfinite(payload["standardizer"]["scale"])) or any(
+        x <= 0 for x in payload["standardizer"]["scale"]
+    ):
+        raise RuntimeError("Invalid player-strength calibration scales")
+    if not all(np.isfinite(payload["ridge"]["coefficients"])) or not np.isfinite(
+        payload["ridge"]["intercept"]
+    ):
+        raise RuntimeError("Non-finite player-strength calibration coefficients")
+
+    output_path = ROOT / "research/live_player_strength_calibration.json"
+    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print("LIVE_PLAYER_STRENGTH_CALIBRATION_JSON_BEGIN")
+    print(json.dumps(payload, separators=(",", ":")))
+    print("LIVE_PLAYER_STRENGTH_CALIBRATION_JSON_END")
+    return {"path": str(output_path), "training_games": payload["training_games"],
+            "training_first_date": payload["training_first_date"],
+            "training_last_date": payload["training_last_date"],
+            "feature_count": len(features), "status": payload["status"]}
+
+
 def main():
     for f in [PHASE2_DIR/"v4_phase2_game_features.csv", STAGEC_DIR/"stage_c_candidate_profiles.parquet", PROFILE_FILE]:
         if not f.is_file():
@@ -373,6 +441,8 @@ def main():
     if set(result.season.unique()) != set(TEST_SEASONS):
         raise RuntimeError(f"Expected both test seasons {TEST_SEASONS}, got {sorted(result.season.unique())}")
 
+    live_calibration = export_live_player_strength_calibration(data)
+
     overall = {"V5_frozen_control": metric(result.actual_total,result.v5_total)}
     candidate_results = {}
     for family in FAMILIES:
@@ -403,6 +473,7 @@ def main():
         "common_sample_dates":int(result.game_date.nunique()),
         "overall":overall,
         "candidate_results":candidate_results,
+        "live_player_strength_calibration":live_calibration,
         "by_season":by_season,
         "point_in_time_checks":{
             "v5_history_cutoff_strictly_prior":True,
