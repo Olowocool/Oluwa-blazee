@@ -169,6 +169,13 @@ def build_player_scoring_projection(
             team["profile_coverage_scale"] = coverage_scale
             team["scoring_profile_eligible"] = profiled
 
+            rapm_rows = team[team.expected_minutes.gt(0)]
+            rapm_valid = (
+                rapm_rows.rapm_available.fillna(False).astype(bool)
+                & rapm_rows.o_rapm.notna() & rapm_rows.d_rapm.notna()
+            )
+            rapm_minutes = float(rapm_rows.loc[rapm_valid, "expected_minutes"].sum())
+            rapm_coverage = rapm_minutes / 240.0
             complete = bool(
                 official_report_complete
                 and coverage >= minimum_profiled_minutes_share
@@ -180,13 +187,6 @@ def build_player_scoring_projection(
                 float(team.loc[profiled, "player_expected_points"].sum())
                 if complete else np.nan
             )
-            rapm_rows = team[team.expected_minutes.gt(0)]
-            rapm_valid = (
-                rapm_rows.rapm_available.fillna(False).astype(bool)
-                & rapm_rows.o_rapm.notna() & rapm_rows.d_rapm.notna()
-            )
-            rapm_minutes = float(rapm_rows.loc[rapm_valid, "expected_minutes"].sum())
-            rapm_coverage = rapm_minutes / 240.0
             off_rapm = (
                 float(np.average(
                     rapm_rows.loc[rapm_valid, "o_rapm"],
