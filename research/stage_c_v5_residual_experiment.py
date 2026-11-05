@@ -43,13 +43,13 @@ BOOTSTRAP_SEED = 20261104
 
 RAPM_INJURY_FEATURES = [
     "home_off_delta", "home_def_delta", "away_off_delta", "away_def_delta",
-    "raw_injury_total_delta", "home_minutes_changed", "away_minutes_changed",
+    "home_minutes_changed", "away_minutes_changed",
     "home_reported_out_minutes", "away_reported_out_minutes",
     "home_questionable_minutes", "away_questionable_minutes",
     "home_reported_players_without_prior_team_history",
     "away_reported_players_without_prior_team_history",
     "home_players_excluded_by_opposing_report",
-    "away_players_excluded_by_opposing_report", "expected_possessions",
+    "away_players_excluded_by_opposing_report",
 ]
 PROFILE_METRICS = [
     "expected_pts", "expected_ast", "expected_tov", "expected_oreb",
@@ -222,7 +222,7 @@ def export_live_player_strength_calibration(data: pd.DataFrame) -> dict:
         raise RuntimeError("Player-strength calibration includes same-day/future rows")
 
     features = list(RAPM_INJURY_FEATURES)
-    rapm_columns = features[:5]
+    rapm_columns = features[:4]
     rapm_values = train[rapm_columns].apply(pd.to_numeric, errors="coerce").fillna(0.0)
     rapm_nonzero = {
         col: int(rapm_values[col].abs().gt(1e-9).sum())
