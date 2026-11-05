@@ -33,6 +33,10 @@ if "last_capture_meta" not in st.session_state:
     st.session_state.last_capture_meta = None
 if "last_validation" not in st.session_state:
     st.session_state.last_validation = None
+if "last_pace_validation" not in st.session_state:
+    st.session_state.last_pace_validation = None
+if "last_pace_rows" not in st.session_state:
+    st.session_state.last_pace_rows = None
 
 with st.sidebar:
     st.subheader("Live market capture")
@@ -194,7 +198,7 @@ with tab_live:
                     "Market fair Over %": round(100.0 * market_fair_over, 1) if np.isfinite(market_fair_over) else None,
                     "Market fair Under %": round(100.0 * market_fair_under, 1) if np.isfinite(market_fair_under) else None,
                     "Books at price line": len(same_line_quotes),
-                    "V5 − market": round(difference, 1),
+                    "V5+pace − market": round(difference, 1),
                     "V5 model probability": "Not calibrated",
                     "Residual-adjusted total": "Unavailable — Objective 5 gate",
                     "Bet decision": "No Bet — evidence gate",
@@ -203,7 +207,7 @@ with tab_live:
                 })
             result_frame = pd.DataFrame(projections)
             if not result_frame.empty:
-                result_frame = result_frame.sort_values("V5 − market", ascending=False)
+                result_frame = result_frame.sort_values("V5+pace − market", ascending=False)
                 st.dataframe(result_frame, use_container_width=True, hide_index=True)
                 st.download_button(
                     "Download prediction sheet (CSV)",
@@ -252,6 +256,43 @@ with tab_validation:
         )
     else:
         st.warning("No market archive loaded. Capture snapshots in the Live market tab or upload your saved archive.")
+
+    run_pace_validation = st.button(
+        "Run historical V5 vs V5 + pace evaluation",
+        disabled=(score_upload is None),
+        use_container_width=True,
+    )
+    if run_pace_validation:
+        with st.spinner("Building point-in-time possession features and evaluating the pace challenger…"):
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as handle:
+                    handle.write(score_upload.getvalue())
+                    score_path_for_pace = handle.name
+                pace_scores = load_score_history(score_path_for_pace)
+                pace_source = load_pace_history()
+                pace_team_map = load_team_id_map()
+                pace_rows, pace_summary = evaluate_pace_challenger(
+                    pace_scores, pace_source, pace_team_map,
+                    bootstrap_resamples=2000, seed=73,
+                )
+                st.session_state.last_pace_validation = pace_summary
+                st.session_state.last_pace_rows = pace_rows
+                st.success("Chronological V5 vs V5+pace evaluation completed.")
+            except Exception as exc:
+                st.error(f"Pace challenger evaluation stopped: {type(exc).__name__}: {exc}")
+                st.caption("No fallback coefficient or non-point-in-time feature was substituted.")
+
+    if st.session_state.get("last_pace_validation"):
+        st.markdown("**Pace challenger — chronological historical comparison**")
+        st.json(st.session_state.last_pace_validation)
+        if st.session_state.get("last_pace_rows") is not None:
+            st.download_button(
+                "Download game-level pace evaluation (CSV)",
+                data=st.session_state.last_pace_rows.to_csv(index=False).encode("utf-8"),
+                file_name="v5_vs_pace_challenger_evaluation.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
 
     run_validation = st.button(
         "Run Objectives 5, 6 and 7",
