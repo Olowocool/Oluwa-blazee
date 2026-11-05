@@ -1,0 +1,36 @@
+{
+  "schema_version": "player-state-snapshot-v1",
+  "generated_at_utc": "2026-11-05T21:29:30.377024+00:00",
+  "snapshot_target_date": "2026-11-05",
+  "compressed_bytes": 476471,
+  "diagnostics": {
+    "target_date": "2026-11-05",
+    "source_seasons": [
+      2026,
+      2027
+    ],
+    "completed_games": 1351,
+    "team_game_rows": 2484,
+    "player_game_rows": 29380,
+    "rotation_rows": 89875,
+    "event_rows": 149430,
+    "rapm_window_start": "2025-11-05",
+    "rotation_games_in_rapm_window": 1242,
+    "validated_lineup_segments": 29657,
+    "rapm_history_segments": 29657,
+    "rapm_max_history_date": "2026-11-04",
+    "rapm_players_rated": 639,
+    "segment_reconstruction": {
+      "regular_season_games_with_rotation_rows": 1242,
+      "games_reconstructed": 949,
+      "games_exact_score_match": 949,
+      "games_player_stint_plusminus_match": 949,
+      "games_skipped_bad_rotation_flag": 4,
+      "games_skipped_lineup_or_event_gap": 4,
+      "games_skipped_score_mismatch": 181,
+      "games_skipped_player_plusminus_mismatch": 104,
+      "segments": 29657
+    },
+    "same_day_or_future_source_rows": 0
+  }
+}
