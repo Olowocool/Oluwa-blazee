@@ -262,7 +262,7 @@ def test_player_calibration_applies_only_after_validation_gate(tmp_path):
     assert result["player_adjusted_total"] == pytest.approx(216.5)
 
 
-def test_player_calibration_stays_disabled_when_validation_gate_fails(tmp_path):
+def test_player_calibration_remains_shadow_only_when_validation_gate_fails(tmp_path):
     import json
 
     artifact = {
@@ -270,21 +270,33 @@ def test_player_calibration_stays_disabled_when_validation_gate_fails(tmp_path):
         "status": "research_shadow_only",
         "forecast_enabled": False,
         "training_cutoff_exclusive": "2026-07-01",
-        "features": ["home_off_delta"],
-        "rapm_feature_nonzero_rows": {"home_off_delta": 5},
-        "standardizer": {"mean": [0.0], "scale": [1.0]},
-        "ridge": {"intercept": 0.0, "coefficients": [1.0]},
+        "features": [
+            "home_off_delta", "home_def_delta", "away_off_delta",
+            "away_def_delta", "expected_possessions",
+        ],
+        "rapm_feature_nonzero_rows": {
+            "home_off_delta": 5, "home_def_delta": 4,
+            "away_off_delta": 6, "away_def_delta": 3,
+        },
+        "standardizer": {"mean": [0.0, 0.0, 0.0, 0.0, 100.0],
+                         "scale": [1.0, 1.0, 1.0, 1.0, 2.0]},
+        "ridge": {"intercept": 0.0, "coefficients": [1.0, 0.0, 0.0, 0.0, 0.0]},
         "validation": {"gate_passed": False},
     }
     path = tmp_path / "calibration.json"
     path.write_text(json.dumps(artifact), encoding="utf-8")
 
     result = apply_player_strength_calibration(
-        220.0, {"home_off_delta": 1.0}, "2026-11-05", path,
+        220.0, {
+            "home_off_delta": 1.0, "home_def_delta": 0.0,
+            "away_off_delta": 0.0, "away_def_delta": 0.0,
+            "expected_possessions": 100.0,
+        }, "2026-11-05", path,
     )
 
-    assert result["available"] is False
-    assert "has not passed" in result["reason"]
+    assert result["available"] is True
+    assert result["forecast_eligible"] is False
+    assert result["player_adjusted_total"] == pytest.approx(219.0)
 
 
 def test_bundled_score_history_applies_verified_patch_priority(tmp_path, monkeypatch):
