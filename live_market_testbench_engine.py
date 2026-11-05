@@ -70,27 +70,88 @@ def nba_season_start_year(value: Any) -> int:
     return int(ts.year if ts.month >= 10 else ts.year - 1)
 
 
-def load_score_history(path: str | Path | None = None) -> pd.DataFrame:
-    """Load and validate the full score history bundled with the research branch."""
+def load_score_history(
+    path: str | Path | None = None,
+    patch_dir: str | Path | None = None,
+) -> pd.DataFrame:
+    """Load score history with explicit source priority for recent verified patches.
+
+    Bundled history is priority 0, committed score corrections are priority 1,
+    and a user-uploaded replacement archive is priority 2. Conflicts within the
+    same source tier fail closed; higher-priority corrections override lower
+    tiers for the same game.
+    """
     source = Path(path) if path else ROOT / "data" / "historical_nba_scores.csv"
-    if not source.exists():
+    if not source.is_file():
         raise FileNotFoundError(f"Historical score file not found: {source}")
-    frame = pd.read_csv(source)
+    patch_root = Path(patch_dir) if patch_dir else ROOT / "research" / "data"
     required = {"game_date", "home_team", "away_team", "home_score", "away_score"}
-    missing = required.difference(frame.columns)
-    if missing:
-        raise ValueError(f"Historical score history is missing columns: {sorted(missing)}")
-    frame["game_date"] = pd.to_datetime(frame["game_date"], errors="coerce")
-    frame["home_score"] = pd.to_numeric(frame["home_score"], errors="coerce")
-    frame["away_score"] = pd.to_numeric(frame["away_score"], errors="coerce")
-    frame = frame.dropna(subset=["game_date", "home_team", "away_team", "home_score", "away_score"])
-    frame = frame[(frame["home_score"] > 0) & (frame["away_score"] > 0)].copy()
-    frame["total_score"] = frame["home_score"] + frame["away_score"]
-    frame = normalize_history_team_columns(frame)
-    frame = frame.sort_values("game_date").reset_index(drop=True)
-    if frame.empty:
+    frames: list[pd.DataFrame] = []
+
+    def read_source(file_path: Path, priority: int) -> None:
+        frame = pd.read_csv(file_path)
+        missing = required.difference(frame.columns)
+        if missing:
+            raise ValueError(
+                f"Historical score source {file_path} is missing columns: {sorted(missing)}"
+            )
+        frame = frame[list(required)].copy()
+        frame["_history_priority"] = int(priority)
+        frame["_history_source"] = str(file_path)
+        frames.append(frame)
+
+    read_source(source, 2 if path is not None else 0)
+    if patch_root.is_dir():
+        for patch_file in sorted(patch_root.glob("score_history_patch_*.csv")):
+            if patch_file.resolve() == source.resolve():
+                continue
+            read_source(patch_file, 1)
+
+    history = pd.concat(frames, ignore_index=True)
+    history = normalize_history_team_columns(history)
+    history["game_date"] = pd.to_datetime(history["game_date"], errors="coerce").dt.normalize()
+    for column in ("home_score", "away_score"):
+        history[column] = pd.to_numeric(history[column], errors="coerce")
+    history = history.dropna(
+        subset=["game_date", "home_team", "away_team", "home_score", "away_score"]
+    )
+    history = history[
+        (history["home_score"] > 0)
+        & (history["away_score"] > 0)
+        & history["home_team"].astype(str).str.strip().ne("")
+        & history["away_team"].astype(str).str.strip().ne("")
+    ].copy()
+    if history.empty:
         raise ValueError("Historical score history contains no valid games.")
-    return frame
+
+    keys = ["game_date", "home_team", "away_team"]
+    conflicts = history.groupby(keys + ["_history_priority"])[
+        ["home_score", "away_score"]
+    ].nunique(dropna=False)
+    conflict_mask = (conflicts > 1).any(axis=1)
+    if conflict_mask.any():
+        conflict_keys = conflicts.index[conflict_mask][:5]
+        raise ValueError(
+            "Conflicting scores within the same source priority; "
+            f"first_conflicting_games={list(conflict_keys)}"
+        )
+    override_count = int(
+        history.groupby(keys)[["home_score", "away_score"]]
+        .nunique(dropna=False).gt(1).any(axis=1).sum()
+    )
+    history = history.sort_values(
+        ["_history_priority", "_history_source"], ascending=[False, True]
+    ).drop_duplicates(keys, keep="first")
+    history["total_score"] = history["home_score"] + history["away_score"]
+    history.attrs["source_conflict_overrides"] = override_count
+    history.attrs["source_priorities"] = {
+        "bundled_history": 0,
+        "verified_score_patches": 1,
+        "uploaded_history_override": 2,
+    }
+    history = history.drop(columns=["_history_priority", "_history_source"])
+    history = history.sort_values("game_date").reset_index(drop=True)
+    return history
 
 
 def _prior_team_games(history: pd.DataFrame, team: str, target_date: Any) -> pd.DataFrame:
