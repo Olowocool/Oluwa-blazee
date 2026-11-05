@@ -199,6 +199,10 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
     gc.collect()
     g, t, p, pn, tn, r, e = frames
     p["min"] = pd.to_numeric(p["min"], errors="coerce").fillna(0.0)
+    source_row_counts = {
+        "team_game_rows": int(len(t)), "player_game_rows": int(len(p)),
+        "rotation_rows": int(len(r)), "event_rows": int(len(e)),
+    }
     segments, segment_audit = phase2.build_lineup_segments(g, t, r, e)
     segments["game_date"] = pd.to_datetime(segments.game_date).dt.normalize()
     if (segments.game_date >= target).any():
@@ -223,12 +227,12 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
     team_names_current = tn[tn.season.eq(current_season)].copy()
     if team_names_current.empty:
         raise RuntimeError(f"team_seasons has no rows for current season {current_season}")
+    player_names_current = pn[pn.season.eq(current_season)][["player_id", "name"]].drop_duplicates("player_id").copy()
     diagnostics = {
         "target_date": str(target.date()),
         "source_seasons": list(season_tuple),
         "completed_games": int(g.game_id.nunique()),
-        "team_game_rows": int(len(t)),
-        "player_game_rows": int(len(p)),
+        **source_row_counts,
         "rotation_rows": int(len(r)),
         "event_rows": int(len(e)),
         "validated_lineup_segments": int(len(segments)),
