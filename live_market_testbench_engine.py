@@ -873,49 +873,50 @@ def evaluate_pace_challenger(
     skipped_unavailable = 0
     failed = 0
     cache: dict[str, Any] = {"v3": {}, "v4": {}}
-    prior_by_date: dict[pd.Timestamp, pd.DataFrame] = {}
-    for row in history.itertuples(index=False):
-        target = pd.Timestamp(row.game_date).normalize()
+    for target_value, day_rows in history.groupby("game_date", sort=True):
+        target = pd.Timestamp(target_value).normalize()
         season_end = nba_season_start_year(target) + 1
         if season_end not in supported:
-            skipped_unsupported += 1
+            skipped_unsupported += int(len(day_rows))
             continue
-        if target not in prior_by_date:
-            prior_by_date[target] = history.loc[history.game_date < target].copy()
-        prior = prior_by_date[target]
+        # Keep only one date's prior-history frame in memory at a time.
+        # calculate_game_components independently enforces the same strict
+        # prior-date cutoff across V5, H2H, rest and pace features.
+        prior = history.loc[history.game_date < target].copy()
         if prior.empty or not (prior.game_date < target).all():
-            failed += 1
+            failed += int(len(day_rows))
             continue
-        try:
-            result = calculate_game_components(
-                str(row.home_team), str(row.away_team), target, prior,
-                pace_history, team_id_map, use_pace=True,
-                h2h_mode="off", rest_mode="off", v5_cache=cache,
-            )
-            if not result["pace"].get("available"):
-                skipped_unavailable += 1
-                continue
-            baseline = float(result["raw_total"])
-            challenger = float(result["composed"]["selected_prediction"])
-            actual = float(row.home_score) + float(row.away_score)
-            if not np.isfinite([baseline, challenger, actual]).all():
+        for row in day_rows.itertuples(index=False):
+            try:
+                result = calculate_game_components(
+                    str(row.home_team), str(row.away_team), target, prior,
+                    pace_history, team_id_map, use_pace=True,
+                    h2h_mode="off", rest_mode="off", v5_cache=cache,
+                )
+                if not result["pace"].get("available"):
+                    skipped_unavailable += 1
+                    continue
+                baseline = float(result["raw_total"])
+                challenger = float(result["composed"]["selected_prediction"])
+                actual = float(row.home_score) + float(row.away_score)
+                if not np.isfinite([baseline, challenger, actual]).all():
+                    failed += 1
+                    continue
+                rows.append({
+                    "game_date": target,
+                    "home_team": str(row.home_team),
+                    "away_team": str(row.away_team),
+                    "actual_total": actual,
+                    "v5_total": baseline,
+                    "pace_adjustment": float(result["pace"]["adjustment"]),
+                    "pace_adjusted_total": challenger,
+                    "expected_matchup_pace": float(result["pace"]["expected_matchup_pace_l10"]),
+                    "league_pace_prior": float(result["pace"]["league_pace_prior"]),
+                    "history_cutoff": str(target.date()),
+                    "prior_max_date": str(pd.Timestamp(prior.game_date.max()).date()),
+                })
+            except Exception:
                 failed += 1
-                continue
-            rows.append({
-                "game_date": target,
-                "home_team": str(row.home_team),
-                "away_team": str(row.away_team),
-                "actual_total": actual,
-                "v5_total": baseline,
-                "pace_adjustment": float(result["pace"]["adjustment"]),
-                "pace_adjusted_total": challenger,
-                "expected_matchup_pace": float(result["pace"]["expected_matchup_pace_l10"]),
-                "league_pace_prior": float(result["pace"]["league_pace_prior"]),
-                "history_cutoff": str(target.date()),
-                "prior_max_date": str(pd.Timestamp(prior.game_date.max()).date()),
-            })
-        except Exception:
-            failed += 1
     frame = pd.DataFrame(rows)
     if frame.empty:
         raise ValueError(
