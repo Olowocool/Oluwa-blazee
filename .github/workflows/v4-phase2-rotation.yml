@@ -15,6 +15,21 @@ on:
       - "tests/test_rapm_rotation_attachment.py"
       - "research/build_player_impact_features.py"
       - ".github/workflows/v4-phase2-rotation.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "research/v4_phase2_rotation.py"
+      - "research/stage_c_v5_residual_experiment.py"
+      - "research/v4_phase1_core.py"
+      - "research/build_player_intelligence_profiles.py"
+      - "research/build_player_intelligence_ratings.py"
+      - "research/test_player_profile_window_alignment.py"
+      - "research/test_full_rotation_output.py"
+      - "tests/test_rapm_rotation_attachment.py"
+      - "research/build_player_impact_features.py"
+      - ".github/workflows/v4-phase2-rotation.yml"
+
   workflow_dispatch:
 
 concurrency:
@@ -32,6 +47,8 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
       - name: Publish Phase 2 calibration build pending status
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
