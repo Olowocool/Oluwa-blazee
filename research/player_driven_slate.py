@@ -17,7 +17,7 @@ import requests
 ESPN_SCOREBOARD_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 )
-MIN_PROFILED_MINUTES_SHARE = 0.70
+MIN_PROFILED_MINUTES_SHARE = 0.85
 
 
 def fetch_scheduled_nba_games(target_date: Any, *, timeout: int = 25) -> pd.DataFrame:
@@ -171,8 +171,10 @@ def build_player_scoring_projection(
                 and np.isfinite(pace_factor)
                 and team.loc[profiled, "player_expected_points"].notna().all()
             )
+            coverage_scale = 240.0 / profiled_minutes if profiled_minutes > 0 else np.nan
             expected_points = (
-                float(team.loc[profiled, "player_expected_points"].sum())
+                float(team.loc[profiled, "player_expected_points_pre_pace"].sum())
+                * coverage_scale * pace_factor
                 if complete else np.nan
             )
             rapm_rows = team[team.expected_minutes.gt(0)]
@@ -198,6 +200,7 @@ def build_player_scoring_projection(
                 "complete": complete,
                 "projected_minutes": minutes_total,
                 "profiled_minutes": profiled_minutes,
+                "profile_coverage_scale": coverage_scale,
             }
 
         complete_game = team_results["home"]["complete"] and team_results["away"]["complete"]
@@ -210,7 +213,9 @@ def build_player_scoring_projection(
                 if complete_game else np.nan
             ),
             "home_profiled_minutes_share": team_results["home"]["profiled_minutes_share"],
+            "home_profile_coverage_scale": team_results["home"]["profile_coverage_scale"],
             "away_profiled_minutes_share": team_results["away"]["profiled_minutes_share"],
+            "away_profile_coverage_scale": team_results["away"]["profile_coverage_scale"],
             "home_offensive_rapm": team_results["home"]["offensive_rapm_minutes_weighted"],
             "home_defensive_rapm": team_results["home"]["defensive_rapm_minutes_weighted"],
             "away_offensive_rapm": team_results["away"]["offensive_rapm_minutes_weighted"],
