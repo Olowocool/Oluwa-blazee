@@ -706,8 +706,9 @@ def apply_player_strength_calibration(
             "validation": validation,
         }
     nonzero = payload.get("rapm_feature_nonzero_rows") or {}
-    if not any(int(value) > 0 for value in nonzero.values()):
-        return {"available": False, "reason": "Calibration artifact contains no non-zero RAPM/injury training features."}
+    required_rapm = names[:4]
+    if not required_rapm or any(int(nonzero.get(name, 0)) <= 0 for name in required_rapm):
+        return {"available": False, "reason": "Calibration artifact lacks non-zero training coverage for all four home/away offensive and defensive RAPM features."}
     names = payload.get("features") or []
     means = np.asarray(payload.get("standardizer", {}).get("mean", []), dtype=float)
     scales = np.asarray(payload.get("standardizer", {}).get("scale", []), dtype=float)
