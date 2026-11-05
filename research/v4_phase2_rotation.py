@@ -27,6 +27,29 @@ from PyPDF2 import PdfReader
 from rapidfuzz import process, fuzz
 from scipy.sparse import coo_matrix
 from sklearn.linear_model import Ridge
+def configure_java_runtime() -> bool:
+    """Expose the bundled JDK to tabula-py when the host has no system Java."""
+    try:
+        from jdk4py import JAVA, JAVA_HOME
+    except ImportError:
+        import shutil
+        return shutil.which("java") is not None
+
+    java_home = Path(JAVA_HOME)
+    java_bin = str(Path(JAVA).parent)
+    os.environ["JAVA_HOME"] = str(java_home)
+    os.environ["JDK_HOME"] = str(java_home)
+    current_path = os.environ.get("PATH", "")
+    path_parts = current_path.split(os.pathsep) if current_path else []
+    if java_bin not in path_parts:
+        os.environ["PATH"] = java_bin + os.pathsep + current_path
+    import shutil
+    return shutil.which("java") is not None
+
+
+JAVA_RUNTIME_AVAILABLE = configure_java_runtime()
+
+
 from nbainjuries import injury
 from nbainjuries._util import _gen_filepath
 
