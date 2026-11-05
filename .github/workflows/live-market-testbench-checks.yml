@@ -57,6 +57,36 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest -q tests/test_live_market_testbench.py tests/test_prospective_player_data.py tests/test_rapm_rotation_attachment.py
+      - name: Smoke test public possession-based pace source
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python - <<'PY'
+          import json
+          from live_market_testbench_engine import (
+              calculate_game_components, load_pace_history,
+              load_score_history, load_team_id_map,
+          )
+          scores = load_score_history()
+          pace_history = load_pace_history()
+          result = calculate_game_components(
+              "Boston Celtics", "Miami Heat", "2026-11-05",
+              scores, pace_history, load_team_id_map(),
+              use_pace=True, h2h_mode="off", rest_mode="off",
+          )
+          assert result["point_in_time_cutoff"] is True
+          assert result["pace"]["available"] is True
+          assert result["composed"]["use_pace"] is True
+          print(json.dumps({
+              "games_in_score_history": len(scores),
+              "pace_source_seasons": pace_history["seasons_loaded"],
+              "expected_matchup_pace": result["pace"]["expected_matchup_pace_l10"],
+              "pace_adjustment_points": result["composed"]["pace_adjustment_used"],
+              "v5_baseline_total": result["raw_total"],
+              "v5_plus_pace_total": result["composed"]["selected_prediction"],
+              "strict_prior_date_cutoff": result["point_in_time_cutoff"],
+          }, indent=2))
+          PY
       - name: Publish research test status
         if: always()
         env:
