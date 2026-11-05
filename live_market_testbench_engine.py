@@ -781,7 +781,11 @@ def apply_player_strength_calibration(
         raise ValueError("Player calibration artifact has invalid scaler or coefficient dimensions.")
     missing = [name for name in names if name not in feature_values]
     if missing:
-        raise ValueError(f"Player calibration inputs are missing features: {missing}")
+        return {
+            "available": False,
+            "reason": f"Calibration artifact feature contract differs from live inputs: {missing}",
+            "validation": validation,
+        }
     values = np.asarray([_finite_float(feature_values[name]) for name in names], dtype=float)
     if not np.isfinite(values).all():
         raise ValueError("Player calibration input contains non-finite features.")
