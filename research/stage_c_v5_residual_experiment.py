@@ -41,6 +41,7 @@ RIDGE_ALPHA = 25.0
 BOOTSTRAP_REPS = 5000
 BOOTSTRAP_SEED = 20261104
 
+# Live inference consumes the same four direct RAPM deltas and minute/status features.
 RAPM_INJURY_FEATURES = [
     "home_off_delta", "home_def_delta", "away_off_delta", "away_def_delta",
     "home_minutes_changed", "away_minutes_changed",
