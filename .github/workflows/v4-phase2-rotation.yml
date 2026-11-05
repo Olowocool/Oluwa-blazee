@@ -11,6 +11,7 @@ on:
       - "research/build_player_intelligence_ratings.py"
       - "research/test_player_profile_window_alignment.py"
       - "research/test_full_rotation_output.py"
+      - "tests/test_rapm_rotation_attachment.py"
       - "research/build_player_impact_features.py"
       - ".github/workflows/v4-phase2-rotation.yml"
   workflow_dispatch:
@@ -49,10 +50,13 @@ jobs:
           python -m py_compile research/v4_phase1_core.py
           python -m py_compile research/v4_phase2_rotation.py
           python -m py_compile research/test_full_rotation_output.py
+          python -m py_compile tests/test_rapm_rotation_attachment.py
       - name: Test player profile point-in-time window alignment
         run: python research/test_player_profile_window_alignment.py
       - name: Verify full individual rotation output contract
         run: python research/test_full_rotation_output.py
+      - name: Verify RAPM ratings attach to rotation rows
+        run: python -m pytest -q tests/test_rapm_rotation_attachment.py
       - name: Build Stage A player profiles
         run: python research/build_player_intelligence_profiles.py
       - name: Build Stage B descriptive skill components
