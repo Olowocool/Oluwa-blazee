@@ -260,7 +260,7 @@ with tab_live:
                     use_container_width=True,
                 )
             else:
-                st.info("No prediction sheet was produced because no quote passed the strict live-market freshness gate.")
+                st.info("No prediction sheet was produced because the captured archive contains no upcoming fixtures.")
             st.info(
                 "Prediction-layer status: V5 is the frozen baseline; V5+pace is the possession-based challenger. "
                 "Pace adjustment is displayed separately and is not a calibrated betting probability. Market fair Over/Under percentages are derived from paired bookmaker prices at the consensus line; "
