@@ -39,7 +39,7 @@ def cached_live_player_profile_history(player_ids: tuple[str, ...], target_date:
 def cached_player_slate_inputs(target_date: str, fixture_records: tuple[tuple, ...]):
     """Build one compact player slate per target date; never refit RAPM on reruns."""
     import gc
-    from research.prospective_player_data import build_pregame_player_state
+    from research.player_state_snapshot import load_player_state_snapshot
     from research.prospective_rotation_projection import build_target_date_rotations
 
     columns = [
@@ -50,7 +50,7 @@ def cached_player_slate_inputs(target_date: str, fixture_records: tuple[tuple, .
     fixtures["game_date"] = pd.to_datetime(fixtures["game_date"]).dt.normalize()
     fixtures["commence_time_utc"] = pd.to_datetime(fixtures["commence_time_utc"], utc=True)
 
-    player_state = build_pregame_player_state(target_date)
+    player_state = load_player_state_snapshot(target_date)
     rotation_result = build_target_date_rotations(
         player_state, fixtures, target_date, allow_unconfirmed_report=True
     )
@@ -185,7 +185,7 @@ with tab_player_predictions:
             if fixtures.empty:
                 st.warning("No pregame NBA fixtures were returned for this date.")
             else:
-                with st.spinner("Preparing player rotations and point-in-time player strength (reused for this slate)…"):
+                with st.spinner("Loading precomputed point-in-time player state and preparing this slate…"):
                     fixture_records = tuple(
                         (
                             str(row.game_key), str(pd.Timestamp(row.game_date).date()),
@@ -853,9 +853,9 @@ with tab_players:
             use_container_width=True,
         )
         if run_player_diagnostics:
-            with st.spinner("Rebuilding point-in-time RAPM and mapping the official injury report…"):
+            with st.spinner("Loading precomputed point-in-time RAPM and mapping the official injury report…"):
                 try:
-                    from research.prospective_player_data import build_pregame_player_state
+                    from research.player_state_snapshot import load_player_state_snapshot
                     from research.prospective_rotation_projection import build_target_date_rotations
                     if score_upload_live is not None:
                         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as score_handle:
@@ -868,7 +868,7 @@ with tab_players:
                     target_fixtures["game_date"] = pd.to_datetime(target_fixtures.game_date, errors="coerce").dt.normalize()
                     target_fixtures = target_fixtures[target_fixtures.game_date.eq(pd.Timestamp(player_target_date))]
                     target_fixtures = target_fixtures[["game_key", "game_date", "away_team", "home_team"]].drop_duplicates()
-                    player_state = build_pregame_player_state(player_target_date)
+                    player_state = load_player_state_snapshot(player_target_date)
                     rotation_result = build_target_date_rotations(player_state, target_fixtures, player_target_date)
                     rotation_rows = rotation_result["projections"].copy()
                     profile_player_ids = tuple(sorted(rotation_rows.player_id.astype(str).unique()))
