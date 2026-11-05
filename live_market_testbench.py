@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import tempfile
 from argparse import Namespace
@@ -144,6 +145,12 @@ with tab_player_predictions:
                         player_name_map, on="player_id", how="left", validate="many_to_one"
                     ).merge(team_name_map, on="team_id", how="left", validate="many_to_one")
                     player_rows["minute_change"] = player_rows.expected_minutes - player_rows.baseline_minutes
+                    player_state_diagnostics = player_state["diagnostics"]
+                    # The rotations and display maps are now independent of the
+                    # full source history; release the RAPM/source frames before
+                    # loading score and pace histories in this same process.
+                    del player_state, player_name_map, team_name_map, profile_history
+                    gc.collect()
 
                 with st.spinner("Calculating player scoring contributions and possession-based pace…"):
                     score_history = load_score_history()
@@ -181,7 +188,7 @@ with tab_player_predictions:
                         "fixtures": fixtures,
                         "scores": player_scores,
                         "players": player_detail,
-                        "player_state_diagnostics": player_state["diagnostics"],
+                        "player_state_diagnostics": player_state_diagnostics,
                         "profile_diagnostics": profile_diagnostics,
                         "injury_report": rotation_result["report_metadata"],
                         "injury_manifest": rotation_result["manifest"],
