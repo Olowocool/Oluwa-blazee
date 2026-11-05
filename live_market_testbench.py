@@ -365,9 +365,9 @@ with tab_players:
         "240 regulation minutes."
     )
     st.warning(
-        "RAPM rotation contributions are diagnostic inputs, not a calibrated total-points forecast. "
-        "The player-adjusted total stays disabled until its coefficients pass chronological "
-        "out-of-sample calibration. These figures must not be interpreted as a betting edge."
+        "The player-adjusted total is enabled only when the checked RAPM calibration passes "
+        "chronological out-of-sample validation. V5+pace and V5+player are separate challengers; "
+        "do not add their adjustments together without a separately validated combined model."
     )
     player_market = pd.DataFrame(st.session_state.captured_market_rows)
     if player_market.empty:
@@ -388,7 +388,6 @@ with tab_players:
                 try:
                     from research.prospective_player_data import build_pregame_player_state
                     from research.prospective_rotation_projection import build_target_date_rotations
-                    from live_market_testbench_engine import pace_component
                     with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as score_handle:
                         score_handle.write(score_upload_live.getvalue())
                         player_score_path = score_handle.name
