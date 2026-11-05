@@ -448,7 +448,7 @@ with tab_players:
                     summaries = pd.DataFrame(rotation_result["summaries"])
                     team_map = load_team_id_map()
                     try:
-                        pace_source = load_pace_history()
+                        pace_source = cached_pace_history()
                     except Exception as pace_exc:
                         pace_source = None
                         st.warning(f"Pace source unavailable; player diagnostics will show RAPM features without a pace-derived raw signal. {type(pace_exc).__name__}: {pace_exc}")
