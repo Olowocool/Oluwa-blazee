@@ -37,6 +37,8 @@ if "last_pace_validation" not in st.session_state:
     st.session_state.last_pace_validation = None
 if "last_pace_rows" not in st.session_state:
     st.session_state.last_pace_rows = None
+if "player_diagnostics" not in st.session_state:
+    st.session_state.player_diagnostics = None
 
 with st.sidebar:
     st.subheader("Live market capture")
@@ -87,7 +89,7 @@ if capture:
     except Exception as exc:
         st.error(f"Market capture failed: {type(exc).__name__}: {exc}")
 
-tab_live, tab_validation, tab_guide = st.tabs(["Live market test", "Objectives 5–7 validation", "How to use this bench"])
+tab_live, tab_validation, tab_players, tab_guide = st.tabs(["Live market test", "Objectives 5–7 validation", "Player strength diagnostics", "How to use this bench"])
 
 with tab_live:
     st.subheader("Upcoming game predictions")
@@ -354,6 +356,126 @@ with tab_validation:
         st.json(result["objective6"])
         st.markdown("**Objective 7 — Independent profitability validation**")
         st.json(result["objective7"])
+
+with tab_players:
+    st.subheader("Point-in-time player strength and full-rotation diagnostics")
+    st.write(
+        "This panel rebuilds player RAPM from strictly prior lineup stints, maps the official "
+        "target-date NBA injury report, and projects every eligible player across each team's "
+        "240 regulation minutes."
+    )
+    st.warning(
+        "RAPM rotation contributions are diagnostic inputs, not a calibrated total-points forecast. "
+        "The player-adjusted total stays disabled until its coefficients pass chronological "
+        "out-of-sample calibration. These figures must not be interpreted as a betting edge."
+    )
+    player_market = pd.DataFrame(st.session_state.captured_market_rows)
+    if player_market.empty:
+        st.info("Capture a market snapshot first to load the upcoming fixtures.")
+    else:
+        target_dates = sorted(pd.to_datetime(player_market.game_date, errors="coerce").dropna().dt.date.astype(str).unique())
+        player_target_date = st.selectbox("Player diagnostics target date", target_dates)
+        run_player_diagnostics = st.button(
+            "Build player-strength and full-rotation diagnostics",
+            type="primary",
+            use_container_width=True,
+        )
+        if run_player_diagnostics:
+            with st.spinner("Rebuilding point-in-time RAPM and mapping the official injury report…"):
+                try:
+                    from research.prospective_player_data import build_pregame_player_state
+                    from research.prospective_rotation_projection import build_target_date_rotations
+                    from live_market_testbench_engine import pace_component
+                    target_fixtures = player_market.copy()
+                    target_fixtures["game_date"] = pd.to_datetime(target_fixtures.game_date, errors="coerce").dt.normalize()
+                    target_fixtures = target_fixtures[target_fixtures.game_date.eq(pd.Timestamp(player_target_date))]
+                    target_fixtures = target_fixtures[["game_key", "game_date", "away_team", "home_team"]].drop_duplicates()
+                    player_state = build_pregame_player_state(player_target_date)
+                    rotation_result = build_target_date_rotations(player_state, target_fixtures, player_target_date)
+                    player_rows = rotation_result["projections"].copy()
+                    player_name_map = player_state["player_names"][["player_id", "name"]].drop_duplicates("player_id")
+                    team_name_map = player_state["team_names"][["team_id", "full_name"]].drop_duplicates("team_id")
+                    player_rows = player_rows.merge(player_name_map, on="player_id", how="left").merge(
+                        team_name_map, on="team_id", how="left"
+                    )
+                    player_rows["minute_change"] = player_rows.expected_minutes - player_rows.baseline_minutes
+                    player_rows["offensive_rapm_minute_delta"] = player_rows.o_delta_contribution
+                    player_rows["defensive_rapm_minute_delta"] = player_rows.d_delta_contribution
+                    summaries = pd.DataFrame(rotation_result["summaries"])
+                    team_map = load_team_id_map()
+                    pace_source = load_pace_history()
+                    game_features = []
+                    for fixture in target_fixtures.itertuples(index=False):
+                        target_game = rotation_result["target_games"]
+                        target_game = target_game[target_game.game_id.astype(str).eq(str(fixture.game_key))]
+                        if target_game.empty:
+                            raise RuntimeError(f"Missing mapped target fixture {fixture.game_key}")
+                        ids = target_game.iloc[0]
+                        home = summaries[(summaries.game_id.astype(str).eq(str(fixture.game_key))) &
+                                         summaries.team_id.astype(str).eq(str(ids.home_team_id))]
+                        away = summaries[(summaries.game_id.astype(str).eq(str(fixture.game_key))) &
+                                         summaries.team_id.astype(str).eq(str(ids.away_team_id))]
+                        if len(home) != 1 or len(away) != 1:
+                            raise RuntimeError(f"Missing home/away player-strength features for {fixture.game_key}")
+                        pace = pace_component(fixture.home_team, fixture.away_team, player_target_date, pace_source, team_map)
+                        total_feature_delta = float(
+                            home.iloc[0].features["off_delta"] + home.iloc[0].features["def_delta"]
+                            + away.iloc[0].features["off_delta"] + away.iloc[0].features["def_delta"]
+                        )
+                        raw_signal = (
+                            float(pace["expected_matchup_pace_l10"]) / 100.0 * total_feature_delta
+                            if pace.get("available") else None
+                        )
+                        game_features.append({
+                            "Game": f"{fixture.away_team} @ {fixture.home_team}",
+                            "Projected matchup pace": pace.get("expected_matchup_pace_l10"),
+                            "Home offensive delta": home.iloc[0].features["off_delta"],
+                            "Home defensive delta": home.iloc[0].features["def_delta"],
+                            "Away offensive delta": away.iloc[0].features["off_delta"],
+                            "Away defensive delta": away.iloc[0].features["def_delta"],
+                            "Raw RAPM rotation signal (pts; uncalibrated)": raw_signal,
+                            "Player calibration": "Not fitted — excluded from forecast",
+                        })
+                    st.session_state.player_diagnostics = {
+                        "diagnostics": player_state["diagnostics"],
+                        "injury_report": rotation_result["report_metadata"],
+                        "game_features": pd.DataFrame(game_features),
+                        "players": player_rows,
+                    }
+                except Exception as exc:
+                    st.error(f"Player-strength diagnostics stopped safely: {type(exc).__name__}: {exc}")
+                    st.caption("No player-adjusted total was emitted; missing or incomplete inputs were not imputed.")
+
+        if st.session_state.get("player_diagnostics"):
+            diagnostics = st.session_state.player_diagnostics
+            st.markdown("**Pregame source and RAPM diagnostics**")
+            st.json(diagnostics["diagnostics"])
+            st.markdown("**Game-level player-strength contributions**")
+            st.dataframe(diagnostics["game_features"], use_container_width=True, hide_index=True)
+            st.markdown("**Full individual player rotation**")
+            display_players = diagnostics["players"][[
+                "game_id", "full_name", "name", "rotation_rank", "status",
+                "availability_probability", "baseline_minutes", "expected_minutes",
+                "minute_change", "o_rapm", "d_rapm",
+                "offensive_rapm_minute_delta", "defensive_rapm_minute_delta",
+            ]].rename(columns={
+                "game_id": "Game", "full_name": "Team", "name": "Player",
+                "rotation_rank": "Rotation rank", "status": "Official status",
+                "availability_probability": "Availability probability",
+                "baseline_minutes": "Baseline minutes", "expected_minutes": "Expected minutes",
+                "minute_change": "Minute change", "o_rapm": "Offensive RAPM",
+                "d_rapm": "Defensive RAPM",
+                "offensive_rapm_minute_delta": "Offensive minute contribution",
+                "defensive_rapm_minute_delta": "Defensive minute contribution",
+            })
+            st.dataframe(display_players, use_container_width=True, hide_index=True)
+            st.download_button(
+                "Download full player rotation diagnostics (CSV)",
+                data=display_players.to_csv(index=False).encode("utf-8"),
+                file_name="pregame_player_strength_rotation_diagnostics.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
 
 with tab_guide:
     st.subheader("Operating instructions")
