@@ -1,5 +1,9 @@
 name: Live market testbench research checks
 
+permissions:
+  contents: read
+  statuses: write
+
 on:
   pull_request:
     branches: [main]
@@ -51,3 +55,24 @@ jobs:
       - name: Run testbench and player point-in-time tests
         run: |
           pytest -q tests/test_live_market_testbench.py tests/test_prospective_player_data.py tests/test_rapm_rotation_attachment.py
+      - name: Publish research test status
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_RESULT: ${{ job.status }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$JOB_RESULT" == "success" ]]; then
+            STATE="success"
+            DESCRIPTION="Research testbench checks passed"
+          else
+            STATE="failure"
+            DESCRIPTION="Research testbench checks failed"
+          fi
+          gh api "repos/$REPOSITORY/statuses/$COMMIT_SHA" \
+            -f state="$STATE" \
+            -f context="live-market-testbench-checks" \
+            -f description="$DESCRIPTION" \
+            -f target_url="$RUN_URL"
