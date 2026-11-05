@@ -129,7 +129,7 @@ def build_v5_score_history(
     # correction records; they may resolve a lower-priority disagreement, but
     # conflicting rows within the same source tier always fail closed.
     history["_history_priority"] = history["_history_source"].map(
-        lambda source: 2 if str(source).replace("\\\\", "/").startswith("research/data/score_history_patch_")
+        lambda source: 2 if "/research/data/score_history_patch_" in ("/" + str(source).replace("\\\\", "/").lstrip("/"))
         else 1 if str(source).startswith("public_current_season_") else 0
     )
     keys = ["game_date", "home_team", "away_team"]
