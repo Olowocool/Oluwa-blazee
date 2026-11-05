@@ -12,7 +12,7 @@ on:
       - "tests/test_prospective_player_data.py"
       - "tests/test_rapm_rotation_attachment.py"
       - "research/v4_phase2_rotation.py"
-      - "requirements.txt"
+      - "requirements-testbench.txt"
       - ".github/workflows/live-market-testbench-checks.yml"
   push:
     branches: [research/live-market-testbench]
