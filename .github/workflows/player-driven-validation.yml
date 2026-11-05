@@ -1,0 +1,26 @@
+name: Player-driven slate validation
+
+on:
+  push:
+    branches:
+      - research/player-driven-game-predictions
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/player-driven-game-predictions
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal validation dependencies
+        run: python -m pip install --upgrade pip numpy pandas requests
+      - name: Compile the player-driven app and engine
+        run: python -m py_compile live_market_testbench.py live_market_testbench_engine.py research/player_driven_slate.py research/prospective_player_data.py research/prospective_rotation_projection.py research/prospective_player_profiles.py
+      - name: Run player-driven unit tests
+        run: python -m unittest research.tests.test_player_driven_slate -v
