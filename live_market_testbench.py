@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from argparse import Namespace
 from datetime import datetime, timezone
@@ -14,7 +15,7 @@ from research.collect_public_odds_snapshots import PAGE_URL, parse_odds_page
 from research.objective5_market_comparison import run as run_objective5
 from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
-from live_market_testbench_engine import apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
+from live_market_testbench_engine import PACE_LAST10_BETA, apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
 
 CAPTURE_MAX_PAGE_AGE_MINUTES = 75  # DunkAPI public board refreshes hourly.
 LIVE_MARKET_MAX_PAGE_AGE_MINUTES = 20  # Keep the stricter gate for live-market eligibility.
@@ -525,6 +526,27 @@ with tab_players:
             diagnostics = st.session_state.player_diagnostics
             st.markdown("**Pregame source and RAPM diagnostics**")
             st.json(diagnostics["diagnostics"])
+            calibration_path = Path(__file__).resolve().parent / "research" / "live_player_strength_calibration.json"
+            if calibration_path.is_file():
+                calibration_payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+                st.markdown("**Player calibration parameter audit**")
+                st.caption(
+                    f"Artifact status: {calibration_payload.get('status', 'unknown')} · "
+                    f"Forecast enabled: {bool(calibration_payload.get('forecast_enabled', False))} · "
+                    "Ridge coefficients are standardized feature weights, not direct points-per-unit."
+                )
+                parameter_frame = pd.DataFrame({
+                    "Feature": calibration_payload.get("features", []),
+                    "Standardized Ridge coefficient": calibration_payload.get("ridge", {}).get("coefficients", []),
+                })
+                if not parameter_frame.empty:
+                    parameter_frame["Absolute coefficient"] = parameter_frame["Standardized Ridge coefficient"].abs()
+                    st.dataframe(
+                        parameter_frame.sort_values("Absolute coefficient", ascending=False),
+                        use_container_width=True, hide_index=True,
+                    )
+                if calibration_payload.get("validation"):
+                    st.json(calibration_payload["validation"])
             st.markdown("**Game-level player-strength contributions**")
             st.dataframe(diagnostics["game_features"], use_container_width=True, hide_index=True)
             st.markdown("**Full individual player rotation**")
