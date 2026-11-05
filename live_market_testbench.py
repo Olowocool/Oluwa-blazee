@@ -94,14 +94,28 @@ tab_live, tab_validation, tab_players, tab_guide = st.tabs(["Live market test", 
 
 with tab_live:
     st.subheader("Upcoming game predictions")
-    st.write("Capture the current public odds board and upload the historical score file to project each listed matchup. The sportsbook total is a comparison baseline, not a substitute for our prediction.")
+    st.write("Capture the public odds board to compare the V5 and pace predictions with current sportsbook totals. The bundled historical score file is used automatically.")
     captured = pd.DataFrame(st.session_state.captured_market_rows)
     if captured.empty:
         st.info("No observations captured in this session yet. Use “Capture current market snapshot” in the sidebar.")
     else:
         captured["observed_at_utc"] = pd.to_datetime(captured["observed_at_utc"], utc=True, errors="coerce")
         latest = captured.sort_values("observed_at_utc").groupby(["game_key", "bookmaker"], as_index=False).tail(1)
-        display = latest[["game_date", "commence_time_utc", "away_team", "home_team", "bookmaker", "total_line", "over_odds_american", "under_odds_american", "observed_at_utc"]].copy()
+        now_utc = pd.Timestamp.now(tz="UTC")
+        latest["published_as_of_utc"] = pd.to_datetime(latest["published_as_of_utc"], utc=True, errors="coerce")
+        latest["commence_time_utc"] = pd.to_datetime(latest["commence_time_utc"], utc=True, errors="coerce")
+        latest["Observation age (min)"] = (now_utc - latest["observed_at_utc"]).dt.total_seconds() / 60.0
+        latest["Publication age (min)"] = (now_utc - latest["published_as_of_utc"]).dt.total_seconds() / 60.0
+        latest["Live quote eligible"] = (
+            latest["Observation age (min)"].between(0, LIVE_MARKET_MAX_PAGE_AGE_MINUTES)
+            & latest["Publication age (min)"].between(0, LIVE_MARKET_MAX_PAGE_AGE_MINUTES)
+            & latest["commence_time_utc"].gt(now_utc)
+        )
+        display = latest[[
+            "game_date", "commence_time_utc", "away_team", "home_team", "bookmaker",
+            "total_line", "over_odds_american", "under_odds_american", "observed_at_utc",
+            "Observation age (min)", "Publication age (min)", "Live quote eligible",
+        ]].copy()
         st.dataframe(display.sort_values(["game_date", "commence_time_utc", "bookmaker"]), use_container_width=True, hide_index=True)
         if st.session_state.last_capture_meta:
             st.caption(
@@ -138,7 +152,12 @@ with tab_live:
             except Exception as pace_exc:
                 pace_history = None
                 st.warning(f"Pace source unavailable; showing V5 baseline without a pace adjustment. {type(pace_exc).__name__}: {pace_exc}")
-            latest_rows = captured.sort_values("observed_at_utc").groupby(["game_key", "bookmaker"], as_index=False).tail(1)
+            latest_rows = latest[latest["Live quote eligible"]].copy()
+            if latest_rows.empty:
+                st.warning(
+                    "No live predictions generated. Both observation age and bookmaker-page publication age "
+                    "must be 20 minutes or less, and the game must not have started. Older quotes remain archived."
+                )
             projections = []
             cache = {"v3": {}, "v4": {}}
             for game_key, group in latest_rows.groupby("game_key", sort=False):
@@ -228,6 +247,8 @@ with tab_live:
                     mime="text/csv",
                     use_container_width=True,
                 )
+            else:
+                st.info("No prediction sheet was produced because no quote passed the strict live-market freshness gate.")
             st.info(
                 "Prediction-layer status: V5 is the frozen baseline; V5+pace is the possession-based challenger. "
                 "Pace adjustment is displayed separately and is not a calibrated betting probability. Market fair Over/Under percentages are derived from paired bookmaker prices at the consensus line; "
