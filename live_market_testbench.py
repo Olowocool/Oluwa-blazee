@@ -17,6 +17,7 @@ from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
 from live_market_testbench_engine import PACE_LAST10_BETA, apply_live_market_freshness, apply_player_strength_calibration, calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
 from research.prospective_player_profiles import PROFILE_FEATURES, aggregate_live_player_profile_features, load_live_player_profile_history
+from research.player_driven_slate import fetch_scheduled_nba_games, build_player_scoring_projection
 
 CAPTURE_MAX_PAGE_AGE_MINUTES = 75  # DunkAPI public board refreshes hourly.
 LIVE_MARKET_MAX_PAGE_AGE_MINUTES = 20  # Keep the stricter gate for live-market eligibility.
