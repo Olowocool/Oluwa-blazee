@@ -41,10 +41,18 @@ def _report_url(timestamp: datetime) -> str:
 
 
 def _team_prefix(value: str, team_names: list[str]) -> tuple[str | None, str]:
+    aliases = [(name, name) for name in team_names]
+    canonical_names = set(team_names)
+    for alias, canonical in (
+        ("Los Angeles Clippers", "LA Clippers"),
+        ("Los Angeles Lakers", "LA Lakers"),
+    ):
+        if canonical in canonical_names:
+            aliases.append((alias, canonical))
     lowered = value.casefold()
-    for name in sorted(team_names, key=len, reverse=True):
-        if lowered.startswith(name.casefold()):
-            return name, value[len(name):].strip()
+    for alias, canonical in sorted(aliases, key=lambda pair: len(pair[0]), reverse=True):
+        if lowered.startswith(alias.casefold()):
+            return canonical, value[len(alias):].strip()
     return None, value.strip()
 
 
