@@ -222,6 +222,17 @@ def export_live_player_strength_calibration(data: pd.DataFrame) -> dict:
         raise RuntimeError("Player-strength calibration includes same-day/future rows")
 
     features = list(RAPM_INJURY_FEATURES)
+    rapm_columns = features[:5]
+    rapm_values = train[rapm_columns].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    rapm_nonzero = {
+        col: int(rapm_values[col].abs().gt(1e-9).sum())
+        for col in rapm_columns
+    }
+    if not any(rapm_nonzero.values()):
+        raise RuntimeError(
+            "RAPM/injury total-impact features are all zero in calibration data; "
+            f"refusing to export a misleading player model. nonzero_rows={rapm_nonzero}"
+        )
     model = pipeline()
     target = train.v5_total.astype(float) - train.actual_total.astype(float)
     model.fit(train[features], target)
@@ -239,6 +250,7 @@ def export_live_player_strength_calibration(data: pd.DataFrame) -> dict:
         "training_dates": int(pd.to_datetime(train.game_date).dt.normalize().nunique()),
         "feature_family": "Stage C RAPM + injury + full-rotation features",
         "features": features,
+        "rapm_feature_nonzero_rows": rapm_nonzero,
         "imputer": {"strategy": "constant", "fill_value": 0.0,
                     "statistics": [float(x) for x in imputer.statistics_]},
         "standardizer": {"mean": [float(x) for x in scaler.mean_],
