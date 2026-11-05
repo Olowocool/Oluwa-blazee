@@ -12,7 +12,7 @@ It would be misleading to publish a player-adjusted number until the current-sea
 
 - DraftKings-only market selection; no mixing totals and prices from different bookmakers.
 - Requires complete total, Over price and Under price on the same observation row.
-- Rejects stale/future observations, started fixtures, invalid totals and zero/non-numeric American prices.
+- Requires both the page publication timestamp and collector observation timestamp to be within 20 minutes of record creation; rejects stale/future timestamps, started fixtures, invalid totals and zero/non-numeric American prices.
 - Selects the latest eligible observation per fixture.
 - Normalizes selected NBA team aliases and maps odds-board names to current-season `team_seasons` IDs.
 - Rejects same-day/future score/player-source rows when validating a target-date history.
@@ -45,7 +45,7 @@ python research/prospective_player_snapshot.py \
   --output-dir outputs/research/prospective_input_snapshots
 ```
 
-The private odds archive and generated snapshots are local research evidence and must not be committed to Git. The default maximum observation age is 20 minutes; the function can be called with a different explicit limit for controlled tests.
+The private odds archive and generated snapshots are local research evidence and must not be committed to Git. The default maximum observation age and page-publication age are both 20 minutes; both gates must pass. The public collector also defaults to rejecting pages older than 20 minutes (override only for controlled archival capture).
 
 ## Remaining before this component is fully closed
 
