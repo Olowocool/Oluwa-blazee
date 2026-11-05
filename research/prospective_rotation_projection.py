@@ -96,6 +96,7 @@ def build_target_date_rotations(
     )
     if report_complete:
         metadata = require_complete_injury_report(manifest, target)
+        metadata["complete"] = True
         if pd.isna(manifest.iloc[0].get("snapshot_time_utc")):
             raise RuntimeError("Official report manifest lacks a UTC timestamp")
         if raw.empty and int(manifest.iloc[0].get("rows", -1)) == 0:
