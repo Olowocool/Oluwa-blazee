@@ -463,6 +463,47 @@ def main():
             "overall":metric(result.actual_total,result[col]),
             "paired_date_cluster_bootstrap":cluster_bootstrap(result,col),
         }
+    # A player forecast is enabled only when the corrected RAPM family beats
+    # frozen V5 on the common chronological holdout and its date-cluster CI is
+    # wholly below zero. This is an accuracy gate, not a betting-probability gate.
+    player_oos = candidate_results["rapm_injury"]
+    baseline_oos_mae = float(overall["V5_frozen_control"]["mae"])
+    player_oos_mae = float(player_oos["overall"]["mae"])
+    player_ci = player_oos["paired_date_cluster_bootstrap"]["95pct_date_cluster_ci"]
+    validation_games = int(player_oos["overall"]["games"])
+    validation_dates = int(player_oos["paired_date_cluster_bootstrap"]["dates"])
+    validation_gate_passed = bool(
+        validation_games >= 500
+        and validation_dates >= 100
+        and player_oos_mae < baseline_oos_mae
+        and player_ci[1] < 0.0
+    )
+    calibration_path = ROOT / "research/live_player_strength_calibration.json"
+    calibration_payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+    calibration_payload["validation"] = {
+        "method": "expanding-window prequential RAPM/injury challenger vs frozen V5",
+        "games": validation_games,
+        "dates": validation_dates,
+        "v5_baseline_mae": baseline_oos_mae,
+        "player_rapm_injury_mae": player_oos_mae,
+        "mae_change_player_minus_v5": float(player_oos_mae - baseline_oos_mae),
+        "date_cluster_ci_95": [float(player_ci[0]), float(player_ci[1])],
+        "gate_minimum_games": 500,
+        "gate_minimum_dates": 100,
+        "gate_passed": validation_gate_passed,
+        "interpretation": "Forecast use requires lower MAE and a date-cluster 95% CI wholly below zero.",
+    }
+    calibration_payload["forecast_enabled"] = validation_gate_passed
+    calibration_payload["status"] = (
+        "validated_challenger" if validation_gate_passed else "research_shadow_only"
+    )
+    calibration_path.write_text(
+        json.dumps(calibration_payload, indent=2), encoding="utf-8"
+    )
+    live_calibration["validation"] = calibration_payload["validation"]
+    live_calibration["forecast_enabled"] = validation_gate_passed
+    live_calibration["status"] = calibration_payload["status"]
+
     by_season={}
     for season,part in result.groupby("season",sort=True):
         by_season[str(int(season))]={"V5":metric(part.actual_total,part.v5_total)}
