@@ -207,10 +207,13 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
     gc.collect()
     g, t, p, pn, tn, r, e = frames
     p["min"] = pd.to_numeric(p["min"], errors="coerce").fillna(0.0)
+    team_hist, player_hist, first_seen = phase2.build_player_history(p)
     source_row_counts = {
         "team_game_rows": int(len(t)), "player_game_rows": int(len(p)),
         "rotation_rows": int(len(r)), "event_rows": int(len(e)),
     }
+    del p
+    gc.collect()
     segments, segment_audit = phase2.build_lineup_segments(g, t, r, e)
     # Release the high-volume event and rotation frames before sparse fitting.
     del t, r, e, frames
@@ -231,14 +234,13 @@ def build_pregame_player_state(target_date, seasons=HISTORY_SEASONS):
         segments.season.isin([current_season - 1, current_season])
         & segments.game_date.lt(target)
     ].copy()
-    del segments
+    del current, prior, segments
     gc.collect()
     if len(history) < 1000 or history.game_date.max() >= target:
         raise RuntimeError("Insufficient or non-pregame lineup history for RAPM")
     ratings = phase2.fit_player_rapm(history, target)
     if not ratings:
         raise RuntimeError("Point-in-time RAPM fit returned no player ratings")
-    team_hist, player_hist, first_seen = phase2.build_player_history(p)
     team_names_current = tn[tn.season.eq(current_season)].copy()
     if team_names_current.empty:
         raise RuntimeError(f"team_seasons has no rows for current season {current_season}")
