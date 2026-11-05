@@ -20,6 +20,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from prospective_player_snapshot import map_odds_teams, require_complete_injury_report
+from research.official_injury_report import fetch_official_injury_reports
 
 
 def validate_rotation_projection(rows: pd.DataFrame, game_id: str, team_id: str) -> None:
@@ -85,8 +86,9 @@ def build_target_date_rotations(state: dict, fixtures: pd.DataFrame, target_date
         raise ValueError("Target fixture key collides with a completed game ID")
     game_map = pd.concat([state["games"], target_games], ignore_index=True)
 
-    # This is an official NBA report retrieval, not a paid DunkAPI request.
-    raw, manifest = phase2.fetch_injury_reports([target])
+    # Official NBA PDF retrieval using PyPDF2; avoids a Java runtime dependency
+    # in the deployed native-Python Render testbench. No paid DunkAPI request.
+    raw, manifest = fetch_official_injury_reports([target], team_names)
     metadata = require_complete_injury_report(manifest, target)
     if manifest.iloc[0].get("snapshot_time_utc") is None:
         raise RuntimeError("Official report manifest lacks a UTC timestamp")
