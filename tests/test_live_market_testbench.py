@@ -8,6 +8,7 @@ from live_market_testbench_engine import (
     _rest_adjustments,
     append_paper_observations,
     compose_predictions,
+    evaluate_pace_challenger,
     parse_current_totals_markets,
     team_schedule_features,
 )
@@ -171,3 +172,52 @@ def test_paper_observation_append_only(tmp_path):
     assert len(saved) == 2
     assert "stake" not in saved.columns
     assert "wager" not in saved.columns
+
+
+
+def test_pace_challenger_reports_paired_date_cluster_metrics(monkeypatch):
+    import live_market_testbench_engine as engine
+
+    history = pd.DataFrame([
+        ["2025-12-30", "Boston Celtics", "Miami Heat", 110, 100],
+        ["2026-03-01", "Boston Celtics", "Miami Heat", 112, 105],
+        ["2026-03-01", "New York Knicks", "Chicago Bulls", 101, 99],
+        ["2026-03-02", "Boston Celtics", "Miami Heat", 108, 103],
+    ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"])
+    history["game_date"] = pd.to_datetime(history.game_date)
+
+    def fake_components(home, away, target, prior, pace_history, team_map, **kwargs):
+        assert (prior.game_date < pd.Timestamp(target)).all()
+        return {
+            "raw_total": 210.0,
+            "composed": {"selected_prediction": 212.0},
+            "pace": {
+                "available": True,
+                "adjustment": 2.0,
+                "expected_matchup_pace_l10": 100.5,
+                "league_pace_prior": 99.8,
+            },
+        }
+
+    monkeypatch.setattr(engine, "calculate_game_components", fake_components)
+    rows, summary = evaluate_pace_challenger(
+        history, {"seasons_loaded": [2026]}, {}, bootstrap_resamples=200, seed=9
+    )
+    assert len(rows) == 3
+    assert summary["evaluation_games"] == 3
+    assert summary["evaluation_dates"] == 2
+    assert summary["v5_baseline"]["mae"] == pytest.approx(5.0)
+    assert summary["v5_plus_pace"]["mae"] == pytest.approx(3.0)
+    assert summary["mae_change_pace_minus_v5"] == pytest.approx(-2.0)
+    assert summary["strict_prior_date_history"] is True
+
+
+def test_pace_challenger_fails_when_no_supported_games():
+    history = pd.DataFrame([
+        ["2024-03-01", "Boston Celtics", "Miami Heat", 110, 100],
+    ], columns=["game_date", "home_team", "away_team", "home_score", "away_score"])
+    history["game_date"] = pd.to_datetime(history.game_date)
+    with pytest.raises(ValueError, match="No games could be evaluated"):
+        evaluate_pace_challenger(
+            history, {"seasons_loaded": [2027]}, {}, bootstrap_resamples=200
+        )
