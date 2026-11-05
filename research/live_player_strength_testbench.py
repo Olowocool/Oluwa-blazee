@@ -225,10 +225,13 @@ def _build_predictions(captured_rows: list[dict]) -> tuple[pd.DataFrame, pd.Data
                 "Player-adjusted total": totals["player_adjusted_total"],
                 "Player adjustment": totals["player_adjustment"],
                 "DraftKings total": market_line,
+                "DraftKings Over odds (American)": int(float(quote["over_odds_american"])),
+                "DraftKings Under odds (American)": int(float(quote["under_odds_american"])),
                 "Player total − DK": edge,
                 "Directional signal (not a bet)": _signal(edge),
                 "Decision": "Shadow test only — No Bet",
                 "Expected possessions": round(float(expected_possessions), 3),
+                "Expected possessions source": "V4 Phase 1 point-in-time formula possessions",
                 "Home rotation players": int(
                     next(x["players"] for x in rotation_result["summaries"]
                          if str(x["game_id"]) == game_key and str(x["team_id"]) == home_id)

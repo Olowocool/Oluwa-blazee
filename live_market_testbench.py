@@ -57,6 +57,10 @@ if capture:
         added = [r for r in rows if (r.get("game_key"), r.get("bookmaker"), r.get("observed_at_utc")) not in existing]
         st.session_state.captured_market_rows.extend(added)
         st.session_state.last_capture_meta = meta
+        # New market observations invalidate previously displayed live forecasts.
+        st.session_state["player_strength_live_predictions"] = None
+        st.session_state["player_strength_live_player_detail"] = None
+        st.session_state["player_strength_live_error"] = None
         st.success(f"Captured {len(added)} bookmaker observations across {meta.get('games_seen', 0)} listed games.")
     except Exception as exc:
         st.error(f"Market capture failed: {type(exc).__name__}: {exc}")

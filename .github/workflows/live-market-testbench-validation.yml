@@ -77,6 +77,7 @@ jobs:
           import research.official_injury_report
           import research.prospective_player_data
           import research.prospective_rotation_projection
+          import v4_phase2_rotation
           import research.build_prospective_pregame_records
           print("Player-strength inference and prospective adapters imported successfully.")
           PY
