@@ -35,10 +35,10 @@ def cached_live_player_profile_history(player_ids: tuple[str, ...], target_date:
     return load_live_player_profile_history(player_ids, target_date)
 
 st.title("NBA Totals — Real-Game Prediction & Research Bench")
-st.caption("Upcoming NBA game projections using frozen V5 scoring, live sportsbook totals, and chronological validation. Research only.")
+st.caption("Market-independent NBA player-driven game-total research. Select a scheduled date to inspect the players, projected minutes, individual scoring contributions, strength signals and pace mathematics.")
 st.warning(
     "No wagers are placed. No production model, live app, or paper-trading ledger is changed. "
-    "A live market quote is not automatically an eligible T−120 entry price, and this bench does not claim profitability."
+    "The Player-driven predictions tab does not use bookmaker totals or odds. All player-driven forecasts remain research candidates until chronological validation is complete."
 )
 
 if "captured_market_rows" not in st.session_state:
@@ -118,7 +118,7 @@ with tab_player_predictions:
     st.subheader("Market-independent player-driven NBA totals")
     st.write("Choose an NBA date. The app fetches scheduled fixtures directly, builds each team's full player rotation from the official injury report, loads strictly pregame player profiles, and calculates a transparent player-based scoring candidate. No bookmaker totals or odds are used in this tab.")
     prediction_date = st.date_input("NBA schedule date (US Eastern)", value=datetime.now().date(), key="player_driven_target_date")
-    st.caption("The date follows the NBA / US Eastern calendar. Player availability and rotation depend on the latest complete official injury report available for that date.")
+    st.caption("The date follows the NBA / US Eastern calendar. Player availability and rotation depend on the latest complete official injury report available for that date. Profile coverage scaling is shown explicitly; the candidate is withheld below 85% player-profile minute coverage.")
     build_player_slate = st.button("Fetch games, list players and calculate totals", type="primary", use_container_width=True, key="build_player_driven_slate")
     if build_player_slate:
         st.session_state.player_driven_predictions = None
@@ -227,7 +227,7 @@ with tab_player_predictions:
             "Tip (Lagos)", "Away", "Home", "Player model away points",
             "Player model home points", "Player-driven total",
             "Expected matchup pace", "League pace", "Pace multiplier",
-            "Home profile minutes coverage", "Away profile minutes coverage",
+            "Home profile minutes coverage", "Away profile minutes coverage", "home_profile_coverage_scale", "away_profile_coverage_scale",
             "Home weighted offensive RAPM", "Home weighted defensive RAPM",
             "Away weighted offensive RAPM", "Away weighted defensive RAPM",
             "Internal V5 + pace reference", "forecast_status",
