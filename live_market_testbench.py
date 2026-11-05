@@ -14,7 +14,7 @@ from research.collect_public_odds_snapshots import PAGE_URL, parse_odds_page
 from research.objective5_market_comparison import run as run_objective5
 from research.objective6_bet_selection import run as run_objective6
 from research.objective7_profitability_validation import run as run_objective7
-from live_market_testbench_engine import calculate_game_components, load_score_history, load_team_id_map
+from live_market_testbench_engine import calculate_game_components, evaluate_pace_challenger, load_pace_history, load_score_history, load_team_id_map
 
 CAPTURE_MAX_PAGE_AGE_MINUTES = 75  # DunkAPI public board refreshes hourly.
 LIVE_MARKET_MAX_PAGE_AGE_MINUTES = 20  # Keep the stricter gate for live-market eligibility.
@@ -121,6 +121,7 @@ with tab_live:
                 score_path = handle.name
             history = load_score_history(score_path)
             team_map = load_team_id_map()
+            pace_history = load_pace_history()
             latest_rows = captured.sort_values("observed_at_utc").groupby(["game_key", "bookmaker"], as_index=False).tail(1)
             projections = []
             cache = {"v3": {}, "v4": {}}
@@ -142,7 +143,7 @@ with tab_live:
                 target_date = commence.tz_convert("America/New_York").date().isoformat()
                 prediction = calculate_game_components(
                     str(first["home_team"]), str(first["away_team"]), target_date,
-                    history, None, team_map, use_pace=False, h2h_mode="off",
+                    history, pace_history, team_map, use_pace=True, h2h_mode="off",
                     rest_mode="off", v5_cache=cache,
                 )
                 market_median = float(np.median([q["total_line"] for q in quotes]))
@@ -163,7 +164,9 @@ with tab_live:
                     fair_over.append(inv_over / (inv_over + inv_under))
                 market_fair_over = float(np.median(fair_over)) if fair_over else np.nan
                 market_fair_under = 1.0 - market_fair_over if np.isfinite(market_fair_over) else np.nan
-                difference = float(prediction["raw_total"] - market_median)
+                pace = prediction["pace"]
+                pace_adjusted_total = float(prediction["composed"]["selected_prediction"])
+                difference = float(pace_adjusted_total - market_median)
                 if difference >= 5.0:
                     signal = "Strong Over"
                 elif difference >= 2.5:
@@ -180,7 +183,12 @@ with tab_live:
                     "Tip (Lagos)": commence.tz_convert("Africa/Lagos").strftime("%d %b %H:%M"),
                     "Projected away": round(float(v5["projected_away_points"]), 1),
                     "Projected home": round(float(v5["projected_home_points"]), 1),
-                    "V5 projected total": round(float(prediction["raw_total"]), 1),
+                    "V5 baseline total": round(float(prediction["raw_total"]), 1),
+                    "Pace adjustment (pts)": round(float(prediction["composed"]["pace_adjustment_used"]), 2),
+                    "Matchup pace": round(float(pace["expected_matchup_pace_l10"]), 2) if pace.get("available") else None,
+                    "League pace": round(float(pace["league_pace_prior"]), 2) if pace.get("available") else None,
+                    "Pace data status": "Available" if pace.get("available") else pace.get("reason", "Unavailable"),
+                    "V5 + pace total": round(pace_adjusted_total, 1),
                     "Market median": round(market_median, 1),
                     "Consensus price line": consensus_line,
                     "Market fair Over %": round(100.0 * market_fair_over, 1) if np.isfinite(market_fair_over) else None,
@@ -205,8 +213,8 @@ with tab_live:
                     use_container_width=True,
                 )
             st.info(
-                "Prediction-layer status: V5 is the validated point-prediction baseline. "
-                "Market fair Over/Under percentages are derived from paired bookmaker prices at the consensus line; "
+                "Prediction-layer status: V5 is the frozen baseline; V5+pace is the possession-based challenger. "
+                "Pace adjustment is displayed separately and is not a calibrated betting probability. Market fair Over/Under percentages are derived from paired bookmaker prices at the consensus line; "
                 "they are not our model probabilities. The residual-adjusted total, calibrated model probabilities, "
                 "expected value and staking decision remain disabled because Objective 5 has not passed its "
                 "timestamped historical-entry-data gate. The safe decision is No Bet until those gates pass."
