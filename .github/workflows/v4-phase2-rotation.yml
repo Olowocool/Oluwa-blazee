@@ -24,6 +24,7 @@ concurrency:
 permissions:
   contents: write
   actions: read
+  statuses: write
 
 jobs:
   phase2:
@@ -31,6 +32,18 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
+      - name: Publish Phase 2 calibration build pending status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api "repos/$REPOSITORY/statuses/$COMMIT_SHA" \
+            -f state="pending" \
+            -f context="phase2-player-calibration-build" \
+            -f description="RAPM rotation rebuild and player calibration running" \
+            -f target_url="$RUN_URL"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -121,3 +134,25 @@ jobs:
           path: outputs/research/player_skill_feature_experiment/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish Phase 2 calibration build result
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_RESULT: ${{ job.status }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$JOB_RESULT" == "success" ]]; then
+            STATE="success"
+            DESCRIPTION="RAPM rebuild and player calibration completed"
+          else
+            STATE="failure"
+            DESCRIPTION="RAPM rebuild or player calibration failed"
+          fi
+          gh api "repos/$REPOSITORY/statuses/$COMMIT_SHA" \
+            -f state="$STATE" \
+            -f context="phase2-player-calibration-build" \
+            -f description="$DESCRIPTION" \
+            -f target_url="$RUN_URL"
