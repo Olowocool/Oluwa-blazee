@@ -92,13 +92,14 @@ def build_player_scoring_projection(
     """Calculate transparent player-minute scoring candidates and team totals.
 
     Per-player expected points = expected minutes × prior L20 points per 36 / 36.
-    Team points are multiplied by matchup pace / league pace. RAPM is surfaced
-    as a strength signal, not converted into points until a calibration passes.
+    Team baseline points are pace-adjusted. Offensive and opponent defensive
+    RAPM are then converted from their native points-per-100-possession units
+    using projected minutes. Missing RAPM exposure is not silently treated as zero.
     """
     required_players = {
         "game_id", "team_id", "player_id", "expected_minutes",
         "baseline_minutes", "status", "availability_probability",
-        "profile_eligible", "pts_per36", "o_rapm", "d_rapm",
+        "profile_eligible", "pts_per36", "o_rapm", "d_rapm", "rapm_available",
     }
     missing = required_players - set(player_rows.columns)
     if missing:
@@ -171,6 +172,7 @@ def build_player_scoring_projection(
             complete = bool(
                 official_report_complete
                 and coverage >= minimum_profiled_minutes_share
+                and rapm_coverage >= minimum_profiled_minutes_share
                 and np.isfinite(pace_factor)
                 and team.loc[profiled, "player_expected_points"].notna().all()
             )
@@ -179,8 +181,12 @@ def build_player_scoring_projection(
                 if complete else np.nan
             )
             rapm_rows = team[team.expected_minutes.gt(0)]
-            rapm_valid = rapm_rows.o_rapm.notna() & rapm_rows.d_rapm.notna()
+            rapm_valid = (
+                rapm_rows.rapm_available.fillna(False).astype(bool)
+                & rapm_rows.o_rapm.notna() & rapm_rows.d_rapm.notna()
+            )
             rapm_minutes = float(rapm_rows.loc[rapm_valid, "expected_minutes"].sum())
+            rapm_coverage = rapm_minutes / 240.0
             off_rapm = (
                 float(np.average(
                     rapm_rows.loc[rapm_valid, "o_rapm"],
@@ -220,6 +226,7 @@ def build_player_scoring_projection(
                 "expected_points": np.nan,
                 "rapm_adjustment_points": np.nan,
                 "profiled_minutes_share": coverage,
+                "rapm_profiled_minutes_share": rapm_coverage,
                 "offensive_rapm_minutes_weighted": off_rapm,
                 "defensive_rapm_minutes_weighted": def_rapm,
                 "offensive_rapm_p100": off_rapm_p100,
@@ -263,8 +270,10 @@ def build_player_scoring_projection(
             ),
             "home_profiled_minutes_share": team_results["home"]["profiled_minutes_share"],
             "home_profile_coverage_scale": team_results["home"]["profile_coverage_scale"],
+            "home_rapm_profiled_minutes_share": team_results["home"]["rapm_profiled_minutes_share"],
             "away_profiled_minutes_share": team_results["away"]["profiled_minutes_share"],
             "away_profile_coverage_scale": team_results["away"]["profile_coverage_scale"],
+            "away_rapm_profiled_minutes_share": team_results["away"]["rapm_profiled_minutes_share"],
             "home_offensive_rapm": team_results["home"]["offensive_rapm_minutes_weighted"],
             "home_defensive_rapm": team_results["home"]["defensive_rapm_minutes_weighted"],
             "away_offensive_rapm": team_results["away"]["offensive_rapm_minutes_weighted"],
@@ -277,7 +286,7 @@ def build_player_scoring_projection(
             "forecast_status": (
                 "candidate — not yet historically calibrated" if complete_game
                 else "withheld — official injury report incomplete" if not official_report_complete
-                else "withheld — insufficient profile/pace coverage"
+                else "withheld — insufficient player-profile, RAPM or pace coverage"
             ),
         })
 
