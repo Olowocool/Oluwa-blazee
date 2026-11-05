@@ -51,8 +51,10 @@ def validate_rotation_projection(rows: pd.DataFrame, game_id: str, team_id: str)
         raise ValueError("Availability probabilities must be in [0, 1]")
 
 
-def build_target_date_rotations(state: dict, fixtures: pd.DataFrame, target_date) -> dict:
-    """Fetch and map official report; project every eligible player for both teams."""
+def build_target_date_rotations(
+    state: dict, fixtures: pd.DataFrame, target_date, *, allow_unconfirmed_report: bool = False
+) -> dict:
+    """Project every eligible player; optionally list provisional rotations before report completion."""
     import v4_phase2_rotation as phase2
     target = pd.Timestamp(target_date).normalize()
     required = {"game_key", "game_date", "away_team", "home_team"}
@@ -87,28 +89,49 @@ def build_target_date_rotations(state: dict, fixtures: pd.DataFrame, target_date
 
     # This is an official NBA report retrieval, not a paid DunkAPI request.
     raw, manifest = phase2.fetch_injury_reports([target])
-    metadata = require_complete_injury_report(manifest, target)
-    if manifest.iloc[0].get("snapshot_time_utc") is None:
-        raise RuntimeError("Official report manifest lacks a UTC timestamp")
-    if raw.empty and int(manifest.iloc[0].get("rows", -1)) == 0:
+    report_complete = bool(
+        not manifest.empty
+        and "status" in manifest.columns
+        and str(manifest.iloc[0].get("status", "")).casefold() == "complete"
+    )
+    if report_complete:
+        metadata = require_complete_injury_report(manifest, target)
+        if pd.isna(manifest.iloc[0].get("snapshot_time_utc")):
+            raise RuntimeError("Official report manifest lacks a UTC timestamp")
+        if raw.empty and int(manifest.iloc[0].get("rows", -1)) == 0:
+            mapped = pd.DataFrame(columns=["season", "game_date", "game_id", "team_id",
+                                           "player_id", "status", "snapshot_time"])
+            unmatched = pd.DataFrame(columns=["game_date", "team", "player", "reason"])
+        else:
+            mapped, unmatched = phase2.map_injury_rows(
+                raw, game_map, state["player_names"], team_names
+            )
+        mapped = mapped[mapped.game_date.eq(target)].copy()
+        if mapped.empty and int(manifest.iloc[0].get("rows", -1)) != 0:
+            raise RuntimeError("Official injury report rows did not map to target fixtures")
+        unexpected_games = set(mapped.game_id.astype(str)) - set(target_games.game_id.astype(str))
+        if unexpected_games:
+            raise RuntimeError(f"Injury rows mapped to non-target fixtures: {sorted(unexpected_games)}")
+        if not unmatched.empty:
+            raise RuntimeError(
+                f"Official injury report contains {len(unmatched)} unmapped player/team rows; "
+                "refusing to assume those players are available"
+            )
+    else:
+        if not allow_unconfirmed_report:
+            require_complete_injury_report(manifest, target)
+            raise RuntimeError("Official injury report is not complete.")
+        metadata = {
+            "status": "incomplete_or_not_yet_published",
+            "complete": False,
+            "target_date": str(target.date()),
+            "interpretation": "Players and baseline minutes are provisional; availability is unconfirmed.",
+        }
+        # Do not use a partial report to mark players available or unavailable.
+        # The historical rotation is still useful for a provisional roster list.
         mapped = pd.DataFrame(columns=["season", "game_date", "game_id", "team_id",
                                        "player_id", "status", "snapshot_time"])
         unmatched = pd.DataFrame(columns=["game_date", "team", "player", "reason"])
-    else:
-        mapped, unmatched = phase2.map_injury_rows(
-            raw, game_map, state["player_names"], team_names
-        )
-    mapped = mapped[mapped.game_date.eq(target)].copy()
-    if mapped.empty and int(manifest.iloc[0].get("rows", -1)) != 0:
-        raise RuntimeError("Official injury report rows did not map to target fixtures")
-    unexpected_games = set(mapped.game_id.astype(str)) - set(target_games.game_id.astype(str))
-    if unexpected_games:
-        raise RuntimeError(f"Injury rows mapped to non-target fixtures: {sorted(unexpected_games)}")
-    if not unmatched.empty:
-        raise RuntimeError(
-            f"Official injury report contains {len(unmatched)} unmapped player/team rows; "
-            "refusing to assume those players are available"
-        )
 
     # The prospective status prior must not borrow later historical labels.
     phase2.STATUS_HISTORY = pd.DataFrame(columns=["game_date", "status", "played"])
@@ -146,6 +169,7 @@ def build_target_date_rotations(state: dict, fixtures: pd.DataFrame, target_date
         "projections": projections,
         "manifest": manifest,
         "report_metadata": metadata,
+        "report_complete": report_complete,
         "unmatched_report_rows": unmatched,
         "summaries": game_summaries,
         "target_games": target_games,
