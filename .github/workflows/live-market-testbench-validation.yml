@@ -57,9 +57,24 @@ jobs:
             points_engine_v3.py \
             points_engine_v4.py \
             points_engine_v5.py \
-            team_name_utils.py
+            team_name_utils.py \
+            research/live_player_strength.py \
+            research/live_player_strength_testbench.py \
+            research/prospective_player_data.py \
+            research/prospective_rotation_projection.py \
+            research/build_prospective_pregame_records.py
       - name: Run unit tests
-        run: python -m pytest -q tests/test_live_market_testbench.py tests/test_live_player_strength.py
+        run: python -m pytest -q tests/test_live_market_testbench.py tests/test_live_player_strength.py tests/test_live_player_strength_testbench.py
+      - name: Smoke-test player-strength inference imports
+        run: |
+          python - <<'PY'
+          import research.live_player_strength
+          import research.live_player_strength_testbench
+          import research.prospective_player_data
+          import research.prospective_rotation_projection
+          import research.build_prospective_pregame_records
+          print("Player-strength inference and prospective adapters imported successfully.")
+          PY
       - name: Verify bundled historical score history
         run: |
           python - <<'PY'
