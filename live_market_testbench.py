@@ -288,7 +288,7 @@ with tab_player_predictions:
             detail.expected_minutes - detail.baseline_minutes
         ).round(1)
         detail["Availability %"] = (detail.availability_probability * 100).round(0)
-        if not slate.get("injury_report", {}).get("complete", True):\n            detail = detail.rename(columns={"Player expected points": "Provisional points signal — not a forecast"})\n        detail = detail.rename(columns={
+        points_label = "Player expected points" if slate.get("injury_report", {}).get("complete", True) else "Provisional points signal — not a forecast"\n        if points_label != "Player expected points":\n            detail = detail.rename(columns={"Player expected points": points_label})\n        detail = detail.rename(columns={
             "full_name": "Team", "name": "Player", "status": "Official status",
             "o_rapm": "Offensive RAPM", "d_rapm": "Defensive RAPM",
             "pts_per36": "L20 points / 36", "ast_per36": "L20 assists / 36",
