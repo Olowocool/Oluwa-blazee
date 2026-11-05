@@ -1,5 +1,12 @@
+import sys
+from pathlib import Path
+
 import pandas as pd
 import pytest
+
+RESEARCH_DIR = Path(__file__).resolve().parents[1] / "research"
+if str(RESEARCH_DIR) not in sys.path:
+    sys.path.insert(0, str(RESEARCH_DIR))
 
 from research.v4_phase2_rotation import attach_rapm_ratings
 
