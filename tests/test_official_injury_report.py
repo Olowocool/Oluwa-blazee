@@ -4,7 +4,7 @@ import pytest
 from research.official_injury_report import parse_official_injury_report_text
 
 
-TEAMS = ["Boston Celtics", "Orlando Magic", "Indiana Pacers", "Milwaukee Bucks"]
+TEAMS = ["Boston Celtics", "Orlando Magic", "Indiana Pacers", "Milwaukee Bucks", "LA Clippers"]
 
 
 def test_parse_official_report_rows_and_multiline_reasons():
@@ -23,16 +23,19 @@ cartilage tear
 08:00 (ET) IND@MIL Indiana Pacers Jackson, Isaiah Out
 Injury/Illness - Right Achilles Tendon; Tear
 Milwaukee Bucks Smith, Tyler Questionable Injury/Illness - Left Ankle; Sprain
+08:30 (ET) DEN@LAC Los Angeles Clippers Leonard, Kawhi Out
+Injury/Illness - Right Knee; Soreness
 """
     rows, unsubmitted = parse_official_injury_report_text(text, "2025-04-25", TEAMS)
     assert not unsubmitted
-    assert len(rows) == 5
+    assert len(rows) == 6
     assert rows.iloc[0]["Team"] == "Boston Celtics"
     assert rows.iloc[0]["Player Name"] == "Brown, Jaylen"
     assert rows.iloc[0]["Reason"] == "Injury/Illness - Right Knee; Posterior Impingement"
     assert rows.iloc[2]["Team"] == "Orlando Magic"
     assert rows.iloc[3]["Matchup"] == "IND@MIL"
     assert rows.iloc[4]["Current Status"] == "QUESTIONABLE"
+    assert rows.iloc[5]["Team"] == "LA Clippers"
 
 
 def test_parser_flags_unsubmitted_team_reports():
