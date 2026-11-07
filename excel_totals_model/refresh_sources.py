@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fetch strictly pre-target team/player history and timestamped NBA injury-report snapshots."""
 from __future__ import annotations
-import argparse, json
+import argparse, json, io, re
 from datetime import datetime, timezone
 from pathlib import Path
-import duckdb, pandas as pd, requests
+import duckdb, pandas as pd, requests, pdfplumber
 
 BASE="https://basketball-data.billmill.org/nba"
 ESPN="https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
@@ -57,36 +57,75 @@ def main():
             '{parquet_url("stats","team_seasons",season)}'
           ],hive_partitioning=true,union_by_name=true)
         """).fetchdf()
-        # SportsDataverse distributes parsed versions of the NBA's timestamped
-        # official PDF reports. Preserve each report's own issue time and labels.
+        # First use the NBA's own current-season page and its linked PDF snapshots.
+        # The PDF filename carries the report issue time; preserve that source time.
         try:
-            injury=con.execute(f"""
-              SELECT report_datetime,game_date,report_matchup,team,
-                     report_player_name,current_status,reason
-              FROM read_parquet('{injury_source_url}')
-              WHERE CAST(game_date AS DATE)=DATE '{target.date()}'
-            """).fetchdf()
-            if not injury.empty:
-                injury["report_datetime"]=pd.to_datetime(injury["report_datetime"],errors="coerce")
-                injury=injury.dropna(subset=["report_datetime"])
-                injury=injury.sort_values("report_datetime").drop_duplicates(
-                    subset=["game_date","report_matchup","team","report_player_name"],keep="last")
-                for r in injury.to_dict("records"):
-                    injury_rows.append({
-                      "report_datetime":str(r["report_datetime"]),
-                      "game_date":str(pd.Timestamp(r["game_date"]).date()),
-                      "matchup":str(r["report_matchup"] or ""),
-                      "team":str(r["team"] or ""),
-                      "player_report_name":str(r["report_player_name"] or ""),
-                      "status":str(r["current_status"] or ""),
-                      "reason":str(r["reason"] or "")
-                    })
-                latest=max(x["report_datetime"] for x in injury_rows)
-                injury_source_status=f"LOADED — {len(injury_rows)} dated rows; latest source snapshot {latest}"
+            season_page=f"https://official.nba.com/nba-injury-report-{season-1}-{str(season)[-2:]}-season/"
+            page=requests.get(season_page,timeout=30,headers={"User-Agent":"Mozilla/5.0"})
+            page.raise_for_status()
+            hrefs=re.findall(r'href=["\\']([^"\\']+Injury-Report_[^"\\']+\\.pdf)["\\']',page.text,re.I)
+            candidates=[]
+            for href in hrefs:
+                url=href.replace("&amp;","&")
+                match=re.search(r"Injury-Report_(\\d{4}-\\d{2}-\\d{2})_(\\d{1,2})_(\\d{2})(AM|PM)",url,re.I)
+                if not match or match.group(1)!=target.strftime("%Y-%m-%d"): continue
+                hour=int(match.group(2))%12
+                if match.group(4).upper()=="PM": hour+=12
+                minute=int(match.group(3))
+                candidates.append(((hour,minute),url))
+            if candidates:
+                _,official_pdf=max(candidates,key=lambda x:x[0])
+                response=requests.get(official_pdf,timeout=45,headers={"User-Agent":"Mozilla/5.0"})
+                response.raise_for_status()
+                with pdfplumber.open(io.BytesIO(response.content)) as pdf:
+                    for page_no,pdf_page in enumerate(pdf.pages,1):
+                        for table in pdf_page.extract_tables() or []:
+                            current_date=""; current_matchup=""; current_team=""
+                            for cells in table:
+                                cells=[str(x or "").strip() for x in cells]
+                                if len(cells)<7: continue
+                                if "Game Date" in " ".join(cells): continue
+                                gd,gt,mu,tm,pn,st,reason=(cells+[""]*7)[:7]
+                                if gd: current_date=gd
+                                if mu: current_matchup=mu
+                                if tm: current_team=tm
+                                if not current_team: continue
+                                if not pn and not st and "NOT YET SUBMITTED" not in reason.upper(): continue
+                                parsed_date=pd.to_datetime(current_date,errors="coerce")
+                                if pd.isna(parsed_date) or parsed_date.date()!=target.date(): continue
+                                injury_rows.append({"report_datetime":re.search(r"Injury-Report_(\\d{4}-\\d{2}-\\d{2})_(\\d{1,2})_(\\d{2})(AM|PM)",official_pdf,re.I).group(0).replace("Injury-Report_","").replace("_"," ") if "Injury-Report_" in official_pdf else "",
+                                  "game_date":str(parsed_date.date()),"matchup":current_matchup,"team":current_team,
+                                  "player_report_name":pn,"status":st,"reason":reason,"source_page":page_no})
+                injury_source_url=official_pdf
+                if injury_rows:
+                    injury_source_status=f"NBA OFFICIAL PDF — {len(injury_rows)} rows; source {official_pdf.rsplit('/',1)[-1]}"
             else:
-                injury_source_status="NO REPORT ROWS FOR TARGET DATE — availability remains unknown"
+                injury_source_status="NO NBA OFFICIAL PDF LINK FOR TARGET DATE — availability remains unknown"
         except Exception as exc:
-            injury_source_status=f"UNAVAILABLE — {type(exc).__name__}: {exc}"
+            injury_source_status=f"NBA OFFICIAL PDF FETCH/PARSE FAILED — {type(exc).__name__}: {exc}"
+        # Fallback archive provides a timestamped cross-check, but is not allowed
+        # to overwrite direct official PDF rows or imply a player is available.
+        if not injury_rows:
+            try:
+                injury=con.execute(f"""
+                  SELECT report_datetime,game_date,report_matchup,team,
+                         report_player_name,current_status,reason
+                  FROM read_parquet('{injury_source_url}')
+                  WHERE CAST(game_date AS DATE)=DATE '{target.date()}'
+                """).fetchdf()
+                if not injury.empty:
+                    injury["report_datetime"]=pd.to_datetime(injury["report_datetime"],errors="coerce")
+                    injury=injury.dropna(subset=["report_datetime"])
+                    injury=injury.sort_values("report_datetime").drop_duplicates(
+                        subset=["game_date","report_matchup","team","report_player_name"],keep="last")
+                    for r in injury.to_dict("records"):
+                        injury_rows.append({"report_datetime":str(r["report_datetime"]),
+                          "game_date":str(pd.Timestamp(r["game_date"]).date()),"matchup":str(r["report_matchup"] or ""),
+                          "team":str(r["team"] or ""),"player_report_name":str(r["report_player_name"] or ""),
+                          "status":str(r["current_status"] or ""),"reason":str(r["reason"] or "")})
+                    injury_source_status=f"ARCHIVED PARSED NBA REPORT — {len(injury_rows)} rows; latest archive snapshot {max(x['report_datetime'] for x in injury_rows)}"
+            except Exception as exc:
+                injury_source_status += f"; archive fallback unavailable: {type(exc).__name__}: {exc}"
     finally:
         con.close()
     if team.empty:
@@ -151,6 +190,7 @@ def main():
     team_id_by_name={name_key(v):k for k,v in team_name_map.items()}
     matched=0
     for row in injury_rows:
+        if not row.get("player_report_name"): continue
         tid=team_id_by_name.get(name_key(row["team"]))
         reported=row["player_report_name"]
         parts=[x.strip() for x in reported.split(",")]
