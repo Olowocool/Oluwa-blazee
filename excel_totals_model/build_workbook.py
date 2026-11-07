@@ -158,18 +158,23 @@ def main():
             pid,athlete=match
             row=all_players.get((team,str(pid)))
             if row is None:
+                row=next((candidate for candidate in all_players.values()
+                  if str(candidate["team_id"])==team and norm(candidate.get("player"))==norm(athlete.get("name"))),None)
+            if row is None:
                 row={"team_id":team,"player_id":str(pid),"player":athlete.get("name") or reported,
                   "recent_games":0,"recent_avg_minutes":0.0,"expected_minutes_estimate":0.0,
                   "impact_pts_per_100_poss":0.0,"availability":"UNKNOWN — no recent history",
                   "status_source":"Roster identity only; no recent player history","official_status":"",
-                  "official_reason":"","report_datetime":"","history_as_of":""}
+                  "official_reason":"","report_datetime":"","history_as_of":"",
+                  "_roster_name":athlete.get("name"),"_roster_injury":athlete.get("injury","")}
                 all_players[(team,str(pid))]=row
             row["official_status"]=injury.get("status") or ""
             row["official_reason"]=injury.get("reason") or ""
             row["report_datetime"]=injury.get("report_datetime") or ""
             row["availability"]=injury.get("status") or "UNKNOWN — blank status in report"
             row["status_source"]="NBA official injury report PDF/archive"
-            injury_matches+=1
+            matched_roster_players.add((team,norm(athlete.get("name"))))
+            injury_matches=len(matched_roster_players)
     for p in all_players.values():
         code=code_by_teamid.get(str(p["team_id"]))
         if not code: continue
