@@ -175,15 +175,18 @@ def main():
             row["status_source"]="NBA official injury report PDF/archive"
             matched_roster_players.add((team,norm(athlete.get("name"))))
             injury_matches=len(matched_roster_players)
+    dash["B14"]=injury_matches
     for p in all_players.values():
         code=code_by_teamid.get(str(p["team_id"]))
         if not code: continue
         r=roster_cache.get(code,{}).get(str(p["player_id"]),{})
-        pi.append([code,p["player_id"],r.get("name") or p["player"],p["recent_games"],p["recent_avg_minutes"],
+        roster_name=r.get("name") or p.get("_roster_name")
+        roster_injury=r.get("injury") or p.get("_roster_injury") or "No matching ESPN roster identity; roster status is not official availability"
+        pi.append([code,p["player_id"],roster_name or p["player"],p["recent_games"],p["recent_avg_minutes"],
           p["expected_minutes_estimate"],p["impact_pts_per_100_poss"],p.get("official_status") or "UNKNOWN — no matched official row",
           p.get("official_reason") or "",p.get("report_datetime") or "",
           p.get("status_source") or "No matched official report row",
-          r.get("injury","No matching ESPN roster identity; roster status is not official availability"),p.get("history_as_of") or "No recent player history"])
+          roster_injury,p.get("history_as_of") or "No recent player history"])
     eng=wb.create_sheet("Game Engine")
     eng.append(["Game ID","Away code","Home code","Away ORtg","Away DRtg","Home ORtg","Home DRtg","Away pace","Home pace","Expected pace","Projected possessions","Away points","Home points","Combined total","Input status","Away player delta","Home player delta"])
     for i,g in enumerate(games,2):
