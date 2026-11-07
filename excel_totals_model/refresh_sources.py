@@ -22,7 +22,7 @@ def main():
     season=target.year+1 if target.month>=7 else target.year
     seasons=[season-1,season]
     con=duckdb.connect(config={"memory_limit":"1GB","threads":"2"})
-    injury_rows=[]; injury_source_status="UNAVAILABLE — official report archive could not be read"; official_diag={"page_status":None,"page_pdf_links":0,"target_pdf_candidates":0,"selected_pdf":None,"pdf_pages":0,"pdf_tables":0,"pdf_text_chars":0,"direct_error":None}
+    injury_rows=[]; injury_source_status="UNAVAILABLE — official report archive could not be read"; official_diag={"page_status":None,"page_pdf_links":0,"target_pdf_candidates":0,"selected_pdf":None,"pdf_pages":0,"pdf_tables":0,"pdf_text_chars":0,"pdf_text_preview":"","table_sample":[],"direct_error":None}
     injury_source_url=INJURY_RELEASE.format(asset_year=season)
     try:
         con.execute("INSTALL httpfs")
@@ -104,10 +104,12 @@ def main():
                     official_diag["pdf_pages"]=len(pdf.pages)
                     for page_no,pdf_page in enumerate(pdf.pages,1):
                         official_diag["pdf_text_chars"]+=len(pdf_page.extract_text() or "")
+                        if page_no==1: official_diag["pdf_text_preview"]=(pdf_page.extract_text() or "")[:1400]
                         tables=pdf_page.extract_tables() or []
                         if not tables:
                             tables=pdf_page.extract_tables(table_settings={"vertical_strategy":"text","horizontal_strategy":"text","snap_tolerance":3,"join_tolerance":3,"min_words_vertical":1,"min_words_horizontal":1}) or []
                         official_diag["pdf_tables"]+=len(tables)
+                        if tables and not official_diag["table_sample"]: official_diag["table_sample"]=[[str(c or "") for c in row] for row in tables[0][:10]]
                         for table in tables:
                             current_date=""; current_matchup=""; current_team=""
                             for cells in table:
