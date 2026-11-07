@@ -97,7 +97,10 @@ def main():
                 response.raise_for_status()
                 with pdfplumber.open(io.BytesIO(response.content)) as pdf:
                     for page_no,pdf_page in enumerate(pdf.pages,1):
-                        for table in pdf_page.extract_tables() or []:
+                        tables=pdf_page.extract_tables() or []
+                        if not tables:
+                            tables=pdf_page.extract_tables(table_settings={"vertical_strategy":"text","horizontal_strategy":"text","snap_tolerance":3,"join_tolerance":3,"min_words_vertical":1,"min_words_horizontal":1}) or []
+                        for table in tables:
                             current_date=""; current_matchup=""; current_team=""
                             for cells in table:
                                 cells=[str(x or "").strip() for x in cells]
@@ -114,8 +117,8 @@ def main():
                                 injury_rows.append({"report_datetime":re.search(r"Injury-Report_(\\d{4}-\\d{2}-\\d{2})_(\\d{1,2})_(\\d{2})(AM|PM)",official_pdf,re.I).group(0).replace("Injury-Report_","").replace("_"," ") if "Injury-Report_" in official_pdf else "",
                                   "game_date":str(parsed_date.date()),"matchup":current_matchup,"team":current_team,
                                   "player_report_name":pn,"status":st,"reason":reason,"source_page":page_no})
-                injury_source_url=official_pdf
                 if injury_rows:
+                    injury_source_url=official_pdf
                     injury_source_status=f"NBA OFFICIAL PDF — {len(injury_rows)} rows; source {official_pdf.rsplit('/',1)[-1]}"
             else:
                 injury_source_status="NO NBA OFFICIAL PDF LINK FOR TARGET DATE — availability remains unknown"
