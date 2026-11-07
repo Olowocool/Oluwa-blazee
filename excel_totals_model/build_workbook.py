@@ -92,7 +92,7 @@ def main():
       ["Model classification","PROVISIONAL — recent-form and player-rate proxy; not validated or calibrated."],
       ["Availability warning","Only matched timestamped official NBA injury-report rows receive a status. Missing rows and NOT YET SUBMITTED remain unknown."],
       ["Official report feed",src.get("injury_report_source_status","Not loaded")],
-      ["Official report matched players",src.get("injury_report_matched_players",0)]
+      ["Official report matched players",injury_matches]
     ]: dash.append(row)
     sch=wb.create_sheet("Schedule"); sch.append(["Game ID","Start UTC","Away code","Away team","Home code","Home team","Status"])
     for g in games: sch.append([g["id"],g["date"],g["away_code"],g["away_name"],g["home_code"],g["home_name"],g["status"]])
@@ -106,7 +106,58 @@ def main():
     for code in team_code_map:
         try: roster_cache[code]=roster_status(code)
         except Exception: roster_cache[code]={}
-    for p in src.get("player_inputs",[]):
+    # Build a complete roster view, not just players who appeared in the last ten games.
+    # This allows an official report to match players who have missed recent games.
+    all_players={(str(p["team_id"]),str(p["player_id"])):dict(p) for p in src.get("player_inputs",[])}
+    code_alias={}
+    for code,g in ((g["away_code"],g) for g in games):
+        code_alias[norm(code)]=code; code_alias[norm(g["away_name"])]=code
+    for g in games:
+        code_alias[norm(g["home_code"])]=g["home_code"]; code_alias[norm(g["home_name"])]=g["home_code"]
+    for code,team in team_code_map.items():
+        tid=str(team["team_id"])
+        for pid,athlete in roster_cache.get(code,{}).items():
+            key=(tid,str(pid))
+            if key not in all_players:
+                all_players[key]={"team_id":tid,"player_id":str(pid),"player":athlete.get("name") or str(pid),
+                  "recent_games":0,"recent_avg_minutes":0.0,"expected_minutes_estimate":0.0,
+                  "impact_pts_per_100_poss":0.0,"availability":"UNKNOWN — no recent history",
+                  "status_source":"Roster identity only; no recent player history","official_status":"",
+                  "official_reason":"","report_datetime":"","history_as_of":""}
+    injury_matches=0
+    for injury in src.get("injury_report_rows",[]):
+        code=code_alias.get(norm(injury.get("team")))
+        if not code:
+            continue
+        team=str(team_code_map.get(code,{}).get("team_id",""))
+        if not team:
+            continue
+        reported=str(injury.get("player_report_name") or "")
+        if not reported:
+            continue
+        report_names={norm(reported)}
+        if "," in reported:
+            last,first=[x.strip() for x in reported.split(",",1)]
+            report_names.add(norm(first+" "+last))
+        roster=roster_cache.get(code,{})
+        match=next(((pid,a) for pid,a in roster.items() if norm(a.get("name")) in report_names),None)
+        if match:
+            pid,athlete=match
+            row=all_players.get((team,str(pid)))
+            if row is None:
+                row={"team_id":team,"player_id":str(pid),"player":athlete.get("name") or reported,
+                  "recent_games":0,"recent_avg_minutes":0.0,"expected_minutes_estimate":0.0,
+                  "impact_pts_per_100_poss":0.0,"availability":"UNKNOWN — no recent history",
+                  "status_source":"Roster identity only; no recent player history","official_status":"",
+                  "official_reason":"","report_datetime":"","history_as_of":""}
+                all_players[(team,str(pid))]=row
+            row["official_status"]=injury.get("status") or ""
+            row["official_reason"]=injury.get("reason") or ""
+            row["report_datetime"]=injury.get("report_datetime") or ""
+            row["availability"]=injury.get("status") or "UNKNOWN — blank status in report"
+            row["status_source"]="NBA official injury report PDF/archive"
+            injury_matches+=1
+    for p in all_players.values():
         code=code_by_teamid.get(str(p["team_id"]))
         if not code: continue
         r=roster_cache.get(code,{}).get(str(p["player_id"]),{})
@@ -114,7 +165,7 @@ def main():
           p["expected_minutes_estimate"],p["impact_pts_per_100_poss"],p.get("official_status") or "UNKNOWN — no matched official row",
           p.get("official_reason") or "",p.get("report_datetime") or "",
           p.get("status_source") or "No matched official report row",
-          r.get("injury","No matching ESPN roster identity; roster status is not official availability"),p["history_as_of"]])
+          r.get("injury","No matching ESPN roster identity; roster status is not official availability"),p.get("history_as_of") or "No recent player history"])
     eng=wb.create_sheet("Game Engine")
     eng.append(["Game ID","Away code","Home code","Away ORtg","Away DRtg","Home ORtg","Home DRtg","Away pace","Home pace","Expected pace","Projected possessions","Away points","Home points","Combined total","Input status","Away player delta","Home player delta"])
     for i,g in enumerate(games,2):
@@ -143,7 +194,7 @@ def main():
     log.append([stamp,"ESPN public team rosters",f"{sum(len(x) for x in roster_cache.values())} roster identities","Roster status is not a substitute for game-date availability"])
     log.append([stamp,"NBA official injury report snapshots via SportsDataverse",src.get("injury_report_source_status","Not loaded"),"Timestamp and labels retained; exact team/name matching only; missing rows remain unknown"])
     log.append([stamp,"Player adjustment","Recent scoring rate above team median","Descriptive proxy only; not RAPM or causal impact"])
-    log.append([stamp,"Availability/minutes",f"{src.get('injury_report_matched_players',0)} matched player rows","Expected minutes remain historical estimates, not confirmed rotations"])
+    log.append([stamp,"Availability/minutes",f"{injury_matches} matched roster identities","Expected minutes remain historical estimates, not confirmed rotations"])
     for ws in wb.worksheets: style(ws)
     if games:
         dash["B3"]=games[0]["id"]
@@ -153,7 +204,7 @@ def main():
     wb.calculation.fullCalcOnLoad=True; wb.calculation.forceFullCalc=True
     wb.save(OUT)
     print(json.dumps({"workbook":str(OUT),"date":day.isoformat(),"fixtures":len(games),
-      "team_crosswalks":len(team_code_map),"player_rows":pi.max_row-1,"sheets":wb.sheetnames,
-      "official_report_status":src.get("injury_report_source_status"),"official_report_matched_players":src.get("injury_report_matched_players",0),
+      "team_crosswalks":len(team_code_map),"player_rows":pi.max_row-1,"official_report_matched_players":injury_matches,"sheets":wb.sheetnames,
+      "official_report_status":src.get("injury_report_source_status"),"official_report_matched_players":injury_matches,
       "classification":"provisional"},indent=2))
 if __name__=="__main__": main()
