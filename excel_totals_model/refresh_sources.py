@@ -53,7 +53,7 @@ def main():
           ],hive_partitioning=true,union_by_name=true)
         """).fetchdf()
         team_names=con.execute(f"""
-          SELECT team_id,full_name,abbreviation FROM read_parquet([
+          SELECT team_id,full_name,nba_abbrev AS abbreviation FROM read_parquet([
             '{parquet_url("stats","team_seasons",season)}'
           ],hive_partitioning=true,union_by_name=true)
         """).fetchdf()
