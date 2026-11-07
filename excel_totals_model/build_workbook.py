@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, json, datetime as dt, re
+import os, json, datetime as dt, re, unicodedata
 from pathlib import Path
 import requests
 from openpyxl import Workbook
@@ -16,7 +16,9 @@ def get_json(url):
     return r.json()
 
 def norm(value):
-    return re.sub(r"[^a-z0-9]","",str(value or "").lower().replace("&","and"))
+    value=unicodedata.normalize("NFKD",str(value or ""))
+    value="".join(ch for ch in value if not unicodedata.combining(ch)).lower().replace("&","and")
+    return re.sub(r"[^a-z0-9]","",value)
 
 def scheduled_games(day):
     data=get_json(f"{BASE}/scoreboard?dates={day:%Y%m%d}&limit=500")
