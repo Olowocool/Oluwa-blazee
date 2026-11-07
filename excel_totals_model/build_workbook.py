@@ -136,7 +136,7 @@ def main():
           f'=IF(AND(L{i}>0,M{i}>0),L{i}+M{i},0)',
           f'=IF(OR(D{i}<=0,E{i}<=0,F{i}<=0,G{i}<=0,H{i}<=0,I{i}<=0),"MISSING TEAM HISTORY / CROSSWALK","PROVISIONAL — PLAYER MINUTES AND AVAILABILITY NOT VERIFIED")',
           f'=IFERROR(SUMPRODUCT((\'Player Inputs\'!$A$2:$A$2500=B{i})*(\'Player Inputs\'!$F$2:$F$2500)/48*(\'Player Inputs\'!$G$2:$G$2500))*K{i}*Settings!$B$3/100,0)',
-          f'=IFERROR(SUMPRODUCT((\'Player Inputs\'!$A$2:$A$2500=C{i})*(\'Player Inputs\'!$F$2:$F$2500)*(\'Player Inputs\'!$G$2:$G$2500))*K{i}*Settings!$B$3/100,0)'])
+          f'=IFERROR(SUMPRODUCT((\'Player Inputs\'!$A$2:$A$2500=C{i})*(\'Player Inputs\'!$F$2:$F$2500)/48*(\'Player Inputs\'!$G$2:$G$2500))*K{i}*Settings!$B$3/100,0)'])
     settings=wb.create_sheet("Settings")
     for row in [
       ["Parameter","Value","Meaning"],
