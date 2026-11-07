@@ -77,7 +77,7 @@ def main():
                 # The official page sometimes omits clickable anchors from its
                 # server-rendered HTML. Probe the documented 15-minute PDF
                 # filename grid for the most recent six hours of this game date.
-                for minutes_back in range(359,-1,-15):
+                for minutes_back in range(345,-1,-15):
                     total_minutes=minutes_back
                     hh=(total_minutes//60)%24
                     mm=total_minutes%60
