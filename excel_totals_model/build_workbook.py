@@ -20,6 +20,15 @@ def norm(value):
     value="".join(ch for ch in value if not unicodedata.combining(ch)).lower().replace("&","and")
     return re.sub(r"[^a-z0-9]","",value)
 
+def availability_factor(status):
+    status=str(status or "").strip().lower()
+    if status in {"out","not with team"}: return 0.0
+    if status=="doubtful": return 0.25
+    if status=="questionable": return 0.50
+    if status=="probable": return 0.90
+    if status=="available": return 1.0
+    return 1.0  # Unknown stays on the historical baseline; it is not confirmed available.
+
 def scheduled_games(day):
     data=get_json(f"{BASE}/scoreboard?dates={day:%Y%m%d}&limit=500")
     rows=[]
