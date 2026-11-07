@@ -73,6 +73,24 @@ def main():
                 if match.group(4).upper()=="PM": hour+=12
                 minute=int(match.group(3))
                 candidates.append(((hour,minute),url))
+            if not candidates:
+                # The official page sometimes omits clickable anchors from its
+                # server-rendered HTML. Probe the documented 15-minute PDF
+                # filename grid for the most recent six hours of this game date.
+                for minutes_back in range(359,-1,-15):
+                    total_minutes=minutes_back
+                    hh=(total_minutes//60)%24
+                    mm=total_minutes%60
+                    suffix="AM" if hh<12 else "PM"
+                    clock_hour=hh%12 or 12
+                    probe=f"https://ak-static.cms.nba.com/referee/injury/Injury-Report_{target:%Y-%m-%d}_{clock_hour:02d}_{mm:02d}{suffix}.pdf"
+                    try:
+                        test=requests.get(probe,timeout=8,headers={"User-Agent":"Mozilla/5.0"})
+                        if test.status_code==200 and test.content[:4]==b"%PDF":
+                            candidates.append(((hh,mm),probe))
+                            break
+                    except requests.RequestException:
+                        continue
             if candidates:
                 _,official_pdf=max(candidates,key=lambda x:x[0])
                 response=requests.get(official_pdf,timeout=45,headers={"User-Agent":"Mozilla/5.0"})
