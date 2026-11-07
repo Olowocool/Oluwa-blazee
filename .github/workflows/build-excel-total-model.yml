@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: python -m pip install --upgrade pip requests openpyxl duckdb pandas
+        run: python -m pip install --upgrade pip requests openpyxl duckdb pandas pdfplumber
       - name: Compile source files
         run: python -m py_compile excel_totals_model/refresh_sources.py excel_totals_model/build_workbook.py
       - name: Refresh point-in-time inputs
