@@ -29,9 +29,8 @@ def scheduled_games(day):
         ht=home.get("team",{}); at=away.get("team",{})
         if ht.get("abbreviation") and at.get("abbreviation"):
             rows.append({"id":str(event.get("id")),"date":event.get("date"),
-              "away_code":at.get("abbreviation"),
-              "away_name":at.get("displayName"),"home_code":ht.get("abbreviation"),
-              "home_name":ht.get("displayName"),
+              "away_code":at.get("abbreviation"),"away_name":at.get("displayName"),
+              "home_code":ht.get("abbreviation"),"home_name":ht.get("displayName"),
               "status":event.get("status",{}).get("type",{}).get("description","Scheduled")})
     return rows
 
@@ -46,10 +45,8 @@ def roster_status(abbr):
                 injury_text="; ".join(str(z.get("type",{}).get("description") or z.get("shortComment") or z.get("longComment") or "listed") for z in injuries if isinstance(z,dict))
                 result[str(x["id"])]={
                   "name":x.get("fullName") or x.get("displayName"),
-                  "position":(x.get("position") or {}).get("abbreviation",""),
                   "status":(x.get("status") or {}).get("name","Unknown"),
-                  "injury":injury_text or "No injury detail returned by roster endpoint"
-                }
+                  "injury":injury_text or "No injury detail returned by roster endpoint"}
             if isinstance(x.get("items"),list): walk(x["items"])
     walk(data.get("athletes",[]))
     return result
@@ -70,26 +67,21 @@ def main():
     day=dt.date.fromisoformat(os.getenv("GAME_DATE") or dt.date.today().isoformat())
     games=scheduled_games(day)
     source_path=Path("excel_totals_model/source_inputs.json")
-    if not source_path.exists():
-        raise RuntimeError("Point-in-time source_inputs.json missing; run refresh_sources.py first")
+    if not source_path.exists(): raise RuntimeError("Point-in-time source_inputs.json missing; run refresh_sources.py first")
     src=json.loads(source_path.read_text(encoding="utf-8"))
-    if src.get("target_date")!=day.isoformat():
-        raise RuntimeError("Source inputs target date does not match selected game date")
+    if src.get("target_date")!=day.isoformat(): raise RuntimeError("Source inputs target date does not match selected game date")
     team_by_name={norm(x["team_name"]):x for x in src.get("team_inputs",[])}
     team_code_map={}
     for g in games:
         for code,name in ((g["away_code"],g["away_name"]),(g["home_code"],g["home_name"])):
             match=team_by_name.get(norm(name))
             if not match:
-                # Limited known naming variants only; no fuzzy team-ID guessing.
                 aliases={"LA Clippers":"Los Angeles Clippers","LA Lakers":"Los Angeles Lakers"}
                 match=team_by_name.get(norm(aliases.get(name,name)))
             if match: team_code_map[code]=match
-    wb=Workbook()
-    dash=wb.active; dash.title="Dashboard"
+    wb=Workbook(); dash=wb.active; dash.title="Dashboard"
     for row in [
-      ["NBA TOTAL POINTS — INDEPENDENT MODEL"],
-      ["Game date",day.isoformat()],["Selected Game ID",""],
+      ["NBA TOTAL POINTS — INDEPENDENT MODEL"],["Game date",day.isoformat()],["Selected Game ID",""],
       ["Away team",'=IFERROR(INDEX(Schedule!D:D,MATCH(B3,Schedule!A:A,0)),"")'],
       ["Home team",'=IFERROR(INDEX(Schedule!F:F,MATCH(B3,Schedule!A:A,0)),"")'],
       ["Projected possessions",'=IFERROR(INDEX(\'Game Engine\'!K:K,MATCH(B3,\'Game Engine\'!A:A,0)),"")'],
@@ -98,39 +90,39 @@ def main():
       ["Predicted combined points",'=IFERROR(INDEX(\'Game Engine\'!N:N,MATCH(B3,\'Game Engine\'!A:A,0)),"")'],
       ["Input status",'=IF(B3="","Select a Game ID",IFERROR(INDEX(\'Game Engine\'!O:O,MATCH(B3,\'Game Engine\'!A:A,0)),"Game not found"))'],
       ["Model classification","PROVISIONAL — recent-form and player-rate proxy; not validated or calibrated."],
-      ["Availability warning","Roster status is not an official game-date injury report. Verify availability before relying on any projection."]
+      ["Availability warning","Only matched timestamped official NBA injury-report rows receive a status. Missing rows and NOT YET SUBMITTED remain unknown."],
+      ["Official report feed",src.get("injury_report_source_status","Not loaded")],
+      ["Official report matched players",src.get("injury_report_matched_players",0)]
     ]: dash.append(row)
-    sch=wb.create_sheet("Schedule")
-    sch.append(["Game ID","Start UTC","Away code","Away team","Home code","Home team","Status"])
+    sch=wb.create_sheet("Schedule"); sch.append(["Game ID","Start UTC","Away code","Away team","Home code","Home team","Status"])
     for g in games: sch.append([g["id"],g["date"],g["away_code"],g["away_name"],g["home_code"],g["home_name"],g["status"]])
-    ti=wb.create_sheet("Team Inputs")
-    ti.append(["Team code","Team name","Offensive rating","Defensive rating allowed","Pace","Games used","History as of","Source"])
-    for code,match in sorted(team_code_map.items()):
-        ti.append([code,match["team_name"],match["ortg"],match["drtg"],match["pace"],match["games_used"],match["as_of"],"Public team logs; last 10 regular-season games, recency weighted"])
+    ti=wb.create_sheet("Team Inputs"); ti.append(["Team code","Team name","Offensive rating","Defensive rating allowed","Pace","Games used","History as of","Source"])
+    for code,m in sorted(team_code_map.items()):
+        ti.append([code,m["team_name"],m["ortg"],m["drtg"],m["pace"],m["games_used"],m["as_of"],"Public team logs; last 10 regular-season games, recency weighted"])
     pi=wb.create_sheet("Player Inputs")
-    pi.append(["Team code","Player ID","Player","Recent games","Recent avg minutes","Expected minutes estimate","Impact pts/100 poss","Availability","Injury detail / source note","History as of"])
+    pi.append(["Team code","Player ID","Player","Recent games","Recent avg minutes","Expected minutes estimate","Impact pts/100 poss","Availability","Official report reason","Official report timestamp (source local)","Status source","Roster note","History as of"])
     code_by_teamid={str(v["team_id"]):k for k,v in team_code_map.items()}
     roster_cache={}
     for code in team_code_map:
         try: roster_cache[code]=roster_status(code)
-        except Exception as exc: roster_cache[code]={}
+        except Exception: roster_cache[code]={}
     for p in src.get("player_inputs",[]):
         code=code_by_teamid.get(str(p["team_id"]))
         if not code: continue
         r=roster_cache.get(code,{}).get(str(p["player_id"]),{})
-        pi.append([code,p["player_id"],r.get("name") or p["player"],p["recent_games"],p["recent_avg_minutes"],p["expected_minutes_estimate"],p["impact_pts_per_100_poss"],"UNKNOWN — official report required",r.get("injury","No matching ESPN roster identity; availability unknown"),p["history_as_of"]])
+        pi.append([code,p["player_id"],r.get("name") or p["player"],p["recent_games"],p["recent_avg_minutes"],
+          p["expected_minutes_estimate"],p["impact_pts_per_100_poss"],p.get("official_status") or "UNKNOWN — no matched official row",
+          p.get("official_reason") or "",p.get("report_datetime") or "",
+          p.get("status_source") or "No matched official report row",
+          r.get("injury","No matching ESPN roster identity; roster status is not official availability"),p["history_as_of"]])
     eng=wb.create_sheet("Game Engine")
     eng.append(["Game ID","Away code","Home code","Away ORtg","Away DRtg","Home ORtg","Home DRtg","Away pace","Home pace","Expected pace","Projected possessions","Away points","Home points","Combined total","Input status","Away player delta","Home player delta"])
     for i,g in enumerate(games,2):
         eng.append([g["id"],g["away_code"],g["home_code"],
-          f'=IFERROR(VLOOKUP(B{i},\'Team Inputs\'!A:E,3,FALSE),0)',
-          f'=IFERROR(VLOOKUP(B{i},\'Team Inputs\'!A:E,4,FALSE),0)',
-          f'=IFERROR(VLOOKUP(C{i},\'Team Inputs\'!A:E,3,FALSE),0)',
-          f'=IFERROR(VLOOKUP(C{i},\'Team Inputs\'!A:E,4,FALSE),0)',
-          f'=IFERROR(VLOOKUP(B{i},\'Team Inputs\'!A:E,5,FALSE),0)',
-          f'=IFERROR(VLOOKUP(C{i},\'Team Inputs\'!A:E,5,FALSE),0)',
-          f'=IF(AND(H{i}>0,I{i}>0),AVERAGE(H{i},I{i}),0)',
-          f'=J{i}',
+          f'=IFERROR(VLOOKUP(B{i},\'Team Inputs\'!A:E,3,FALSE),0)',f'=IFERROR(VLOOKUP(B{i},\'Team Inputs\'!A:E,4,FALSE),0)',
+          f'=IFERROR(VLOOKUP(C{i},\'Team Inputs\'!A:E,3,FALSE),0)',f'=IFERROR(VLOOKUP(C{i},\'Team Inputs\'!A:E,4,FALSE),0)',
+          f'=IFERROR(VLOOKUP(B{i},\'Team Inputs\'!A:E,5,FALSE),0)',f'=IFERROR(VLOOKUP(C{i},\'Team Inputs\'!A:E,5,FALSE),0)',
+          f'=IF(AND(H{i}>0,I{i}>0),AVERAGE(H{i},I{i}),0)',f'=J{i}',
           f'=IF(AND(D{i}>0,G{i}>0,K{i}>0),K{i}*(D{i}+G{i}-Settings!$B$2)/100+P{i},0)',
           f'=IF(AND(F{i}>0,E{i}>0,K{i}>0),K{i}*(F{i}+E{i}-Settings!$B$2)/100+Q{i},0)',
           f'=IF(AND(L{i}>0,M{i}>0),L{i}+M{i},0)',
@@ -138,34 +130,30 @@ def main():
           f'=IFERROR(SUMPRODUCT((\'Player Inputs\'!$A$2:$A$2500=B{i})*(\'Player Inputs\'!$F$2:$F$2500)/48*(\'Player Inputs\'!$G$2:$G$2500))*K{i}*Settings!$B$3/100,0)',
           f'=IFERROR(SUMPRODUCT((\'Player Inputs\'!$A$2:$A$2500=C{i})*(\'Player Inputs\'!$F$2:$F$2500)/48*(\'Player Inputs\'!$G$2:$G$2500))*K{i}*Settings!$B$3/100,0)'])
     settings=wb.create_sheet("Settings")
-    for row in [
-      ["Parameter","Value","Meaning"],
-      ["League offensive rating anchor",115.0,"Provisional anchor; matchup adjustment = own ORtg + opponent DRtg − anchor"],
+    for row in [["Parameter","Value","Meaning"],["League offensive rating anchor",115.0,"Provisional matchup efficiency anchor"],
       ["Player impact scale",1.0,"Multiplier on recent points-per-minute proxy relative to team median"],
-      ["Recent team games",10,"Last ten completed regular-season team games"],
-      ["Recency decay",0.90,"Applied to team rating observations; newest game has highest weight"],
-      ["Expected minutes method","Recent 10 appearances, normalized to 240","Estimated rotation, not official projection"],
-      ["Injury status","Unknown pending official report","No automatic injury confirmation is claimed"],
-      ["Prediction confidence","Not calibrated","No confidence interval is provided"]
-    ]: settings.append(row)
-    log=wb.create_sheet("Source Log")
-    log.append(["Retrieved UTC","Source","Coverage","Limitations"])
+      ["Recent team games",10,"Last ten completed regular-season team games"],["Recency decay",0.90,"Newest team game receives highest weight"],
+      ["Expected minutes method","Recent 10 appearances, normalized to 240","Estimate, not confirmed rotation"],
+      ["Injury status","Timestamped official NBA injury report when matched; otherwise UNKNOWN","Never infer availability from missing data"],
+      ["Prediction confidence","Not calibrated","No confidence interval is provided"]]: settings.append(row)
+    log=wb.create_sheet("Source Log"); log.append(["Retrieved UTC","Source","Coverage","Limitations"])
     stamp=src.get("generated_at_utc","")
-    log.append([stamp,"basketball-data.billmill.org public parquet",f"{len(src.get('team_inputs',[]))} teams; {len(src.get('player_inputs',[]))} player rows","Recent completed-game stats; strictly before target date; historical source vintages may be revised"])
-    log.append([stamp,"ESPN public scoreboard",f"{len(games)} scheduled fixtures for {day.isoformat()}","Unofficial public endpoint; may change without notice"])
-    log.append([stamp,"ESPN public team rosters",f"{sum(len(x) for x in roster_cache.values())} roster identities","Roster/injury snippet is not a complete official NBA injury report"])
-    log.append([stamp,"Player adjustment", "Recent scoring rate above team median player rate","Descriptive proxy only; not RAPM, causal impact, or a validated forecast adjustment"])
-    log.append([stamp,"Availability/minutes","Unknown / estimated","Expected minutes estimated from recent appearances; official injury report not connected"])
+    log.append([stamp,"basketball-data.billmill.org public parquet",f"{len(src.get('team_inputs',[]))} teams; {len(src.get('player_inputs',[]))} player rows","Completed-game history; strict pre-target cutoff; source vintages may be revised"])
+    log.append([stamp,"ESPN public scoreboard",f"{len(games)} fixtures for {day.isoformat()}","Unofficial public endpoint"])
+    log.append([stamp,"ESPN public team rosters",f"{sum(len(x) for x in roster_cache.values())} roster identities","Roster status is not a substitute for game-date availability"])
+    log.append([stamp,"NBA official injury report snapshots via SportsDataverse",src.get("injury_report_source_status","Not loaded"),"Timestamp and labels retained; exact team/name matching only; missing rows remain unknown"])
+    log.append([stamp,"Player adjustment","Recent scoring rate above team median","Descriptive proxy only; not RAPM or causal impact"])
+    log.append([stamp,"Availability/minutes",f"{src.get('injury_report_matched_players',0)} matched player rows","Expected minutes remain historical estimates, not confirmed rotations"])
     for ws in wb.worksheets: style(ws)
     if games:
         dash["B3"]=games[0]["id"]
-        formula1='=INDIRECT("Schedule!$A$2:$A$'+str(min(len(games)+1,1000))+ '")'
-        dv=DataValidation(type="list",formula1=formula1,allow_blank=True)
+        dv=DataValidation(type="list",formula1='=INDIRECT("Schedule!$A$2:$A$'+str(min(len(games)+1,1000))+'")',allow_blank=True)
         dash.add_data_validation(dv); dv.add(dash["B3"])
     dash.column_dimensions["B"].width=74
     wb.calculation.fullCalcOnLoad=True; wb.calculation.forceFullCalc=True
     wb.save(OUT)
     print(json.dumps({"workbook":str(OUT),"date":day.isoformat(),"fixtures":len(games),
-      "team_crosswalks":len(team_code_map),"player_rows":pi.max_row-1,
-      "sheets":wb.sheetnames,"classification":"provisional"},indent=2))
+      "team_crosswalks":len(team_code_map),"player_rows":pi.max_row-1,"sheets":wb.sheetnames,
+      "official_report_status":src.get("injury_report_source_status"),"official_report_matched_players":src.get("injury_report_matched_players",0),
+      "classification":"provisional"},indent=2))
 if __name__=="__main__": main()
