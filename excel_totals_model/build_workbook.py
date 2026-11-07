@@ -70,6 +70,7 @@ def main():
     if not source_path.exists(): raise RuntimeError("Point-in-time source_inputs.json missing; run refresh_sources.py first")
     src=json.loads(source_path.read_text(encoding="utf-8"))
     if src.get("target_date")!=day.isoformat(): raise RuntimeError("Source inputs target date does not match selected game date")
+    injury_matches=0
     team_by_name={norm(x["team_name"]):x for x in src.get("team_inputs",[])}
     team_code_map={}
     for g in games:
