@@ -1,0 +1,33 @@
+name: Build NBA Excel Total Points Model
+on:
+  workflow_dispatch:
+    inputs:
+      game_date:
+        description: "NBA local game date (YYYY-MM-DD)"
+        required: false
+        type: string
+  schedule:
+    - cron: "15 10 * * *"
+permissions:
+  contents: read
+  actions: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/excel-total-points-model
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip openpyxl requests
+      - name: Build workbook
+        env:
+          GAME_DATE: ${{ inputs.game_date }}
+        run: python excel_totals_model/build_workbook.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NBA-Total-Points-Model
+          path: NBA_Total_Points_Model_Automatic.xlsx
+          retention-days: 14
