@@ -22,7 +22,7 @@ def main():
     season=target.year+1 if target.month>=7 else target.year
     seasons=[season-1,season]
     con=duckdb.connect(config={"memory_limit":"1GB","threads":"2"})
-    injury_rows=[]; injury_source_status="UNAVAILABLE — official report archive could not be read"
+    injury_rows=[]; injury_source_status="UNAVAILABLE — official report archive could not be read"; official_diag={"page_status":None,"page_pdf_links":0,"target_pdf_candidates":0,"selected_pdf":None,"pdf_pages":0,"pdf_tables":0,"pdf_text_chars":0,"direct_error":None}
     injury_source_url=INJURY_RELEASE.format(asset_year=season)
     try:
         con.execute("INSTALL httpfs")
@@ -62,8 +62,10 @@ def main():
         try:
             season_page=f"https://official.nba.com/nba-injury-report-{season-1}-{str(season)[-2:]}-season/"
             page=requests.get(season_page,timeout=30,headers={"User-Agent":"Mozilla/5.0"})
+            official_diag["page_status"]=page.status_code
             page.raise_for_status()
             hrefs=re.findall(r"""href=["']([^"']+Injury-Report_[^"']+\.pdf)["']""",page.text,re.I)
+            official_diag["page_pdf_links"]=len(hrefs)
             candidates=[]
             for href in hrefs:
                 url=href.replace("&amp;","&")
@@ -73,6 +75,7 @@ def main():
                 if match.group(4).upper()=="PM": hour+=12
                 minute=int(match.group(3))
                 candidates.append(((hour,minute),url))
+            official_diag["target_pdf_candidates"]=len(candidates)
             if not candidates:
                 # The official page sometimes omits clickable anchors from its
                 # server-rendered HTML. Probe the documented 15-minute PDF
@@ -91,15 +94,20 @@ def main():
                             break
                     except requests.RequestException:
                         continue
+            official_diag["target_pdf_candidates"]=len(candidates)
             if candidates:
                 _,official_pdf=max(candidates,key=lambda x:x[0])
+                official_diag["selected_pdf"]=official_pdf
                 response=requests.get(official_pdf,timeout=45,headers={"User-Agent":"Mozilla/5.0"})
                 response.raise_for_status()
                 with pdfplumber.open(io.BytesIO(response.content)) as pdf:
+                    official_diag["pdf_pages"]=len(pdf.pages)
                     for page_no,pdf_page in enumerate(pdf.pages,1):
+                        official_diag["pdf_text_chars"]+=len(pdf_page.extract_text() or "")
                         tables=pdf_page.extract_tables() or []
                         if not tables:
                             tables=pdf_page.extract_tables(table_settings={"vertical_strategy":"text","horizontal_strategy":"text","snap_tolerance":3,"join_tolerance":3,"min_words_vertical":1,"min_words_horizontal":1}) or []
+                        official_diag["pdf_tables"]+=len(tables)
                         for table in tables:
                             current_date=""; current_matchup=""; current_team=""
                             for cells in table:
@@ -123,6 +131,7 @@ def main():
             else:
                 injury_source_status="NO NBA OFFICIAL PDF LINK FOR TARGET DATE — availability remains unknown"
         except Exception as exc:
+            official_diag["direct_error"]=f"{type(exc).__name__}: {exc}"
             injury_source_status=f"NBA OFFICIAL PDF FETCH/PARSE FAILED — {type(exc).__name__}: {exc}"
         # Fallback archive provides a timestamped cross-check, but is not allowed
         # to overwrite direct official PDF rows or imply a player is available.
@@ -238,7 +247,7 @@ def main():
     payload={"schema":"nba-excel-inputs-v2","target_date":str(target.date()),
       "generated_at_utc":datetime.now(timezone.utc).isoformat(),
       "team_inputs":team_rows,"player_inputs":player_rows,"injury_report_rows":injury_rows,
-      "injury_report_source_url":injury_source_url,"injury_report_source_status":injury_source_status,
+      "injury_report_source_url":injury_source_url,"injury_report_source_status":injury_source_status,"official_report_diagnostics":official_diag,
       "injury_report_matched_players":matched,"team_name_map":team_name_map,
       "source_notes":["Team ratings and pace: last 10 regular-season team games, recency weighted, strict pre-target cutoff.",
       "Player minutes: average over up to 10 most recent appearances, normalized to a 240-minute team rotation with a 48-minute cap; estimate, not a validated rotation forecast.",
@@ -250,6 +259,6 @@ def main():
     print(json.dumps({"target_date":str(target.date()),"teams":len(team_rows),"players":len(player_rows),
       "latest_team_history":max(x["as_of"] for x in team_rows) if team_rows else None,
       "latest_player_history":max(x["history_as_of"] for x in player_rows) if player_rows else None,
-      "injury_report_status":injury_source_status,"official_report_rows":len(injury_rows),
+      "injury_report_status":injury_source_status,"official_report_rows":len(injury_rows),"official_report_diagnostics":official_diag,
       "matched_player_rows":matched,"availability":"unmatched or absent statuses remain unknown"},indent=2))
 if __name__=="__main__": main()
