@@ -57,6 +57,8 @@ def main():
             '{parquet_url("stats","team_seasons",season)}'
           ],hive_partitioning=true,union_by_name=true)
         """).fetchdf()
+        team_name_map={str(r.team_id):str(r.full_name) for r in team_names.itertuples()}
+        team_abbr_map={str(r.team_id):str(r.abbreviation) for r in team_names.itertuples() if getattr(r,"abbreviation",None)}
         # First use the NBA's own current-season page and its linked PDF snapshots.
         # The PDF filename carries the report issue time; preserve that source time.
         try:
