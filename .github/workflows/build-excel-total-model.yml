@@ -1,5 +1,11 @@
 name: Build NBA Excel Total Points Model
 on:
+  push:
+    branches:
+      - research/excel-total-points-model
+    paths:
+      - 'excel_totals_model/**'
+      - '.github/workflows/build-excel-total-model.yml'
   workflow_dispatch:
     inputs:
       game_date:
