@@ -65,13 +65,14 @@ def main():
     team["game_date"]=pd.to_datetime(team.game_date,errors="coerce")
     team=team.dropna(subset=["game_date","team_id","pts","poss","pace","off_rating","def_rating"])
     team=team[team.game_date < target].sort_values("game_date")
+    team_name_map={str(r.team_id):str(r.full_name) for r in team_names.itertuples()}
     team_rows=[]
     for tid,g in team.groupby("team_id"):
         recent=g.tail(10)
         if len(recent)<3: continue
         weights=[0.90**i for i in range(len(recent)-1,-1,-1)]
         w=pd.Series(weights,index=recent.index)
-        team_rows.append({"team_id":str(tid),"games_used":len(recent),
+        team_rows.append({"team_id":str(tid),"team_name":team_name_map.get(str(tid),str(tid)),"games_used":len(recent),
           "ortg":float((recent.off_rating*w).sum()/w.sum()),
           "drtg":float((recent.def_rating*w).sum()/w.sum()),
           "pace":float((recent.pace*w).sum()/w.sum()),
@@ -111,10 +112,10 @@ def main():
               "points_per_minute":round(float(r.ppm),4),
               "impact_pts_per_100_poss":round((float(r.ppm)-replacement)*48.0,3),
               "availability":"UNKNOWN — verify official report","status_source":"Recent player-game history only",
-              "history_as_of":str(max(recent_games).date())})
+              "history_as_of":str(recent.game_date.max().date())})
     payload={"schema":"nba-excel-inputs-v1","target_date":str(target.date()),
       "generated_at_utc":datetime.now(timezone.utc).isoformat(),
-      "team_inputs":team_rows,"player_inputs":player_rows,
+      "team_inputs":team_rows,"player_inputs":player_rows,"team_name_map":team_name_map,
       "source_notes":["Team ratings and pace: last 10 regular-season team games, recency weighted, strict pre-target cutoff.",
       "Player minutes: average over up to 10 most recent appearances, normalized to a 240-minute team rotation with a 48-minute cap; estimate, not a validated rotation forecast.",
       "Player impact: recent points-per-minute relative to that team's median player rate; proxy only, not RAPM or causal impact.",
