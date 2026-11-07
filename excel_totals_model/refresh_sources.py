@@ -102,34 +102,65 @@ def main():
                 response.raise_for_status()
                 with pdfplumber.open(io.BytesIO(response.content)) as pdf:
                     official_diag["pdf_pages"]=len(pdf.pages)
+                    stamp_match=re.search(r"Injury-Report_(\d{4}-\d{2}-\d{2})_(\d{1,2})_(\d{2})(AM|PM)",official_pdf,re.I)
+                    report_stamp=""
+                    if stamp_match:
+                        report_stamp=f"{stamp_match.group(1)} {stamp_match.group(2)}:{stamp_match.group(3)} {stamp_match.group(4).upper()} ET"
+                    known_teams=sorted(set(team_name_map.values()),key=len,reverse=True)
+                    current_team=""
+                    current_matchup=""
+                    last_record=None
                     for page_no,pdf_page in enumerate(pdf.pages,1):
-                        official_diag["pdf_text_chars"]+=len(pdf_page.extract_text() or "")
-                        if page_no==1: official_diag["pdf_text_preview"]=(pdf_page.extract_text() or "")[:1400]
-                        tables=pdf_page.extract_tables() or []
-                        if not tables:
-                            tables=pdf_page.extract_tables(table_settings={"vertical_strategy":"text","horizontal_strategy":"text","snap_tolerance":3,"join_tolerance":3,"min_words_vertical":1,"min_words_horizontal":1}) or []
-                        official_diag["pdf_tables"]+=len(tables)
-                        if tables and not official_diag["table_sample"]: official_diag["table_sample"]=[[str(c or "") for c in row] for row in tables[0][:10]]
-                        for table in tables:
-                            current_date=""; current_matchup=""; current_team=""
-                            for cells in table:
-                                cells=[str(x or "").strip() for x in cells]
-                                if len(cells)<7: continue
-                                if "Game Date" in " ".join(cells): continue
-                                gd,gt,mu,tm,pn,st,reason=(cells+[""]*7)[:7]
-                                if gd: current_date=gd
-                                if mu: current_matchup=mu
-                                if tm: current_team=tm
-                                if not current_team: continue
-                                if not pn and not st and "NOT YET SUBMITTED" not in reason.upper(): continue
-                                parsed_date=pd.to_datetime(current_date,errors="coerce")
-                                if pd.isna(parsed_date) or parsed_date.date()!=target.date(): continue
-                                injury_rows.append({"report_datetime":re.search(r"Injury-Report_(\d{4}-\d{2}-\d{2})_(\d{1,2})_(\d{2})(AM|PM)",official_pdf,re.I).group(0).replace("Injury-Report_","").replace("_"," ") if "Injury-Report_" in official_pdf else "",
-                                  "game_date":str(parsed_date.date()),"matchup":current_matchup,"team":current_team,
-                                  "player_report_name":pn,"status":st,"reason":reason,"source_page":page_no})
+                        page_text=pdf_page.extract_text() or ""
+                        official_diag["pdf_text_chars"]+=len(page_text)
+                        if page_no==1: official_diag["pdf_text_preview"]=page_text[:1400]
+                        for raw_line in page_text.splitlines():
+                            line=raw_line.strip()
+                            if not line or "GameDate" in line or "CurrentStatus" in line or line.startswith("Injury Report:") or re.match(r"^Page\s*\d+",line,re.I):
+                                continue
+                            matchup_match=re.search(r"\b([A-Z]{2,3}@[A-Z]{2,3})\b",line)
+                            if matchup_match:
+                                current_matchup=matchup_match.group(1)
+                            rest=line
+                            team_found=None
+                            for team_name in known_teams:
+                                team_pattern=r"\s*".join(re.escape(part) for part in team_name.split())
+                                team_match=re.search(team_pattern,rest,re.I)
+                                if team_match:
+                                    team_found=team_name
+                                    rest=rest[:team_match.start()]+" "+rest[team_match.end():]
+                                    break
+                            if team_found:
+                                current_team=team_found
+                                last_record=None
+                            if not current_team:
+                                continue
+                            if re.match(r"^\d{2}/\d{2}/\d{4}",rest):
+                                rest=re.sub(r"^\d{2}/\d{2}/\d{4}\s+\S+\s+[A-Z]{2,3}@[A-Z]{2,3}\s*","",rest)
+                            if "NOTYETSUBMITTED" in re.sub(r"\s+","",rest).upper():
+                                injury_rows.append({"report_datetime":report_stamp,"game_date":str(target.date()),
+                                  "matchup":current_matchup,"team":current_team,"player_report_name":"",
+                                  "status":"NOT YET SUBMITTED","reason":"","source_page":page_no})
+                                last_record=None
+                                continue
+                            status_match=re.search(r"\b(Out|Questionable|Probable|Available|Doubtful|Not\s+With\s+Team)\b",rest,re.I)
+                            if status_match:
+                                player_name=rest[:status_match.start()].strip(" ,")
+                                reason=rest[status_match.end():].strip(" ,")
+                                if player_name:
+                                    record={"report_datetime":report_stamp,"game_date":str(target.date()),
+                                      "matchup":current_matchup,"team":current_team,"player_report_name":player_name,
+                                      "status":status_match.group(1),"reason":reason,"source_page":page_no}
+                                    injury_rows.append(record)
+                                    last_record=record
+                                else:
+                                    last_record=None
+                            elif last_record and not re.search(r"\b(?:GameDate|GameTime|Matchup|Team|PlayerName)\b",rest,re.I):
+                                last_record["reason"]=(last_record.get("reason","")+" "+rest).strip()
+                    official_diag["pdf_tables"]=0
                 if injury_rows:
                     injury_source_url=official_pdf
-                    injury_source_status=f"NBA OFFICIAL PDF — {len(injury_rows)} rows; source {official_pdf.rsplit('/',1)[-1]}"
+                    injury_source_status=f"NBA OFFICIAL PDF — {len(injury_rows)} parsed rows; source {official_pdf.rsplit('/',1)[-1]}"
             else:
                 injury_source_status="NO NBA OFFICIAL PDF LINK FOR TARGET DATE — availability remains unknown"
         except Exception as exc:
