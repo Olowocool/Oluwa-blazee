@@ -63,11 +63,11 @@ def main():
             season_page=f"https://official.nba.com/nba-injury-report-{season-1}-{str(season)[-2:]}-season/"
             page=requests.get(season_page,timeout=30,headers={"User-Agent":"Mozilla/5.0"})
             page.raise_for_status()
-            hrefs=re.findall(r"""href=["']([^"']+Injury-Report_[^"']+\\.pdf)["']""",page.text,re.I)
+            hrefs=re.findall(r"""href=["']([^"']+Injury-Report_[^"']+\.pdf)["']""",page.text,re.I)
             candidates=[]
             for href in hrefs:
                 url=href.replace("&amp;","&")
-                match=re.search(r"Injury-Report_(\\d{4}-\\d{2}-\\d{2})_(\\d{1,2})_(\\d{2})(AM|PM)",url,re.I)
+                match=re.search(r"Injury-Report_(\d{4}-\d{2}-\d{2})_(\d{1,2})_(\d{2})(AM|PM)",url,re.I)
                 if not match or match.group(1)!=target.strftime("%Y-%m-%d"): continue
                 hour=int(match.group(2))%12
                 if match.group(4).upper()=="PM": hour+=12
@@ -114,7 +114,7 @@ def main():
                                 if not pn and not st and "NOT YET SUBMITTED" not in reason.upper(): continue
                                 parsed_date=pd.to_datetime(current_date,errors="coerce")
                                 if pd.isna(parsed_date) or parsed_date.date()!=target.date(): continue
-                                injury_rows.append({"report_datetime":re.search(r"Injury-Report_(\\d{4}-\\d{2}-\\d{2})_(\\d{1,2})_(\\d{2})(AM|PM)",official_pdf,re.I).group(0).replace("Injury-Report_","").replace("_"," ") if "Injury-Report_" in official_pdf else "",
+                                injury_rows.append({"report_datetime":re.search(r"Injury-Report_(\d{4}-\d{2}-\d{2})_(\d{1,2})_(\d{2})(AM|PM)",official_pdf,re.I).group(0).replace("Injury-Report_","").replace("_"," ") if "Injury-Report_" in official_pdf else "",
                                   "game_date":str(parsed_date.date()),"matchup":current_matchup,"team":current_team,
                                   "player_report_name":pn,"status":st,"reason":reason,"source_page":page_no})
                 if injury_rows:
@@ -233,7 +233,7 @@ def main():
             target_player["official_reason"]=row["reason"]
             target_player["report_datetime"]=row["report_datetime"]
             target_player["availability"]=row["status"] or "UNKNOWN — blank status in report"
-            target_player["status_source"]="NBA official injury report (timestamped archive)"
+            target_player["status_source"]="NBA official injury report PDF" if "NBA OFFICIAL PDF" in injury_source_status else "NBA official injury report archive"
             matched+=1
     payload={"schema":"nba-excel-inputs-v2","target_date":str(target.date()),
       "generated_at_utc":datetime.now(timezone.utc).isoformat(),
