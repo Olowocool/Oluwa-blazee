@@ -158,7 +158,9 @@ def main():
     log.append([stamp,"Availability/minutes","Unknown / estimated","Expected minutes estimated from recent appearances; official injury report not connected"])
     for ws in wb.worksheets: style(ws)
     if games:
-        dv=DataValidation(type="list",formula1=f"=Schedule!$A$2:$A${min(len(games)+1,1000)}",allow_blank=True)
+        dash["B3"]=games[0]["id"]
+        formula1='=INDIRECT("Schedule!$A$2:$A$'+str(min(len(games)+1,1000))+ '")'
+        dv=DataValidation(type="list",formula1=formula1,allow_blank=True)
         dash.add_data_validation(dv); dv.add(dash["B3"])
     dash.column_dimensions["B"].width=74
     wb.calculation.fullCalcOnLoad=True; wb.calculation.forceFullCalc=True
