@@ -218,13 +218,19 @@ def main():
       ["Recent team games",10,"Last ten completed regular-season team games"],["Recency decay",0.90,"Newest team game receives highest weight"],
       ["Expected minutes method","Recent 10 appearances, normalized to 240","Estimate, not confirmed rotation"],
       ["Injury status","Timestamped official NBA injury report when matched; otherwise UNKNOWN","Never infer availability from missing data"],
+      ["Out availability factor",0.0,"Provisional; no recent player contribution while listed Out"],
+      ["Doubtful availability factor",0.25,"Provisional heuristic; not calibrated"],
+      ["Questionable availability factor",0.50,"Provisional heuristic; not calibrated"],
+      ["Probable availability factor",0.90,"Provisional heuristic; not calibrated"],
+      ["Available availability factor",1.0,"Provisional multiplier"],
+      ["Unknown availability factor",1.0,"Historical baseline retained; does not mean confirmed available"],
       ["Prediction confidence","Not calibrated","No confidence interval is provided"]]: settings.append(row)
     log=wb.create_sheet("Source Log"); log.append(["Retrieved UTC","Source","Coverage","Limitations"])
     stamp=src.get("generated_at_utc","")
     log.append([stamp,"basketball-data.billmill.org public parquet",f"{len(src.get('team_inputs',[]))} teams; {len(src.get('player_inputs',[]))} player rows","Completed-game history; strict pre-target cutoff; source vintages may be revised"])
     log.append([stamp,"ESPN public scoreboard",f"{len(games)} fixtures for {day.isoformat()}","Unofficial public endpoint"])
     log.append([stamp,"ESPN public team rosters",f"{sum(len(x) for x in roster_cache.values())} roster identities","Roster status is not a substitute for game-date availability"])
-    log.append([stamp,"NBA official injury report snapshots via SportsDataverse",src.get("injury_report_source_status","Not loaded"),"Timestamp and labels retained; exact team/name matching only; missing rows remain unknown"])
+    log.append([stamp,"NBA official injury report PDF (timestamped)",src.get("injury_report_source_status","Not loaded"),"Direct NBA-hosted PDF parsed; archived distribution is fallback; unmatched players remain unknown"])
     log.append([stamp,"Player adjustment","Recent scoring rate above team median","Descriptive proxy only; not RAPM or causal impact"])
     log.append([stamp,"Availability/minutes",f"{injury_matches} matched roster identities","Expected minutes remain historical estimates, not confirmed rotations"])
     for ws in wb.worksheets: style(ws)
