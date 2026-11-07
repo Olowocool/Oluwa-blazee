@@ -29,7 +29,7 @@ def scheduled_games(day):
         ht=home.get("team",{}); at=away.get("team",{})
         if ht.get("abbreviation") and at.get("abbreviation"):
             rows.append({"id":str(event.get("id")),"date":event.get("date"),
-              "away_code":ht.get("abbreviation") if False else at.get("abbreviation"),
+              "away_code":at.get("abbreviation"),
               "away_name":at.get("displayName"),"home_code":ht.get("abbreviation"),
               "home_name":ht.get("displayName"),
               "status":event.get("status",{}).get("type",{}).get("description","Scheduled")})
@@ -131,8 +131,8 @@ def main():
           f'=IFERROR(VLOOKUP(C{i},\'Team Inputs\'!A:E,5,FALSE),0)',
           f'=IF(AND(H{i}>0,I{i}>0),AVERAGE(H{i},I{i}),0)',
           f'=J{i}',
-          f'=IF(AND(D{i}>0,G{i}>0,K{i}>0),K{i}*(D{i}+G{i}-Settings!$B$3)/100+P{i},0)',
-          f'=IF(AND(F{i}>0,E{i}>0,K{i}>0),K{i}*(F{i}+E{i}-Settings!$B$3)/100+Q{i},0)',
+          f'=IF(AND(D{i}>0,G{i}>0,K{i}>0),K{i}*(D{i}+G{i}-Settings!$B$2)/100+P{i},0)',
+          f'=IF(AND(F{i}>0,E{i}>0,K{i}>0),K{i}*(F{i}+E{i}-Settings!$B$2)/100+Q{i},0)',
           f'=IF(AND(L{i}>0,M{i}>0),L{i}+M{i},0)',
           f'=IF(OR(D{i}<=0,E{i}<=0,F{i}<=0,G{i}<=0,H{i}<=0,I{i}<=0),"MISSING TEAM HISTORY / CROSSWALK","PROVISIONAL — PLAYER MINUTES AND AVAILABILITY NOT VERIFIED")',
           f'=IFERROR(SUMPRODUCT((\'Player Inputs\'!$A$2:$A$2500=B{i})*(\'Player Inputs\'!$F$2:$F$2500)*(\'Player Inputs\'!$G$2:$G$2500))*K{i}/100,0)',
