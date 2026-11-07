@@ -53,7 +53,13 @@ def main():
         """).fetchdf()
         names=con.execute(f"""
           SELECT player_id,name FROM read_parquet([
-            '{parquet_url("stats","player_seasons",season)}'
+            '{parquet_url("stats","player_seasons",season)}',
+            '{parquet_url("stats","player_seasons",season-1)}'
+          ],hive_partitioning=true,union_by_name=true)
+        """).fetchdf()
+        team_names=con.execute(f"""
+          SELECT team_id,full_name FROM read_parquet([
+            '{parquet_url("stats","team_seasons",season)}'
           ],hive_partitioning=true,union_by_name=true)
         """).fetchdf()
     finally:
