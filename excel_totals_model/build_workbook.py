@@ -121,12 +121,22 @@ def main():
         tid=str(team["team_id"])
         for pid,athlete in roster_cache.get(code,{}).items():
             key=(tid,str(pid))
-            if key not in all_players:
-                all_players[key]={"team_id":tid,"player_id":str(pid),"player":athlete.get("name") or str(pid),
+            roster_name=athlete.get("name") or str(pid)
+            existing=all_players.get(key)
+            if existing is None:
+                existing=next((row for row in all_players.values()
+                  if str(row["team_id"])==tid and norm(row.get("player"))==norm(roster_name)),None)
+            if existing is not None:
+                existing["_roster_name"]=roster_name
+                existing["_roster_injury"]=athlete.get("injury","")
+            else:
+                all_players[key]={"team_id":tid,"player_id":str(pid),"player":roster_name,
                   "recent_games":0,"recent_avg_minutes":0.0,"expected_minutes_estimate":0.0,
                   "impact_pts_per_100_poss":0.0,"availability":"UNKNOWN — no recent history",
                   "status_source":"Roster identity only; no recent player history","official_status":"",
-                  "official_reason":"","report_datetime":"","history_as_of":""}
+                  "official_reason":"","report_datetime":"","history_as_of":"",
+                  "_roster_name":roster_name,"_roster_injury":athlete.get("injury","")}
+    matched_roster_players=set()
     injury_matches=0
     for injury in src.get("injury_report_rows",[]):
         code=code_alias.get(norm(injury.get("team")))
