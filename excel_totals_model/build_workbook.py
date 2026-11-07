@@ -112,7 +112,7 @@ def main():
     for code,m in sorted(team_code_map.items()):
         ti.append([code,m["team_name"],m["ortg"],m["drtg"],m["pace"],m["games_used"],m["as_of"],"Public team logs; last 10 regular-season games, recency weighted"])
     pi=wb.create_sheet("Player Inputs")
-    pi.append(["Team code","Player ID","Player","Recent games","Recent avg minutes","Expected minutes estimate","Impact pts/100 poss","Availability","Official report reason","Official report timestamp (source local)","Status source","Roster note","History as of"])
+    pi.append(["Team code","Player ID","Player","Recent games","Recent avg minutes","Expected minutes estimate","Impact pts/100 poss","Availability","Official report reason","Official report timestamp (source local)","Status source","Roster note","History as of","Availability factor (provisional)"])
     code_by_teamid={str(v["team_id"]):k for k,v in team_code_map.items()}
     roster_cache={}
     for code in team_code_map:
@@ -195,7 +195,8 @@ def main():
           p["expected_minutes_estimate"],p["impact_pts_per_100_poss"],p.get("official_status") or "UNKNOWN — no matched official row",
           p.get("official_reason") or "",p.get("report_datetime") or "",
           p.get("status_source") or "No matched official report row",
-          roster_injury,p.get("history_as_of") or "No recent player history"])
+          roster_injury,p.get("history_as_of") or "No recent player history",
+          availability_factor(p.get("official_status"))])
     eng=wb.create_sheet("Game Engine")
     eng.append(["Game ID","Away code","Home code","Away ORtg","Away DRtg","Home ORtg","Home DRtg","Away pace","Home pace","Expected pace","Projected possessions","Away points","Home points","Combined total","Input status","Away player delta","Home player delta"])
     for i,g in enumerate(games,2):
