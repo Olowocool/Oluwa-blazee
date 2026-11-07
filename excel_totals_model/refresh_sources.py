@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch strictly pre-target team/player history and timestamped NBA injury-report snapshots."""
 from __future__ import annotations
-import argparse, json, io, re
+import argparse, json, io, re, unicodedata, difflib
 from datetime import datetime, timezone
 from pathlib import Path
 import duckdb, pandas as pd, requests, pdfplumber
@@ -53,7 +53,7 @@ def main():
           ],hive_partitioning=true,union_by_name=true)
         """).fetchdf()
         team_names=con.execute(f"""
-          SELECT team_id,full_name FROM read_parquet([
+          SELECT team_id,full_name,abbreviation FROM read_parquet([
             '{parquet_url("stats","team_seasons",season)}'
           ],hive_partitioning=true,union_by_name=true)
         """).fetchdf()
@@ -157,6 +157,7 @@ def main():
     team=team.dropna(subset=["game_date","team_id","pts","poss","pace","off_rating","def_rating"])
     team=team[team.game_date < target].sort_values("game_date")
     team_name_map={str(r.team_id):str(r.full_name) for r in team_names.itertuples()}
+    team_abbr_map={str(r.team_id):str(r.abbreviation) for r in team_names.itertuples() if getattr(r,"abbreviation",None)}
     team_rows=[]
     for tid,g in team.groupby("team_id"):
         recent=g.tail(10)
@@ -204,11 +205,13 @@ def main():
               "history_as_of":str(recent.game_date.max().date())})
     # Exact normalized name matching within the team is deliberately conservative.
     def name_key(value):
-        value=str(value or "").lower().replace(".","").replace("'","").replace("-"," ")
-        parts=[x for x in value.replace(","," ").split() if x]
-        return "".join(parts)
+        value=unicodedata.normalize("NFKD",str(value or ""))
+        value="".join(ch for ch in value if not unicodedata.combining(ch)).lower()
+        value=value.replace(".","").replace("'","").replace("-"," ").replace(","," ")
+        return "".join(x for x in value.split() if x)
     player_lookup={(str(p["team_id"]),name_key(p["player"])):p for p in player_rows}
     team_id_by_name={name_key(v):k for k,v in team_name_map.items()}
+    team_id_by_name.update({name_key(v):k for k,v in team_abbr_map.items()})
     matched=0
     for row in injury_rows:
         if not row.get("player_report_name"): continue
@@ -217,7 +220,14 @@ def main():
         parts=[x.strip() for x in reported.split(",")]
         candidates=[name_key(reported)]
         if len(parts)==2: candidates.append(name_key(parts[1]+" "+parts[0]))
+        suffixes={"jr","sr","ii","iii","iv"}
+        candidates += ["".join(tok for tok in k.split() if tok not in suffixes) for k in list(candidates)]
         target_player=next((player_lookup[(tid,k)] for k in candidates if tid and (tid,k) in player_lookup),None)
+        if target_player is None and tid:
+            team_candidates=[(k,p) for (team_id,k),p in player_lookup.items() if team_id==tid]
+            scored=sorted(((difflib.SequenceMatcher(None,c,k).ratio(),p) for c in candidates for k,p in team_candidates),key=lambda x:x[0],reverse=True)
+            if scored and scored[0][0]>=0.94 and (len(scored)==1 or scored[0][0]-scored[1][0]>=0.03):
+                target_player=scored[0][1]
         if target_player:
             target_player["official_status"]=row["status"]
             target_player["official_reason"]=row["reason"]
@@ -233,7 +243,7 @@ def main():
       "source_notes":["Team ratings and pace: last 10 regular-season team games, recency weighted, strict pre-target cutoff.",
       "Player minutes: average over up to 10 most recent appearances, normalized to a 240-minute team rotation with a 48-minute cap; estimate, not a validated rotation forecast.",
       "Player impact: recent points-per-minute relative to that team's median player rate; proxy only, not RAPM or causal impact.",
-      "Official injury report rows are timestamped report snapshots distributed by SportsDataverse from NBA official PDFs; player matching is exact normalized name plus team. Unmatched players remain UNKNOWN.",
+      "Official injury reports are read from NBA-hosted PDFs when available, with the timestamped SportsDataverse archive as fallback. Team abbreviation/full-name aliases and conservative normalized player-name matching are used; unmatched players remain UNKNOWN.",
       "A missing report, missing player row, or NOT YET SUBMITTED team is not evidence of availability."]}
     Path(a.output).parent.mkdir(parents=True,exist_ok=True)
     Path(a.output).write_text(json.dumps(payload,indent=2),encoding="utf-8")
