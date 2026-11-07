@@ -63,7 +63,7 @@ def main():
             season_page=f"https://official.nba.com/nba-injury-report-{season-1}-{str(season)[-2:]}-season/"
             page=requests.get(season_page,timeout=30,headers={"User-Agent":"Mozilla/5.0"})
             page.raise_for_status()
-            hrefs=re.findall(r'href=["\\']([^"\\']+Injury-Report_[^"\\']+\\.pdf)["\\']',page.text,re.I)
+            hrefs=re.findall(r"""href=["']([^"']+Injury-Report_[^"']+\\.pdf)["']""",page.text,re.I)
             candidates=[]
             for href in hrefs:
                 url=href.replace("&amp;","&")
