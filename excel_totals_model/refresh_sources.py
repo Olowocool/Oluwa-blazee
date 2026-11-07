@@ -47,9 +47,12 @@ def main():
             AND lower(CAST(g.game_type AS VARCHAR))='regular_season'
         """).fetchdf()
         player=con.execute(f"""
-          SELECT game_date,team_id,player_id,min,pts
-          FROM read_parquet([{player_paths}],hive_partitioning=true,union_by_name=true)
-          WHERE CAST(game_date AS DATE) < DATE '{target.date()}'
+          SELECT p.game_date,p.team_id,p.player_id,p.min,p.pts
+          FROM read_parquet([{player_paths}],hive_partitioning=true,union_by_name=true) p
+          JOIN read_parquet([{game_paths}],hive_partitioning=true,union_by_name=true) g
+            ON CAST(p.game_id AS VARCHAR)=CAST(g.game_id AS VARCHAR)
+          WHERE CAST(p.game_date AS DATE) < DATE '{target.date()}'
+            AND lower(CAST(g.game_type AS VARCHAR))='regular_season'
         """).fetchdf()
         names=con.execute(f"""
           SELECT player_id,name FROM read_parquet([
