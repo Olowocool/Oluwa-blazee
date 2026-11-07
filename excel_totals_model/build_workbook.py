@@ -184,6 +184,7 @@ def main():
             row["status_source"]="NBA official injury report PDF/archive"
             matched_roster_players.add((team,norm(athlete.get("name"))))
             injury_matches=len(matched_roster_players)
+    injury_matches=sum(1 for row in all_players.values() if row.get("official_status"))
     dash["B14"]=injury_matches
     for p in all_players.values():
         code=code_by_teamid.get(str(p["team_id"]))
@@ -208,7 +209,7 @@ def main():
           f'=IF(AND(D{i}>0,G{i}>0,K{i}>0),K{i}*(D{i}+G{i}-Settings!$B$2)/100+P{i},0)',
           f'=IF(AND(F{i}>0,E{i}>0,K{i}>0),K{i}*(F{i}+E{i}-Settings!$B$2)/100+Q{i},0)',
           f'=IF(AND(L{i}>0,M{i}>0),L{i}+M{i},0)',
-          f'=IF(OR(D{i}<=0,E{i}<=0,F{i}<=0,G{i}<=0,H{i}<=0,I{i}<=0),"MISSING TEAM HISTORY / CROSSWALK","PROVISIONAL — PLAYER MINUTES AND AVAILABILITY NOT VERIFIED")',
+          f'=IF(OR(D{i}<=0,E{i}<=0,F{i}<=0,G{i}<=0,H{i}<=0,I{i}<=0),"MISSING TEAM HISTORY / CROSSWALK","PROVISIONAL — OFFICIAL REPORT WEIGHTING APPLIED; UNKNOWN STATUS AND MINUTES REMAIN UNCERTAIN")',
           f'=IFERROR(SUMPRODUCT((\'Player Inputs\'!$A$2:$A$2500=B{i})*(\'Player Inputs\'!$F$2:$F$2500)/48*(\'Player Inputs\'!$G$2:$G$2500)*(\'Player Inputs\'!$N$2:$N$2500))*K{i}*Settings!$B$3/100,0)',
           f'=IFERROR(SUMPRODUCT((\'Player Inputs\'!$A$2:$A$2500=C{i})*(\'Player Inputs\'!$F$2:$F$2500)/48*(\'Player Inputs\'!$G$2:$G$2500)*(\'Player Inputs\'!$N$2:$N$2500))*K{i}*Settings!$B$3/100,0)'])
     settings=wb.create_sheet("Settings")
