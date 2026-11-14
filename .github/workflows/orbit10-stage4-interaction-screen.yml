@@ -47,7 +47,7 @@ jobs:
           assert summary_path.is_file() and summary_path.stat().st_size > 0
           summary = json.loads(summary_path.read_text())
           assert len(summary["interaction_results"]) == 2
-          assert set(summary["pair_coverage"].keys()) == {\n              "Pattern 1 × Pattern 5: rest disadvantage",\n              "Pattern 1 × Pattern 7: pace collision"}
+          assert set(summary["pair_coverage"].keys()) == {"Pattern 1 × Pattern 5: rest disadvantage", "Pattern 1 × Pattern 7: pace collision"}
           assert "SEALED" in summary["protocol"]["holdout"]
           if pred_path.exists():
               pred = pd.read_csv(pred_path)
