@@ -257,3 +257,15 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 ### Change log
 - 2026-11-14 — ORBIT-10 scope established; historical window set to NBA seasons 2000–01 onward; ten user-supplied patterns mapped into five engines and seven testing stages; Excel deliverable and isolation requirements recorded.
 - 2026-11-14 — Stage 1 data inventory completed on the dedicated branch. Pattern-level availability, coverage limits, source-vintage cautions and Stage 2 gates recorded in research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md. No model training or paid API calls performed.\n- 2026-11-14 — Stage 2 baseline runner and isolated GitHub Actions workflow committed. Baseline protocol, source spine, possession reconciliation, frozen chronological splits and acceptance gates recorded in docs/ORBIT-10_STAGE2_BASELINE_PROTOCOL_2026-11-14.md. Execution and artifacts are not yet verified; Stage 2 remains in progress.
+
+
+### Stage 2 execution verification — 2026-11-14
+
+- Latest observed run: [GitHub Actions run 43597638740](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43597638740), workflow run #5, commit `2929091030d19641590d41ce2cf995f713600e98`.
+- Result: **FAILED**. Python compilation and dependency installation succeeded; the baseline execution stopped at the source reconciliation gate.
+- Exact failure: `Insufficient cross-source overlap for Stage 2 gate: 0 team-games; expected >=1000.`
+- Job ID: `132455446809`.
+- No prediction or summary artifact was produced; artifact list is empty.
+- Earlier run #1 succeeded only before the modern source and reconciliation were added; it is not evidence that the current baseline pipeline works.
+- Stage 2 remains **BLOCKED**. Do not report baseline metrics or proceed to Stage 3 until the legacy-to-modern game/team key mapping is diagnosed, the overlap audit passes, and a successful run produces inspected artifacts.
+- No changes were made to `main`, production, Render, or betting records.
