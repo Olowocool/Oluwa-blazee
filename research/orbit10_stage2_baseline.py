@@ -44,8 +44,11 @@ def weighted_recent(values: list[float]) -> float:
 def shrunk(value: float, n: int, league_value: float) -> float:
     if not np.isfinite(value):
         return league_value
-    return float((n * value + PRIOR_STRENGTH_GAMES * league_value) /
-                 (n + PRIOR_STRENGTH_GAMES))
+    # The feature estimate uses at most the latest ROLLING_GAMES. Shrinkage
+    # must use that same evidence window, not the team's full-season count.
+    effective_n = min(int(n), ROLLING_GAMES)
+    return float((effective_n * value + PRIOR_STRENGTH_GAMES * league_value) /
+                 (effective_n + PRIOR_STRENGTH_GAMES))
 
 
 def metrics(frame: pd.DataFrame) -> dict:
