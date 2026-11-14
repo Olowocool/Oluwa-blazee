@@ -25,7 +25,7 @@ jobs:
       - name: Install baseline dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pandas numpy
+          python -m pip install pandas numpy duckdb
       - name: Inspect source and run ORBIT-10 baseline
         run: |
           python -m py_compile research/orbit10_stage2_baseline.py
