@@ -327,3 +327,6 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - Training-only residual adjustment, 2,000 bootstrap replicates, minimum 100 observations per train group. Validation is the sole out-of-sample decision set.
 - Final holdout is excluded from the analysis dataframe and is not scored, tuned, or reported. No odds or paid APIs used.
 - Stage 4 interactions remain blocked until this replication is inspected and decided.
+
+
+- 2026-11-14 — Stage 3B run #1 (`43606608960`, commit `afa095b`) failed at the explicit complete-feature check: some games lacked sufficient prior venue-specific history or a valid contemporaneous league dispersion estimate. No result artifact was produced. The runner was corrected to use complete cases only, report eligible/excluded coverage by split, and never impute missing z-scores. Protocol updated to require coverage reporting. Verification rerun #2 (`43606780365`, commit `8b5f227`) was in progress at this note. The failed run is not evidence about Pattern 1's effect.
