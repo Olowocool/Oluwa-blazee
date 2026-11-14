@@ -2,7 +2,7 @@
 
 **Register code name:** ORBIT-10  
 **Expanded name:** Out-of-sample Research Benchmark for Integrated Totals — 10 patterns  
-**Status:** RESEARCH IN PROGRESS — STAGE 3B COMPLETE; STAGE 4 SCREEN RUN PENDING  
+**Status:** RESEARCH IN PROGRESS — STAGE 4 COMPLETE; STAGE 5 NOT STARTED  
 **Scope date:** 2026-11-14  
 **Historical training window:** NBA seasons 2000–01 onward, through the latest season with verified data.
 
@@ -247,7 +247,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
 | Stage 2 — Baseline | COMPLETE — FROZEN BASELINE BUILT; PERFORMANCE IS A BENCHMARK, NOT ACCEPTANCE | Run #10 passed reconciliation and produced inspected predictions and split metrics; see verification record below |
 | Stage 3 — Ten individual tests | COMPLETE WITH FEATURE GAPS — SIX SCREENED; FOUR SOURCE/MEASUREMENT LIMITED | See research/ORBIT-10_STAGE3_INDIVIDUAL_PATTERN_RESULTS_2026-11-14.md and artifact 14117349844; no feature approved for the combined model yet |
-| Stage 3B — Pattern 1 era-normalized replication | COMPLETE — PREREGISTERED SCREENING PASS | Run #6 and artifact 14125070696 inspected; report and sealed-holdout checks recorded below |\n| Stage 4 — Interactions | IN PROGRESS — TWO PAIRS PREREGISTERED; EXECUTION PENDING | Pattern 1 × rest disadvantage; Pattern 1 × pace collision; holdout sealed |\n| Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
+| Stage 3B — Pattern 1 era-normalized replication | COMPLETE — PREREGISTERED SCREENING PASS | Run #6 and artifact 14125070696 inspected; report and sealed-holdout checks recorded below |\n| Stage 4 — Interactions | COMPLETE — NO INTERACTION RETAINED | Pattern 1 × Pattern 5 rejected; Pattern 1 × Pattern 7 insufficient evidence; see Stage 4 results report |\n| Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
 | Stage 6 — Chronological validation | NOT STARTED | Untouched holdout and leakage checks |
 | Stage 7 — Final comparison | NOT STARTED | Model A/B/C/D comparison and written decision |
 | Excel deliverable | NOT STARTED | Workbook build, recalculated formulas, source and validation audit |
@@ -350,3 +350,18 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - Each pair uses a TRAIN-only 2×2 difference-in-differences interaction contrast, 2,000 cell-stratified bootstrap replicates, minimum 30 observations in every TRAIN cell and 15 in every VALIDATION cell, and unchanged application to validation. Both MAE and RMSE must improve versus the Stage 3B Pattern 1-only comparator. Sparse pairs are reported as INSUFFICIENT EVIDENCE, with no fitted correction.
 - The runner filters the prediction table to train and validation before merging features. Holdout is not merged, scored, or used. No market data, paid DunkAPI calls, main/production, Render, or betting records are used.
 - Stage 4 workflow definition committed as `11177d57cbfa0322c5fc6454781204c410bf46fb`. Workflow run #1 (`43623653290`, workflow commit `11177d57cbfa0322c5fc6454781204c410bf46fb`) is executing on GitHub Actions; no interaction result is accepted until the run and artifact are inspected.
+
+
+### Stage 4 execution and verification — 2026-11-14
+
+- Protocol: `docs/ORBIT-10_STAGE4_INTERACTION_PROTOCOL_2026-11-14.md`.
+- Runner: `research/orbit10_stage4_interaction_screen.py`.
+- Workflow: `.github/workflows/orbit10-stage4-interaction-screen.yml`.
+- Accepted run: [43623803640](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43623803640), conclusion `success`; all execution, evidence-verification and upload steps passed.
+- Workflow commit: `e8f875966a939144c7f8c20a4fd1ef1bdcbc1312`; runner commit: `ac26496f7b4d8d08266e0b6eedfd420718a46247`.
+- Artifact ID `14125930120`, SHA-256 `76cc1259d0b21b3a8538b6802eb83a24e1ec622161352767c42806c6733b3ff5`. Independently inspected summary and predictions; 4,749 validation rows, zero holdout rows; independently recomputed validation MAE/RMSE/bias match the artifact summary.
+- Pattern 1 × Pattern 5: TRAIN 2×2 cells 16,561 / 1,384 / 1,083 / 72; VALIDATION 4,253 / 231 / 249 / 16. TRAIN interaction contrast +1.5671, bootstrap 95% CI [-2.5289, +5.8652]; VALIDATION contrast -8.4249. Adding the interaction worsened validation MAE by 0.0027 and RMSE by 0.0032. **REJECT.**
+- Pattern 1 × Pattern 7: TRAIN cells 17,527 / 418 / 1,131 / 24; VALIDATION 4,386 / 98 / 261 / 4. Joint-positive cell fails both minimums. **INSUFFICIENT EVIDENCE; no coefficient fitted.**
+- No interaction passes. Stage 4 is complete as a bounded negative/insufficient screen; no interaction is approved for Stage 5. Pattern 1 remains only a Stage 3B research candidate, not production-approved.
+- Full report: `research/ORBIT-10_STAGE4_INTERACTION_RESULTS_2026-11-14.md`.
+- No main/production/Render/betting records/paid DunkAPI changes; final holdout remains sealed.
