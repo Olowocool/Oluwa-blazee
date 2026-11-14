@@ -246,7 +246,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Dedicated branch and register | COMPLETE | Branch and committed register file retrieved and verified |
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
 | Stage 2 — Baseline | COMPLETE — FROZEN BASELINE BUILT; PERFORMANCE IS A BENCHMARK, NOT ACCEPTANCE | Run #10 passed reconciliation and produced inspected predictions and split metrics; see verification record below |
-| Stage 3 — Ten individual tests | IN PROGRESS — SIX SCHEDULE/HISTORY FEATURES REGISTERED; EXECUTION PENDING | Successful workflow, inspected outputs, validation and untouched holdout results; unavailable patterns explicitly documented |
+| Stage 3 — Ten individual tests | COMPLETE WITH FEATURE GAPS — SIX SCREENED; FOUR SOURCE/MEASUREMENT LIMITED | See research/ORBIT-10_STAGE3_INDIVIDUAL_PATTERN_RESULTS_2026-11-14.md and artifact 14117349844; no feature approved for the combined model yet |
 | Stage 4 — Interactions | NOT STARTED | Pre-specified interaction results and sample counts |
 | Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
 | Stage 6 — Chronological validation | NOT STARTED | Untouched holdout and leakage checks |
@@ -303,3 +303,15 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - Pattern 2 and 8 are not testable with audited sources; pattern 3 requires a separate partial-era injury report audit; pattern 10 is not tested because a standings proxy is not equivalent to verified motivation/clinching status.
 - Minimum group size: 100 training games per feature/control group. Bootstrap: 1,000 resamples, fixed seed. Holdout is not used for feature selection or tuning.
 - Stage 3 is **not complete** until the run finishes and its output artifact is inspected. No claims about pattern effects are made at this point.
+
+
+### Stage 3 execution verification — 2026-11-14
+
+- Valid successful workflow: [run #3, ID 43606070020](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43606070020), commit `60aed4b189d08a598b113f16742902a5f7433ed0`, job ID `132480866686`.
+- Inspected artifact: `ORBIT-10-stage3-individual-pattern-tests`, artifact ID `14117349844`, 4,219,715 bytes. It contains the regenerated Stage 2 baseline files, Stage 3 summary, individual results CSV and adjusted-predictions CSV.
+- Detailed report: `research/ORBIT-10_STAGE3_INDIVIDUAL_PATTERN_RESULTS_2026-11-14.md`.
+- The six supported screens (patterns 1, 4, 5, 6, 7 and 9) completed with fixed definitions and training-only residual effects. The validation and holdout metrics are recorded in the report. Patterns 2 and 8 remain untestable with audited sources; pattern 3 requires a separate injury-era audit; pattern 10 remains untested because standings proxies are not verified motivation/clinching states.
+- **No pattern is approved for the combined model.** Pattern 1 shows material MAE/RMSE improvement in later splits under its training-only adjustment, but the feature prevalence shifts from 1.9% of train to 36.5% validation and 79.8% holdout; its holdout bias changes from -6.80 to +2.16. Treat this as an unstable era-threshold association, not a validated home-court effect. Pattern 9 reverses direction and worsens later-split errors. Patterns 4, 5 and 7 provide negligible or unreliable lift. Pattern 6 has zero qualifying training games.
+- Run #1 (`43605906188`, commit `bc87ec9`) is superseded: review identified a reversed residual-correction sign. Run #2 (`43606056452`) failed due a missing away-venue flag in the feature history. The sign and venue-history issues were corrected before valid run #3; only run #3 is accepted as Stage 3 evidence.
+- Stage 3 is marked **complete with feature gaps** because every pattern now has an explicit tested, insufficient, partial, or unavailable disposition. This does not mean all ten were empirically tested or any feature has been validated for deployment.
+- No changes to `main`, production, Render, betting records or paid DunkAPI usage.
