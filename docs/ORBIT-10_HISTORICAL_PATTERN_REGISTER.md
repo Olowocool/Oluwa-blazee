@@ -2,7 +2,7 @@
 
 **Register code name:** ORBIT-10  
 **Expanded name:** Out-of-sample Research Benchmark for Integrated Totals — 10 patterns  
-**Status:** RESEARCH IN PROGRESS — STAGE 5 COMPLETE; STAGE 6 NOT STARTED  
+**Status:** RESEARCH IN PROGRESS — STAGE 6 COMPLETE; FINAL HISTORICAL HOLDOUT PASS  
 **Scope date:** 2026-11-14  
 **Historical training window:** NBA seasons 2000–01 onward, through the latest season with verified data.
 
@@ -250,7 +250,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Stage 3B — Pattern 1 era-normalized replication | COMPLETE — PREREGISTERED SCREENING PASS | Run #6 and artifact 14125070696 inspected; report and sealed-holdout checks recorded below |
 | Stage 4 — Interactions | COMPLETE — NO INTERACTION RETAINED | Pattern 1 × Pattern 5 rejected; Pattern 1 × Pattern 7 insufficient evidence; see Stage 4 results report |
 | Stage 5 — Combined model | COMPLETE — SCREENING PASS | Model B = frozen baseline + TRAIN-only intercept + era-normalized Pattern 1; validation MAE/RMSE improved; see Stage 5 results report |
-| Stage 6 — Chronological validation | NOT STARTED | Untouched holdout and leakage checks |
+| Stage 6 — Chronological validation | COMPLETE — FINAL HOLDOUT PASS | Frozen Stage 5 Model B beat Model A on overall MAE/RMSE and both metrics in all six holdout seasons; 7,220 games, 100% feature coverage; see Stage 6 results report |
 | Stage 7 — Final comparison | NOT STARTED | Model A/B/C/D comparison and written decision |
 | Excel deliverable | NOT STARTED | Workbook build, recalculated formulas, source and validation audit |
 | Deployment | NOT AUTHORIZED | Requires separate explicit user approval |
@@ -383,3 +383,21 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - All seven preregistered screening criteria passed. Stage 5 status: **SCREENING PASS — eligible for Stage 6 chronological replication only**. This is modest incremental predictive lift, not proof of sufficient accuracy, causality, profitability or deployment readiness. Model B still has -4.7488-point validation bias; within-5 accuracy did not improve.
 - Full report: `research/ORBIT-10_STAGE5_COMBINED_MODEL_RESULTS_2026-11-14.md`.
 - Final holdout remained sealed. No market data, paid DunkAPI, main/production/Render, Excel deliverable or betting records touched.
+
+
+### Stage 6 execution and verification — 2026-11-14
+
+- Protocol: `docs/ORBIT-10_STAGE6_FINAL_HOLDOUT_PROTOCOL_2026-11-14.md`.
+- Runner: `research/orbit10_stage6_final_holdout.py`.
+- Workflow: `.github/workflows/orbit10-stage6-final-holdout.yml`.
+- Accepted run: [43625128121](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43625128121), conclusion `success`; baseline rebuild, final holdout evaluation, evidence verification and artifact upload all passed.
+- Workflow commit: `1e16f6256dde7bd2662d197d70b6e9401d0c7d1d`; job ID `132539146952`.
+- Artifact: `ORBIT-10-stage6-final-holdout`, ID `14125493448`, SHA-256 `c2de47b2240e5311520292afa9f7d1cd249655410a3f63f315dea9d4a13caaa9`. Contains summary JSON and per-game predictions CSV.
+- Independently inspected and recomputed artifact: 7,220 unique game rows; seasons 2021–2026 all present; CSV-recomputed MAE/RMSE/bias match JSON; maximum frozen prediction reconstruction error 0.
+- Holdout coverage: 7,220 / 7,220 games (100%); zero missing-feature exclusions. Pattern 1 qualifies in 469 games (6.50%).
+- Frozen coefficients/thresholds used unchanged from Stage 5: alpha -0.805967; beta -5.836135; home PPG z threshold 0.657915; away road DRtg z threshold 0.732879. No refitting, tuning, extra patterns, interactions, odds or market data.
+- Overall paired holdout: Model A MAE/RMSE/bias 15.9077 / 20.1288 / -6.8025; Model B 15.6108 / 19.7540 / -5.6174. Changes: MAE -0.2969; RMSE -0.3748. Within-5 improves 19.72% to 20.21%; within-10 improves 38.85% to 39.38%.
+- Both MAE and RMSE improve in each of the six seasons 2021–2026. All six preregistered final-holdout criteria pass. Stage 6 status: **FINAL HOLDOUT PASS**.
+- This supports modest, consistent historical predictive improvement, not causality, profitability, live performance or deployment readiness. Material negative bias remains (-5.6174 points). Do not tune on this holdout and continue to call it independent.
+- Full results: `research/ORBIT-10_STAGE6_FINAL_HOLDOUT_RESULTS_2026-11-14.md`.
+- No main/production/Render/Excel/betting records/paid DunkAPI changes.
