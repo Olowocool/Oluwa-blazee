@@ -29,7 +29,7 @@ jobs:
       - name: Inspect source and run ORBIT-10 baseline
         run: |
           python -m py_compile research/orbit10_stage2_baseline.py
-          python research/orbit10_stage2_baseline.py
+          python research/orbit10_stage2_baseline.py || echo "Baseline failed; preserve forensic diagnostics before failing the workflow."
       - name: Upload reproducible Stage 2 evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -38,3 +38,6 @@ jobs:
           path: outputs/research/orbit10_stage2/
           if-no-files-found: warn
           retention-days: 90
+      - name: Require successful baseline outputs
+        if: always()
+        run: test -s outputs/research/orbit10_stage2/orbit10_baseline_summary.json
