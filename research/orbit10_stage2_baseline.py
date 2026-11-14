@@ -2,9 +2,9 @@
 """ORBIT-10 Stage 2: frozen team-strength + possessions combined-total baseline.
 
 Primary game spine:
-- 2000-01 through 2009-10: repository data/game.csv.
-- 2010-11 through 2025-26: public llimllib/nba_data v2 team_game_logs.
-- 2010-11 through 2022-23 overlap: cross-source score and possession audit.
+- 2000-01 through 2008-09: repository data/game.csv.
+- 2009-10 through 2025-26: public llimllib/nba_data v2 team_game_logs.
+- 2009-10 through 2022-23 overlap: cross-source score and possession audit.
 
 No odds, market totals, injury adjustments, or ORBIT pattern features enter
 this baseline. Every game on a calendar date is forecast from history strictly
@@ -119,7 +119,7 @@ def load_legacy() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
         "legacy_raw_rows": int(raw_rows),
         "legacy_regular_season_rows_2000_01_to_2022_23_after_required_field_filter": int(len(raw)),
         "legacy_rows_excluded_for_missing_required_values": missing_rows,
-        "legacy_baseline_games_used_2000_01_to_2009_10": int(len(rows)),
+        "legacy_baseline_games_used_2000_01_to_2008_09": int(len(rows)),
     }
     return pd.DataFrame(rows), pd.DataFrame(overlap), audit
 
@@ -166,7 +166,7 @@ def load_modern() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     modern["game_date"] = pd.to_datetime(modern["game_date"], errors="coerce").dt.normalize()
     modern["team_id"] = modern["team_id"].map(id_text)
     modern["opp_team_id"] = modern["opp_team_id"].map(id_text)
-    modern["game_id"] = modern["game_id"].astype(str)
+    modern["game_id"] = modern["game_id"].map(id_text)
     modern = modern.dropna(subset=[
         "season", "game_id", "game_date", "team_id", "opp_team_id",
         "pts", "fga", "fta", "oreb", "tov", "home",
@@ -217,7 +217,7 @@ def load_modern() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     # Cross-source comparison is performed on overlapping 2010-2023 games.
     return modern_games, provider_team, {
         "modern_team_game_rows": int(len(modern)),
-        "modern_regular_season_games_2010_11_to_2025_26": int(len(modern_games)),
+        "modern_regular_season_games_2009_10_to_2025_26": int(len(modern_games)),
         "modern_games_by_season_end_year": {
             str(int(y)): int(n) for y, n in modern_games.groupby("season_end_year").size().items()
         },
@@ -286,7 +286,7 @@ def main() -> None:
     score_diff = overlap["pts_legacy"] - overlap["pts_modern"]
     poss_diff = overlap["formula_poss_legacy"] - overlap["formula_poss_modern"]
     cross_source_audit = {
-        "matched_team_games_2010_11_to_2022_23": int(len(overlap)),
+        "matched_team_games_2009_10_to_2022_23": int(len(overlap)),
         "score_mismatch_rows": int((score_diff.abs() > 0.01).sum()),
         "mean_abs_possession_difference": round(float(poss_diff.abs().mean()), 5),
         "median_abs_possession_difference": round(float(poss_diff.abs().median()), 5),
@@ -406,7 +406,7 @@ def main() -> None:
         "stage": "ORBIT-10 Stage 2 — frozen baseline",
         "sources": {
             "legacy": "data/game.csv, regular-season 2000-01 to 2009-10",
-            "modern": "public llimllib/nba_data v2 team_game_logs + games, regular-season 2010-11 to 2025-26",
+            "modern": "public llimllib/nba_data v2 team_game_logs + games, regular-season 2009-10 to 2025-26",
         },
         "legacy_audit": legacy_audit,
         "modern_audit": modern_audit,
