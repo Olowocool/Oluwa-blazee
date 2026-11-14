@@ -1,0 +1,67 @@
+name: ORBIT-10 Stage 4 Preregistered Interaction Screen
+
+on:
+  push:
+    branches:
+      - "research/historical-pattern-total-test"
+    paths:
+      - "research/orbit10_stage4_interaction_screen.py"
+      - "research/orbit10_stage3b_pattern1_era_normalized.py"
+      - "research/orbit10_stage2_baseline.py"
+      - ".github/workflows/orbit10-stage4-interaction-screen.yml"
+      - "docs/ORBIT-10_STAGE4_INTERACTION_PROTOCOL_2026-11-14.md"
+      - "data/game.csv"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  interaction-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas numpy duckdb
+      - name: Rebuild frozen baseline and run Stage 3B feature replication
+        run: |
+          python -m py_compile research/orbit10_stage2_baseline.py research/orbit10_stage3b_pattern1_era_normalized.py research/orbit10_stage4_interaction_screen.py
+          python research/orbit10_stage2_baseline.py
+          python research/orbit10_stage3b_pattern1_era_normalized.py
+      - name: Run preregistered interaction screen
+        run: python research/orbit10_stage4_interaction_screen.py
+      - name: Verify evidence and sealed holdout
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          out = Path("outputs/research/orbit10_stage4")
+          summary_path = out / "orbit10_stage4_interaction_summary.json"
+          pred_path = out / "orbit10_stage4_interaction_predictions.csv"
+          assert summary_path.is_file() and summary_path.stat().st_size > 0
+          summary = json.loads(summary_path.read_text())
+          assert len(summary["interaction_results"]) == 2
+          assert summary["analysis_rows"] == summary["coverage"]["train"]["eligible_games"] + summary["coverage"]["validation"]["eligible_games"]
+          assert "SEALED" in summary["protocol"]["holdout"]
+          if pred_path.exists():
+              pred = pd.read_csv(pred_path)
+              assert set(pred["split"].unique()) == {"validation"}
+              assert not pred["split"].eq("holdout").any()
+          print("Stage 4 evidence verified; interaction statuses:",
+                [x["status"] for x in summary["interaction_results"]])
+          PY
+      - name: Upload Stage 4 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORBIT-10-stage4-interaction-screen
+          path: outputs/research/orbit10_stage4/
+          if-no-files-found: warn
+          retention-days: 90
