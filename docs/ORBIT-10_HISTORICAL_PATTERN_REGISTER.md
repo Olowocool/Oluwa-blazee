@@ -2,7 +2,7 @@
 
 **Register code name:** ORBIT-10  
 **Expanded name:** Out-of-sample Research Benchmark for Integrated Totals — 10 patterns  
-**Status:** RESEARCH IN PROGRESS — STAGE 6 COMPLETE; FINAL HISTORICAL HOLDOUT PASS  
+**Status:** STAGE 7 COMPLETE — FROZEN HISTORICAL RESEARCH CANDIDATE; NOT BETTING- OR DEPLOYMENT-READY  
 **Scope date:** 2026-11-14  
 **Historical training window:** NBA seasons 2000–01 onward, through the latest season with verified data.
 
@@ -251,7 +251,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Stage 4 — Interactions | COMPLETE — NO INTERACTION RETAINED | Pattern 1 × Pattern 5 rejected; Pattern 1 × Pattern 7 insufficient evidence; see Stage 4 results report |
 | Stage 5 — Combined model | COMPLETE — SCREENING PASS | Model B = frozen baseline + TRAIN-only intercept + era-normalized Pattern 1; validation MAE/RMSE improved; see Stage 5 results report |
 | Stage 6 — Chronological validation | COMPLETE — FINAL HOLDOUT PASS | Frozen Stage 5 Model B beat Model A on overall MAE/RMSE and both metrics in all six holdout seasons; 7,220 games, 100% feature coverage; see Stage 6 results report |
-| Stage 7 — Final comparison | NOT STARTED | Model A/B/C/D comparison and written decision |
+| Stage 7 — Final comparison | COMPLETE WITH SCOPE LIMITATIONS — MODEL B FROZEN AS RESEARCH CANDIDATE ONLY | Model B passed final historical holdout; Stage 4 retained no interaction (C not built); separate regularized Model D not fitted. See research/ORBIT-10_STAGE7_FINAL_MODEL_COMPARISON_2026-11-14.md |
 | Excel deliverable | NOT STARTED | Workbook build, recalculated formulas, source and validation audit |
 | Deployment | NOT AUTHORIZED | Requires separate explicit user approval |
 
@@ -401,3 +401,15 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - This supports modest, consistent historical predictive improvement, not causality, profitability, live performance or deployment readiness. Material negative bias remains (-5.6174 points). Do not tune on this holdout and continue to call it independent.
 - Full results: `research/ORBIT-10_STAGE6_FINAL_HOLDOUT_RESULTS_2026-11-14.md`.
 - No main/production/Render/Excel/betting records/paid DunkAPI changes.
+
+
+### Stage 7 final model comparison and research-readiness decision — 2026-11-14
+
+- Report: `research/ORBIT-10_STAGE7_FINAL_MODEL_COMPARISON_2026-11-14.md`.
+- Stage 7 decision: **COMPLETE WITH SCOPE LIMITATIONS — freeze Model B as a historical research candidate only; not betting-ready and not deployment-authorized.**
+- Model A remains the required baseline comparator. Model B is the only model with completed validation and final holdout evidence: on 7,220 paired holdout games it improved MAE from 15.9077 to 15.6108 (−0.2969) and RMSE from 20.1288 to 19.7540 (−0.3748); both metrics improved in all six holdout seasons.
+- Model C was not retained: Stage 4 rejected Pattern 1 × Pattern 5 and classified Pattern 1 × Pattern 7 as insufficient evidence. No interaction prediction model or final holdout score exists.
+- Model D was not separately fitted. Stage 5 Model B is a one-feature TRAIN-only OLS residual calibration, not a distinct regularized Model D. No D metrics are claimed.
+- Model B retains material negative holdout bias (−5.6174 points). No timestamped odds/vig/ROI, bet selection, drawdown or prospective live shadow study has been evaluated. Profitability is unproven.
+- Final decision: preserve Model B unchanged for research; do not retune on the spent 2020–21 to 2025–26 holdout. Any future revision or regularized D needs a new preregistered forward evaluation period. Excel workbook remains not started; deployment remains not authorized.
+- No changes to `main`, production, Render, betting records or paid DunkAPI credits.
