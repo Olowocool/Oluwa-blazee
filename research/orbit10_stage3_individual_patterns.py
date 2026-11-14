@@ -54,8 +54,8 @@ def build_features(spine):
             hdef = float(100*np.sum([x["opp_pts"] for x in hlast])/np.sum([x["opp_poss"] for x in hlast])) if hlast and sum(x["opp_poss"] for x in hlast)>0 else np.nan
             adef = float(100*np.sum([x["opp_pts"] for x in alast])/np.sum([x["opp_poss"] for x in alast])) if alast and sum(x["opp_poss"] for x in alast)>0 else np.nan
             h2h_rows = [x for x in h2h.get(tuple(sorted((ht,at))), []) if 0 < (day-x["date"]).days <= 42]
-            home_held = len(h2h_rows)>3 and all(x["away_pts"] < 100 for x in h2h_rows if x["home_team"]==ht) and all(x["home_pts"] < 100 for x in h2h_rows if x["away_team"]==ht)
-            away_held = len(h2h_rows)>3 and all(x["away_pts"] < 100 for x in h2h_rows if x["home_team"]==at) and all(x["home_pts"] < 100 for x in h2h_rows if x["away_team"]==at)
+            home_held = len(h2h_rows)>3 and all((x["away_pts"] if x["home_team"]==ht else x["home_pts"]) < 100 for x in h2h_rows)
+            away_held = len(h2h_rows)>3 and all((x["away_pts"] if x["home_team"]==at else x["home_pts"]) < 100 for x in h2h_rows)
             rows.append({
                 "game_id":g["game_id"],
                 "p1_home_high_ppg_weak_def": bool(np.isfinite(hppg) and np.isfinite(adef) and hppg>110 and adef>105),
