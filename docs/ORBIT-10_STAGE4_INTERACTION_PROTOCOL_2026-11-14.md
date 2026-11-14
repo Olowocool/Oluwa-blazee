@@ -23,7 +23,7 @@ No other pairs will be tested in this stage. Pattern 2 coaching, Pattern 3 injur
 - Pattern 1: trailing-25 home-game home-team PPG and trailing-25 road-game away-team defensive rating; each standardized against same-date league cross-section. Require at least five venue-specific prior games. Use the exact Stage 3B TRAIN-only 75th-percentile z thresholds: home PPG z **0.657915**, away road DRtg z **0.732879**. Do not refit thresholds.
 - Pattern 5: one team has at most one full calendar rest day and opponent has at least three, using the same schedule-derived definition as Stage 3.
 - Pattern 7: one team is top-three and the opponent bottom-three in trailing-25 game pace, calculated only from prior games; require at least 20 ranked teams and at least five prior games per ranked team.
-- Complete cases only; report eligible/excluded counts. Do not impute.
+- Complete cases only; report eligible/excluded counts separately for each pair. Unknown rest remains missing if prior schedule history is absent; pace collision remains missing when fewer than 20 teams can be ranked. Do not convert unknown values to a negative feature or impute.
 
 ## Estimation
 
