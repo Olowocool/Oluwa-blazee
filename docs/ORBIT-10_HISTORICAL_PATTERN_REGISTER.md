@@ -245,7 +245,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Scope and historical window | APPROVED | User confirmation: 2000–01 onward |
 | Dedicated branch and register | COMPLETE | Branch and committed register file retrieved and verified |
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
-| Stage 2 — Baseline | IN PROGRESS — IMPLEMENTATION COMMITTED; RUN NOT VERIFIED | Successful workflow run, inspected artifacts, source-overlap checks, non-empty split metrics and recorded run/artifact IDs |
+| Stage 2 — Baseline | BLOCKED — SOURCE RECONCILIATION DIAGNOSTICS RUNNING | Successful workflow run, inspected artifacts, source-overlap checks, non-empty split metrics and recorded run/artifact IDs |
 | Stage 3 — Ten individual tests | NOT STARTED | Ten reproducible reports |
 | Stage 4 — Interactions | NOT STARTED | Pre-specified interaction results and sample counts |
 | Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
@@ -269,3 +269,5 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - Earlier run #1 succeeded only before the modern source and reconciliation were added; it is not evidence that the current baseline pipeline works.
 - Stage 2 remains **BLOCKED**. Do not report baseline metrics or proceed to Stage 3 until the legacy-to-modern game/team key mapping is diagnosed, the overlap audit passes, and a successful run produces inspected artifacts.
 - No changes were made to `main`, production, Render, or betting records.
+
+- 2026-11-14 — Added forensic reconciliation diagnostics to report independent legacy/modern game-ID, home/away, date/score and team-ID match counts, with sample keys. Changed workflow artifact upload to run even after a failed baseline step so diagnostics are retained. Diagnostic run #6 (`43601330668`, commit `f54a9fc26289cb8981cf11367b6795f3c2450bc8`) was in progress at register update; this instrumentation is not itself a source-mapping repair. Stage 2 remains blocked pending diagnostic evidence and a successful baseline run.
