@@ -246,7 +246,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Dedicated branch and register | COMPLETE | Branch and committed register file retrieved and verified |
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
 | Stage 2 — Baseline | COMPLETE — FROZEN BASELINE BUILT; PERFORMANCE IS A BENCHMARK, NOT ACCEPTANCE | Run #10 passed reconciliation and produced inspected predictions and split metrics; see verification record below |
-| Stage 3 — Ten individual tests | NOT STARTED | Ten reproducible reports |
+| Stage 3 — Ten individual tests | IN PROGRESS — SIX SCHEDULE/HISTORY FEATURES REGISTERED; EXECUTION PENDING | Successful workflow, inspected outputs, validation and untouched holdout results; unavailable patterns explicitly documented |
 | Stage 4 — Interactions | NOT STARTED | Pre-specified interaction results and sample counts |
 | Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
 | Stage 6 — Chronological validation | NOT STARTED | Untouched holdout and leakage checks |
@@ -291,3 +291,15 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
   - Holdout: MAE 15.9077, RMSE 20.1288, bias -6.8025 points (7,220 games).
 - Interpretation: **Stage 2 baseline construction and its stated execution gates are complete. This is not evidence that the baseline is accurate enough, that any of the ten patterns work, or that the model is profitable.** The pronounced negative holdout bias is a weakness to preserve and report; do not apply an arbitrary correction. Holdout remains a final comparison set and must not be used to tune Stage 2 or Stage 3 features.
 - No market totals, injury features or ORBIT-10 pattern adjustments entered this baseline. No production/main branch, Render deployment, betting records, or paid DunkAPI credits were touched.
+
+
+### Stage 3 implementation started — 2026-11-14
+
+- Preregistered protocol: `docs/ORBIT-10_STAGE3_INDIVIDUAL_PATTERN_PROTOCOL_2026-11-14.md`.
+- Runner: `research/orbit10_stage3_individual_patterns.py`.
+- Workflow: `.github/workflows/orbit10-stage3-pattern-tests.yml`.
+- Workflow run #1: [run 43605906188](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43605906188), commit `bc87ec9c5e2bca20e9554f41f781b34c120b8dbf`; observed in progress at register update.
+- Six independently screened features preregistered: patterns 1, 4, 5, 6, 7 and 9. Fixed definitions and thresholds are documented in the protocol. Training-only residual effects will be applied unchanged to validation and holdout.
+- Pattern 2 and 8 are not testable with audited sources; pattern 3 requires a separate partial-era injury report audit; pattern 10 is not tested because a standings proxy is not equivalent to verified motivation/clinching status.
+- Minimum group size: 100 training games per feature/control group. Bootstrap: 1,000 resamples, fixed seed. Holdout is not used for feature selection or tuning.
+- Stage 3 is **not complete** until the run finishes and its output artifact is inspected. No claims about pattern effects are made at this point.
