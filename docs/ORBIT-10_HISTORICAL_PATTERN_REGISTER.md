@@ -245,7 +245,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Scope and historical window | APPROVED | User confirmation: 2000–01 onward |
 | Dedicated branch and register | COMPLETE | Branch and committed register file retrieved and verified |
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
-| Stage 2 — Baseline | NOT STARTED | Frozen baseline code, split definitions and results |
+| Stage 2 — Baseline | IN PROGRESS — IMPLEMENTATION COMMITTED; RUN NOT VERIFIED | Successful workflow run, inspected artifacts, source-overlap checks, non-empty split metrics and recorded run/artifact IDs |
 | Stage 3 — Ten individual tests | NOT STARTED | Ten reproducible reports |
 | Stage 4 — Interactions | NOT STARTED | Pre-specified interaction results and sample counts |
 | Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
@@ -256,4 +256,4 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 
 ### Change log
 - 2026-11-14 — ORBIT-10 scope established; historical window set to NBA seasons 2000–01 onward; ten user-supplied patterns mapped into five engines and seven testing stages; Excel deliverable and isolation requirements recorded.
-- 2026-11-14 — Stage 1 data inventory completed on the dedicated branch. Pattern-level availability, coverage limits, source-vintage cautions and Stage 2 gates recorded in research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md. No model training or paid API calls performed.
+- 2026-11-14 — Stage 1 data inventory completed on the dedicated branch. Pattern-level availability, coverage limits, source-vintage cautions and Stage 2 gates recorded in research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md. No model training or paid API calls performed.\n- 2026-11-14 — Stage 2 baseline runner and isolated GitHub Actions workflow committed. Baseline protocol, source spine, possession reconciliation, frozen chronological splits and acceptance gates recorded in docs/ORBIT-10_STAGE2_BASELINE_PROTOCOL_2026-11-14.md. Execution and artifacts are not yet verified; Stage 2 remains in progress.
