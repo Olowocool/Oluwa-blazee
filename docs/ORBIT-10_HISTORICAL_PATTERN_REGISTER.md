@@ -247,8 +247,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
 | Stage 2 — Baseline | COMPLETE — FROZEN BASELINE BUILT; PERFORMANCE IS A BENCHMARK, NOT ACCEPTANCE | Run #10 passed reconciliation and produced inspected predictions and split metrics; see verification record below |
 | Stage 3 — Ten individual tests | COMPLETE WITH FEATURE GAPS — SIX SCREENED; FOUR SOURCE/MEASUREMENT LIMITED | See research/ORBIT-10_STAGE3_INDIVIDUAL_PATTERN_RESULTS_2026-11-14.md and artifact 14117349844; no feature approved for the combined model yet |
-| Stage 3B — Pattern 1 era-normalized replication | IN PROGRESS — PREREGISTERED; RUN PENDING | Train-only thresholds, validation-only decision, final holdout sealed |\n| Stage 4 — Interactions | NOT STARTED — BLOCKED PENDING STAGE 3B DECISION | Only individually supported features may enter interaction tests |
-| Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
+| Stage 3B — Pattern 1 era-normalized replication | COMPLETE — PREREGISTERED SCREENING PASS | Run #6 and artifact 14125070696 inspected; report and sealed-holdout checks recorded below |\n| Stage 4 — Interactions | IN PROGRESS — TWO PAIRS PREREGISTERED; EXECUTION PENDING | Pattern 1 × rest disadvantage; Pattern 1 × pace collision; holdout sealed |\n| Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
 | Stage 6 — Chronological validation | NOT STARTED | Untouched holdout and leakage checks |
 | Stage 7 — Final comparison | NOT STARTED | Model A/B/C/D comparison and written decision |
 | Excel deliverable | NOT STARTED | Workbook build, recalculated formulas, source and validation audit |
