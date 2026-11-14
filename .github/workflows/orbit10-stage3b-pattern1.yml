@@ -40,8 +40,32 @@ jobs:
           path: outputs/research/orbit10_stage3b_pattern1/
           if-no-files-found: warn
           retention-days: 90
-      - name: Require summary and predictions
-        if: always()
+      - name: Verify complete evidence and sealed holdout
+        if: success()
         run: |
-          test -s outputs/research/orbit10_stage3b/orbit10_stage3b_pattern1_summary.json
-          test -s outputs/research/orbit10_stage3b/orbit10_stage3b_pattern1_predictions.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          out = Path("outputs/research/orbit10_stage3b_pattern1")
+          summary_path = out / "orbit10_stage3b_pattern1_summary.json"
+          predictions_path = out / "orbit10_stage3b_pattern1_predictions.csv"
+          assert summary_path.is_file() and summary_path.stat().st_size > 0
+          assert predictions_path.is_file() and predictions_path.stat().st_size > 0
+
+          summary = json.loads(summary_path.read_text())
+          train = summary["train"]
+          ci = train["bootstrap_95ci"]
+          assert len(ci) == 2 and all(isinstance(x, (int, float)) for x in ci)
+          assert train["bootstrap_95ci_lower"] == ci[0]
+          assert train["bootstrap_95ci_upper"] == ci[1]
+          assert "validation" in summary and "decision" in summary
+
+          pred = pd.read_csv(predictions_path)
+          assert set(pred["split"].unique()) == {"train", "validation"}
+          assert not pred["split"].eq("holdout").any()
+          assert len(pred) == summary["coverage"]["train"]["eligible_games"] + summary["coverage"]["validation"]["eligible_games"]
+          assert bool(summary["decision"]["passes_all"]) in (True, False)
+          print("Evidence verified:", len(pred), "train/validation rows; holdout absent; CI:", ci)
+          PY
