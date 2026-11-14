@@ -9,7 +9,6 @@ on:
       - "research/orbit10_stage3b_pattern1_era_normalized.py"
       - "research/orbit10_stage2_baseline.py"
       - ".github/workflows/orbit10-stage4-interaction-screen.yml"
-      - "docs/ORBIT-10_STAGE4_INTERACTION_PROTOCOL_2026-11-14.md"
       - "data/game.csv"
   workflow_dispatch:
 
@@ -48,7 +47,7 @@ jobs:
           assert summary_path.is_file() and summary_path.stat().st_size > 0
           summary = json.loads(summary_path.read_text())
           assert len(summary["interaction_results"]) == 2
-          assert summary["analysis_rows"] == summary["coverage"]["train"]["eligible_games"] + summary["coverage"]["validation"]["eligible_games"]
+          assert set(summary["pair_coverage"].keys()) == {\n              "Pattern 1 × Pattern 5: rest disadvantage",\n              "Pattern 1 × Pattern 7: pace collision"}
           assert "SEALED" in summary["protocol"]["holdout"]
           if pred_path.exists():
               pred = pd.read_csv(pred_path)
