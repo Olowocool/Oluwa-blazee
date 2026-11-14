@@ -244,7 +244,7 @@ def write_metrics():
     f=pd.read_csv(FORECASTS,dtype={"game_id":str})
     if RESULTS.exists():
         r=pd.read_csv(RESULTS,dtype={"game_id":str})
-        d=f.merge(r[["game_id","actual_total","actual_home_points","actual_away_points"]],on="game_id",how="inner",validate="one_to_one")
+        d=f.merge(r[["game_id","actual_total","actual_home_points","actual_away_points"]],on="game_id",how="inner",validate="one_to_one",suffixes=("_forecast",""))
     else: d=f.iloc[0:0].copy()
     def stats(part):
         if part.empty: return {"games":0,"mae":None,"rmse":None,"bias_prediction_minus_actual":None,"within_5_pct":None,"within_10_pct":None}
