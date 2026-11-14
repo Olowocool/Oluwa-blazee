@@ -245,7 +245,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Scope and historical window | APPROVED | User confirmation: 2000–01 onward |
 | Dedicated branch and register | COMPLETE | Branch and committed register file retrieved and verified |
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
-| Stage 2 — Baseline | BLOCKED — SOURCE RECONCILIATION DIAGNOSTICS RUNNING | Successful workflow run, inspected artifacts, source-overlap checks, non-empty split metrics and recorded run/artifact IDs |
+| Stage 2 — Baseline | BLOCKED — SEASON-KEY MAPPING CORRECTED; VERIFICATION RUN PENDING | Successful workflow run, inspected artifacts, source-overlap checks, non-empty split metrics and recorded run/artifact IDs |
 | Stage 3 — Ten individual tests | NOT STARTED | Ten reproducible reports |
 | Stage 4 — Interactions | NOT STARTED | Pre-specified interaction results and sample counts |
 | Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
@@ -271,3 +271,5 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - No changes were made to `main`, production, Render, or betting records.
 
 - 2026-11-14 — Added forensic reconciliation diagnostics to report independent legacy/modern game-ID, home/away, date/score and team-ID match counts, with sample keys. Changed workflow artifact upload to run even after a failed baseline step so diagnostics are retained. Diagnostic run #6 (`43601330668`, commit `f54a9fc26289cb8981cf11367b6795f3c2450bc8`) was in progress at register update; this instrumentation is not itself a source-mapping repair. Stage 2 remains blocked pending diagnostic evidence and a successful baseline run.
+
+- 2026-11-14 — Run #7 produced and uploaded `orbit10_source_reconciliation_diagnostics.json` (artifact ID `14115768647`). It showed legacy `season_id` values 22001–22022; the existing `season_id - 20000` mapping assigned season_id 22010 to end-year 2010 despite legacy game rows dated 2010-10-26 (2010-11 season). Modern season partition 2010 contained 2009-10 games. Team IDs use the same NBA numeric identifier format in both sources. Run #8 artifact (ID `14116534491`) confirmed these season labels and date ranges. Corrected legacy end-year mapping to `season_id - 19999` in commit `f4d2a78cf22a65f665da31202f62a7280f2adadc`. Run #10 (`43602734973`) was in progress at register update. The mapping correction is a reasoned repair, not yet validated; keep Stage 2 blocked until cross-source overlap, zero score mismatches, successful outputs and inspected metrics are confirmed.
