@@ -2,7 +2,7 @@
 
 **Register code name:** ORBIT-10  
 **Expanded name:** Out-of-sample Research Benchmark for Integrated Totals — 10 patterns  
-**Status:** RESEARCH IN PROGRESS — STAGE 4 COMPLETE; STAGE 5 NOT STARTED  
+**Status:** RESEARCH IN PROGRESS — STAGE 5 COMPLETE; STAGE 6 NOT STARTED  
 **Scope date:** 2026-11-14  
 **Historical training window:** NBA seasons 2000–01 onward, through the latest season with verified data.
 
@@ -246,10 +246,10 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Dedicated branch and register | COMPLETE | Branch and committed register file retrieved and verified |
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
 | Stage 2 — Baseline | COMPLETE — FROZEN BASELINE BUILT; PERFORMANCE IS A BENCHMARK, NOT ACCEPTANCE | Run #10 passed reconciliation and produced inspected predictions and split metrics; see verification record below |
-| Stage 3 — Ten individual tests | COMPLETE WITH FEATURE GAPS — SIX SCREENED; FOUR SOURCE/MEASUREMENT LIMITED | See research/ORBIT-10_STAGE3_INDIVIDUAL_PATTERN_RESULTS_2026-11-14.md and artifact 14117349844; no feature approved for the combined model yet |
+| Stage 3 — Ten individual tests | COMPLETE WITH FEATURE GAPS — SIX SCREENED; FOUR SOURCE/MEASUREMENT LIMITED | See research/ORBIT-10_STAGE3_INDIVIDUAL_PATTERN_RESULTS_2026-11-14.md and artifact 14117349844; only the Stage 3B normalized Pattern 1 candidate advanced |
 | Stage 3B — Pattern 1 era-normalized replication | COMPLETE — PREREGISTERED SCREENING PASS | Run #6 and artifact 14125070696 inspected; report and sealed-holdout checks recorded below |
 | Stage 4 — Interactions | COMPLETE — NO INTERACTION RETAINED | Pattern 1 × Pattern 5 rejected; Pattern 1 × Pattern 7 insufficient evidence; see Stage 4 results report |
-| Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
+| Stage 5 — Combined model | COMPLETE — SCREENING PASS | Model B = frozen baseline + TRAIN-only intercept + era-normalized Pattern 1; validation MAE/RMSE improved; see Stage 5 results report |
 | Stage 6 — Chronological validation | NOT STARTED | Untouched holdout and leakage checks |
 | Stage 7 — Final comparison | NOT STARTED | Model A/B/C/D comparison and written decision |
 | Excel deliverable | NOT STARTED | Workbook build, recalculated formulas, source and validation audit |
@@ -367,3 +367,19 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - No interaction passes. Stage 4 is complete as a bounded negative/insufficient screen; no interaction is approved for Stage 5. Pattern 1 remains only a Stage 3B research candidate, not production-approved.
 - Full report: `research/ORBIT-10_STAGE4_INTERACTION_RESULTS_2026-11-14.md`.
 - No main/production/Render/betting records/paid DunkAPI changes; final holdout remains sealed.
+
+
+### Stage 5 execution and verification — 2026-11-14
+
+- Protocol: `docs/ORBIT-10_STAGE5_COMBINED_MODEL_PROTOCOL_2026-11-14.md`.
+- Runner: `research/orbit10_stage5_combined_model.py`.
+- Workflow: `.github/workflows/orbit10-stage5-combined-model.yml`.
+- Accepted run: [43624448553](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43624448553), conclusion `success`; baseline rebuild, model fit, evidence verification and artifact upload passed.
+- Workflow commit: `719673f4f7a8186b8b56ef4bc60976f78075b79b`.
+- Artifact ID `14125302160`, SHA-256 `3f5091b1de6714b9a0dbf87c60bcec9cd2c02fee5d9efbdc96b9f414b9dadae7`. Independently inspected; 19,100 TRAIN + 4,749 VALIDATION predictions, zero HOLDOUT rows, unique IDs, identical Model A/B validation population. Coefficients, bootstrap intervals, validation and seasonal metrics, and feature-contribution arithmetic independently recomputed and matched.
+- Model B: Model A plus TRAIN-only residual intercept and the single era-normalized Pattern 1 indicator; no interactions or other patterns.
+- TRAIN fit: `alpha=-0.805967` (95% bootstrap CI [-1.0608,-0.5384]); `beta=-5.836135` (95% CI [-7.0025,-4.6757]); 17,945 controls / 1,155 qualifying. Contributions: +0.806 points globally and a further +5.836 when Pattern 1 qualifies.
+- VALIDATION: 4,749 games, 4,484 controls / 265 qualifying. Model A MAE/RMSE/bias 15.7279 / 20.0342 / -5.8804; Model B 15.4855 / 19.6964 / -4.7488. Changes: MAE -0.2424; RMSE -0.3378. Both MAE and RMSE improved in each validation season 2017–2020.
+- All seven preregistered screening criteria passed. Stage 5 status: **SCREENING PASS — eligible for Stage 6 chronological replication only**. This is modest incremental predictive lift, not proof of sufficient accuracy, causality, profitability or deployment readiness. Model B still has -4.7488-point validation bias; within-5 accuracy did not improve.
+- Full report: `research/ORBIT-10_STAGE5_COMBINED_MODEL_RESULTS_2026-11-14.md`.
+- Final holdout remained sealed. No market data, paid DunkAPI, main/production/Render, Excel deliverable or betting records touched.
