@@ -245,7 +245,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Scope and historical window | APPROVED | User confirmation: 2000–01 onward |
 | Dedicated branch and register | COMPLETE | Branch and committed register file retrieved and verified |
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
-| Stage 2 — Baseline | BLOCKED — SEASON-KEY MAPPING CORRECTED; VERIFICATION RUN PENDING | Successful workflow run, inspected artifacts, source-overlap checks, non-empty split metrics and recorded run/artifact IDs |
+| Stage 2 — Baseline | COMPLETE — FROZEN BASELINE BUILT; PERFORMANCE IS A BENCHMARK, NOT ACCEPTANCE | Run #10 passed reconciliation and produced inspected predictions and split metrics; see verification record below |
 | Stage 3 — Ten individual tests | NOT STARTED | Ten reproducible reports |
 | Stage 4 — Interactions | NOT STARTED | Pre-specified interaction results and sample counts |
 | Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
@@ -273,3 +273,21 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - 2026-11-14 — Added forensic reconciliation diagnostics to report independent legacy/modern game-ID, home/away, date/score and team-ID match counts, with sample keys. Changed workflow artifact upload to run even after a failed baseline step so diagnostics are retained. Diagnostic run #6 (`43601330668`, commit `f54a9fc26289cb8981cf11367b6795f3c2450bc8`) was in progress at register update; this instrumentation is not itself a source-mapping repair. Stage 2 remains blocked pending diagnostic evidence and a successful baseline run.
 
 - 2026-11-14 — Run #7 produced and uploaded `orbit10_source_reconciliation_diagnostics.json` (artifact ID `14115768647`). It showed legacy `season_id` values 22001–22022; the existing `season_id - 20000` mapping assigned season_id 22010 to end-year 2010 despite legacy game rows dated 2010-10-26 (2010-11 season). Modern season partition 2010 contained 2009-10 games. Team IDs use the same NBA numeric identifier format in both sources. Run #8 artifact (ID `14116534491`) confirmed these season labels and date ranges. Corrected legacy end-year mapping to `season_id - 19999` in commit `f4d2a78cf22a65f665da31202f62a7280f2adadc`. Run #10 (`43602734973`) was in progress at register update. The mapping correction is a reasoned repair, not yet validated; keep Stage 2 blocked until cross-source overlap, zero score mismatches, successful outputs and inspected metrics are confirmed.
+
+
+### Stage 2 execution verification — successful baseline run #10 (2026-11-14)
+
+- Workflow: [ORBIT-10 Stage 2 run #10](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43602734973).
+- Result: **SUCCESS**; job ID `132470777449`; all workflow steps completed successfully.
+- Branch and commit: `research/historical-pattern-total-test`, `f4d2a78cf22a65f665da31202f62a7280f2adadc`.
+- Artifact: `ORBIT-10-stage2-baseline`, artifact ID `14117042374`, 3,177,748 bytes; contains `orbit10_baseline_predictions.csv`, `orbit10_baseline_summary.json`, and `orbit10_source_reconciliation_diagnostics.json`.
+- Cross-source reconciliation: **30,858 matched team-game rows** across 2009–10 to 2022–23; **0 score-mismatch rows**. Formula-possession differences across the matched sources: mean absolute difference 0.00008, median 0, 95th percentile 0. Cross-source gate passed.
+- Source spine: **31,244 combined games**; **31,161 prediction rows** after prior-history eligibility. Split counts: train 19,192; validation 4,749; holdout 7,220. Prediction dates: 2000-11-09 through 2026-04-12.
+- Reconciliation confirms the corrected legacy season-end-year mapping `season_id - 19999`; legacy sample games for end-year 2010 now align with modern 2009–10 game IDs, dates, teams and scores.
+- Leakage checks in the summary: strict prior-date check passed; same-day games excluded from history; market totals not used as features; injury/pattern adjustments not used.
+- Frozen Model A baseline metrics:
+  - Train: MAE 14.6269, RMSE 18.5689, bias -1.1427 points (19,192 games).
+  - Validation: MAE 15.7279, RMSE 20.0342, bias -5.8804 points (4,749 games).
+  - Holdout: MAE 15.9077, RMSE 20.1288, bias -6.8025 points (7,220 games).
+- Interpretation: **Stage 2 baseline construction and its stated execution gates are complete. This is not evidence that the baseline is accurate enough, that any of the ten patterns work, or that the model is profitable.** The pronounced negative holdout bias is a weakness to preserve and report; do not apply an arbitrary correction. Holdout remains a final comparison set and must not be used to tune Stage 2 or Stage 3 features.
+- No market totals, injury features or ORBIT-10 pattern adjustments entered this baseline. No production/main branch, Render deployment, betting records, or paid DunkAPI credits were touched.
