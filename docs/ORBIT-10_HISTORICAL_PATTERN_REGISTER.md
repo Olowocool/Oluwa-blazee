@@ -252,7 +252,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Stage 5 — Combined model | COMPLETE — SCREENING PASS | Model B = frozen baseline + TRAIN-only intercept + era-normalized Pattern 1; validation MAE/RMSE improved; see Stage 5 results report |
 | Stage 6 — Chronological validation | COMPLETE — FINAL HOLDOUT PASS | Frozen Stage 5 Model B beat Model A on overall MAE/RMSE and both metrics in all six holdout seasons; 7,220 games, 100% feature coverage; see Stage 6 results report |
 | Stage 7 — Final comparison | COMPLETE WITH SCOPE LIMITATIONS — MODEL B FROZEN AS RESEARCH CANDIDATE ONLY | Model B passed final historical holdout; Stage 4 retained no interaction (C not built); separate regularized Model D not fitted. See research/ORBIT-10_STAGE7_FINAL_MODEL_COMPARISON_2026-11-14.md |
-| Excel deliverable | NOT STARTED | Workbook build, recalculated formulas, source and validation audit |
+| Stage 8 — Prospective shadow protocol/workflow | IMPLEMENTATION COMPLETE; COLLECTION NOT STARTED; MANUAL DISPATCH REQUIRED | Preregistered protocol, frozen-model runner, workflow, compile validation; no live forecasts/results yet. See research/ORBIT-10_STAGE8_PROSPECTIVE_SHADOW_IMPLEMENTATION_2026-11-14.md |\n| Excel deliverable | NOT STARTED | Workbook build, recalculated formulas, source and validation audit |
 | Deployment | NOT AUTHORIZED | Requires separate explicit user approval |
 
 ### Change log
@@ -413,3 +413,19 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - Model B retains material negative holdout bias (−5.6174 points). No timestamped odds/vig/ROI, bet selection, drawdown or prospective live shadow study has been evaluated. Profitability is unproven.
 - Final decision: preserve Model B unchanged for research; do not retune on the spent 2020–21 to 2025–26 holdout. Any future revision or regularized D needs a new preregistered forward evaluation period. Excel workbook remains not started; deployment remains not authorized.
 - No changes to `main`, production, Render, betting records or paid DunkAPI credits.
+
+
+### Stage 8 — prospective shadow protocol and workflow — 2026-11-14
+
+- Protocol: `docs/ORBIT-10_PROSPECTIVE_SHADOW_PROTOCOL_2026-11-14.md`.
+- Runner: `research/orbit10_prospective_shadow.py`.
+- Workflow: `.github/workflows/orbit10-prospective-shadow.yml`.
+- Implementation report: `research/ORBIT-10_STAGE8_PROSPECTIVE_SHADOW_IMPLEMENTATION_2026-11-14.md`.
+- Latest workflow validation run: [43626704144](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43626704144), conclusion `success`; dependencies installed and Python compilation passed for the shadow runner and Stage 2 baseline. Earlier validation runs 43626513274 and 43626671206 also succeeded.
+- Latest validated code commit: `8c5818d032e3e2803f63e7984571256e51558b2b`. Stage 8 report commit: `9c34d6f4ee8ca1de28e0e48135063db49fa6b67b`.
+- The runner uses the NBA CDN scoreboard for pregame fixtures and the NBA CDN boxscore for final results; team strength and Pattern 1 are rebuilt from the public Stage 2 historical spine plus current 2026–27 completed game logs when available strictly before the target date.
+- Frozen Model A/Model B definitions, coefficients and thresholds are reused unchanged. Forecasts are append-only; duplicate game IDs are skipped; scoring only accepts final valid scores. Rolling paired metrics are written to `shadow_metrics.json`.
+- **Important:** the workflow is manually dispatched on the isolated research branch. GitHub scheduled Actions run only from the default branch; putting a cron workflow on `main` would violate the approved isolation boundary. Therefore this is not unattended daily automation. Manual `capture` and `score` dispatches are required until a separately authorized isolated scheduler exists.
+- **No live shadow collection has started.** No forecast ledger, settled-result ledger or prospective metric exists yet. The successful run proves syntax/workflow validation only; it does not prove end-to-end external feed execution.
+- Preregistered window: first successful capture starts Day 1; 60 calendar days; minimum 500 settled games; if below 500 at Day 60, report insufficient sample without silent extension. No tuning or interim model changes.
+- No changes to `main`, production, Render, Excel, betting/paper-trading records or paid DunkAPI credits.
