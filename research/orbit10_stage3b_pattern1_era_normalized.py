@@ -107,7 +107,7 @@ def main():
         diffs[i]=rng.choice(yv,len(yv),replace=True).mean()-rng.choice(nv,len(nv),replace=True).mean()
     ci=[round(float(np.quantile(diffs,.025)),4),round(float(np.quantile(diffs,.975)),4)]
     reports={"coverage":coverage,"thresholds":{"home_ppg_z_train_75th_percentile":round(h_cut,6),"away_road_def_rating_z_train_75th_percentile":round(d_cut,6)},
-      "train":{"qualifying":len(yes),"control":len(no),"residual_effect_feature_minus_control":round(effect,4),"bootstrap_95ci":ci},
+      "train":{"qualifying":len(yes),"control":len(no),"residual_effect_feature_minus_control":round(effect,4),"bootstrap_95ci":ci,"bootstrap_95ci_lower":ci[0],"bootstrap_95ci_upper":ci[1]},
       "validation":{}}
     adjusted=[]
     for split in ["train","validation"]:
@@ -116,13 +116,13 @@ def main():
         grp=part[part.p1_era_normalized].residual
         ctl=part[~part.p1_era_normalized].residual
         part["adjusted_prediction"]=part.predicted_total-part.p1_era_normalized.astype(float)*effect
-        reports[split]={
+        reports[split].update({
           "games":len(part),"qualifying":len(grp),"control":len(ctl),
           "feature_minus_control_residual":round(float(grp.mean()-ctl.mean()),4) if len(grp) and len(ctl) else None,
           "baseline_metrics":metrics(part.actual_total,part.predicted_total),
           "adjusted_metrics":metrics(part.actual_total,part.adjusted_prediction),
           "mae_change_adjusted_minus_baseline":round(metrics(part.actual_total,part.adjusted_prediction)["mae"]-metrics(part.actual_total,part.predicted_total)["mae"],4),
-          "rmse_change_adjusted_minus_baseline":round(metrics(part.actual_total,part.adjusted_prediction)["rmse"]-metrics(part.actual_total,part.predicted_total)["rmse"],4)}
+          "rmse_change_adjusted_minus_baseline":round(metrics(part.actual_total,part.adjusted_prediction)["rmse"]-metrics(part.actual_total,part.predicted_total)["rmse"],4)})
         adjusted.append(part[["game_id","game_date","split","home_ppg_z","away_def_z","p1_era_normalized","actual_total","predicted_total","adjusted_prediction"]])
     validation=reports["validation"]
     criteria={
