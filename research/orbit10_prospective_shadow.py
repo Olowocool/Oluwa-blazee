@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv, hashlib, json, sys
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from urllib.request import Request, urlopen
 import importlib.util
 import numpy as np
@@ -180,7 +181,8 @@ def capture():
         tip_dt=datetime.fromisoformat(tip.replace("Z","+00:00"))
         if (tip_dt-now).total_seconds()<900: continue
         home,away=g["homeTeam"],g["awayTeam"]
-        eligible.append({"game_id":str(g["gameId"]),"game_date":g.get("gameEt","")[:10] or today,
+        game_date=(g.get("gameEt","")[:10] if g.get("gameEt") else tip_dt.astimezone(ZoneInfo("America/New_York")).date().isoformat())
+        eligible.append({"game_id":str(g["gameId"]),"game_date":game_date,
           "tipoff":tip,"home_id":str(home["teamId"]),"away_id":str(away["teamId"]),
           "home_name":home.get("teamName",home.get("teamTricode","")),
           "away_name":away.get("teamName",away.get("teamTricode",""))})
@@ -194,6 +196,8 @@ def capture():
         target=pd.Timestamp(g["game_date"])
         hist,lo,ld,lp=build_history(spine,target)
         row=forecast_game(g,hist,lo,ld,lp,now.isoformat())
+        row["schedule_source"]=SCOREBOARD
+        row["scoreboard_sha256"]=sha
         if not (datetime.fromisoformat(row["capture_timestamp_utc"].replace("Z","+00:00")) <
                 datetime.fromisoformat(row["scheduled_tipoff_utc"].replace("Z","+00:00"))):
             raise RuntimeError("Capture timestamp is not before scheduled tip-off")
@@ -227,6 +231,7 @@ def score():
             if hp<0 or ap<0: raise ValueError("Invalid final score")
             rows.append({"game_id":gid,"scored_at_utc":datetime.now(timezone.utc).isoformat(),
               "actual_home_points":hp,"actual_away_points":ap,"actual_total":hp+ap,
+              "boxscore_source":BOX_URL.format(game_id=gid),
               "model_a_prediction":float(r["model_a_prediction"]),"model_b_prediction":float(r["model_b_prediction"]),
               "model_a_error":float(r["model_a_prediction"])-(hp+ap),
               "model_b_error":float(r["model_b_prediction"])-(hp+ap),"boxscore_sha256":sha})
