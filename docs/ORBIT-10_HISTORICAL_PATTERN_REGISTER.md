@@ -421,8 +421,8 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - Runner: `research/orbit10_prospective_shadow.py`.
 - Workflow: `.github/workflows/orbit10-prospective-shadow.yml`.
 - Implementation report: `research/ORBIT-10_STAGE8_PROSPECTIVE_SHADOW_IMPLEMENTATION_2026-11-14.md`.
-- Latest workflow validation run: [43626704144](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43626704144), conclusion `success`; dependencies installed and Python compilation passed for the shadow runner and Stage 2 baseline. Earlier validation runs 43626513274 and 43626671206 also succeeded.
-- Latest validated code commit: `8c5818d032e3e2803f63e7984571256e51558b2b`. Stage 8 report commit: `9c34d6f4ee8ca1de28e0e48135063db49fa6b67b`.
+- Latest workflow validation run: [43626871929](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43626871929), conclusion `success`; dependencies installed and Python compilation passed for the shadow runner and Stage 2 baseline. Earlier validation runs 43626513274, 43626671206 and 43626704144 also succeeded.
+- Latest validated code commit: `a50a65c5aba306c01a6efa59261f8cc0a6dd15fc`. Stage 8 report updated in commit `750ff12d02dc1211ee866904ff78d8ddff5e6f51`.
 - The runner uses the NBA CDN scoreboard for pregame fixtures and the NBA CDN boxscore for final results; team strength and Pattern 1 are rebuilt from the public Stage 2 historical spine plus current 2026–27 completed game logs when available strictly before the target date.
 - Frozen Model A/Model B definitions, coefficients and thresholds are reused unchanged. Forecasts are append-only; duplicate game IDs are skipped; scoring only accepts final valid scores. Rolling paired metrics are written to `shadow_metrics.json`.
 - **Important:** the workflow is manually dispatched on the isolated research branch. GitHub scheduled Actions run only from the default branch; putting a cron workflow on `main` would violate the approved isolation boundary. Therefore this is not unattended daily automation. Manual `capture` and `score` dispatches are required until a separately authorized isolated scheduler exists.
