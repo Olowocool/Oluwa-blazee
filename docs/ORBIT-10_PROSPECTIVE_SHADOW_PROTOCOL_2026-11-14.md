@@ -28,14 +28,15 @@ Measure how the frozen ORBIT-10 Model A and Model B perform on newly occurring N
 
 - Schedule source: NBA CDN live-data scoreboard `todaysScoreboard_00.json`.
 - Historical team data: the same public llimllib/nba_data v2 team-game logs and repository legacy source used by Stage 2; current 2026–27 completed regular-season games are included only when published and strictly earlier than the forecast target date.
-- Capture job runs daily at 15:00 UTC. It records only scheduled games at least 15 minutes before the listed UTC tip-off.
+- Intended capture cadence: once daily at 15:00 UTC. It records only scheduled games at least 15 minutes before the listed UTC tip-off.
+- **Operational limitation:** this workflow is intentionally confined to the non-default research branch. GitHub Actions scheduled events run only from the repository's default branch; adding a cron trigger here would not reliably execute without moving workflow code to the default branch, which is prohibited by this project's isolation rules. Therefore the workflow currently supports manual dispatch on this research branch. The user must manually dispatch `capture` and `score` at the intended cadence until a separately authorized isolated scheduler is available. No automatic daily execution is claimed.
 - Each record stores game ID, game date, scheduled tip-off, capture timestamp UTC, source endpoint, both team IDs/names, all visible Model A inputs, Pattern 1 z-scores and qualification, frozen Model B contributions, and both predictions.
 - Duplicate game IDs are not overwritten. Missing team history, stale/invalid schedule, source failure, or insufficient pregame time causes an explicit skip/failure; no synthetic forecast is created.
 - The forecast timestamp must precede scheduled tip-off. No same-day result may enter the forecast history.
 
 ## 5. Result capture and scoring
 
-- Scoring job runs daily at 12:00 UTC.
+- Intended scoring cadence: once daily at 12:00 UTC, using the manual `score` dispatch while the branch remains isolated.
 - For each previously captured game without a result, query the NBA CDN boxscore endpoint using the stored NBA game ID.
 - Append actual home/away scores only when the source marks the game final and both scores are valid.
 - Never replace the original pregame prediction or capture timestamp.
