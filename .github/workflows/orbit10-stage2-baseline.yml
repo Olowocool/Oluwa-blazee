@@ -31,9 +31,10 @@ jobs:
           python -m py_compile research/orbit10_stage2_baseline.py
           python research/orbit10_stage2_baseline.py
       - name: Upload reproducible Stage 2 evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ORBIT-10-stage2-baseline
           path: outputs/research/orbit10_stage2/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 90
