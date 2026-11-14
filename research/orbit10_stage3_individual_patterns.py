@@ -75,7 +75,7 @@ def build_features(spine):
             hp, ap = float(g["poss_home"]), float(g["poss_away"])
             pace=(hp+ap)/2
             histories.setdefault(ht,[]).append({"date":day,"pts":float(g["pts_home"]),"opp_pts":float(g["pts_away"]),"opp_poss":ap,"pace":pace,"is_home":True})
-            histories.setdefault(at,[]).append({"date":day,"pts":float(g["pts_away"]),"opp_pts":float(g["pts_home"]),"opp_poss":hp,"pace":False})
+            histories.setdefault(at,[]).append({"date":day,"pts":float(g["pts_away"]),"opp_pts":float(g["pts_home"]),"opp_poss":hp,"pace":pace,"is_home":False})
             key=tuple(sorted((ht,at)))
             h2h.setdefault(key,[]).append({"date":day,"home_team":ht,"away_team":at,"home_pts":float(g["pts_home"]),"away_pts":float(g["pts_away"])})
     return pd.DataFrame(rows)
