@@ -1,0 +1,105 @@
+name: ORBIT-10 Prospective Shadow Capture and Scoring
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Capture pregame forecasts or score previously captured games"
+        required: true
+        type: choice
+        options:
+          - capture
+          - score
+  push:
+    branches:
+      - "research/historical-pattern-total-test"
+    paths:
+      - "research/orbit10_prospective_shadow.py"
+      - ".github/workflows/orbit10-prospective-shadow.yml"
+      - "docs/ORBIT-10_PROSPECTIVE_SHADOW_PROTOCOL_2026-11-14.md"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies and compile
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas numpy duckdb
+          python -m py_compile research/orbit10_prospective_shadow.py research/orbit10_stage2_baseline.py
+  shadow:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas numpy duckdb
+      - name: Compile frozen model and shadow runner
+        run: python -m py_compile research/orbit10_stage2_baseline.py research/orbit10_prospective_shadow.py
+      - name: Capture pregame forecasts
+        if: inputs.mode == 'capture'
+        run: python research/orbit10_prospective_shadow.py capture
+      - name: Score completed shadow games
+        if: inputs.mode == 'score'
+        run: python research/orbit10_prospective_shadow.py score
+      - name: Verify ledgers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          root = Path("outputs/research/orbit10_prospective_shadow")
+          forecasts = root / "forecasts.csv"
+          results = root / "results.csv"
+          if forecasts.exists():
+              f = pd.read_csv(forecasts, dtype={"game_id": str})
+              assert f.game_id.is_unique, "Duplicate forecast game IDs"
+              assert (pd.to_datetime(f.capture_timestamp_utc, utc=True) <
+                      pd.to_datetime(f.scheduled_tipoff_utc, utc=True)).all(), "Forecast captured after tip-off"
+              assert (pd.to_datetime(f.max_history_date) <
+                      pd.to_datetime(f.game_date)).all(), "Non-prior history in forecast"
+              assert (f.model_a_prediction + f.global_calibration_contribution +
+                      f.pattern1_contribution - f.model_b_prediction).abs().max() < 1e-8
+              assert set(f.pattern1_qualifies.unique()).issubset({0, 1})
+              assert (f.global_calibration_contribution == 0.805967).all()
+              assert (f.pattern1_contribution.isin([0.0, 5.836135])).all()
+          if results.exists():
+              r = pd.read_csv(results, dtype={"game_id": str})
+              assert r.game_id.is_unique, "Duplicate scored game IDs"
+              assert (r.actual_total == r.actual_home_points + r.actual_away_points).all()
+          print("Shadow ledger checks passed.")
+          PY
+      - name: Persist append-only ledgers on research branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add outputs/research/orbit10_prospective_shadow/
+          if git diff --cached --quiet; then
+            echo "No ledger changes to commit."
+          else
+            git commit -m "ORBIT-10: update prospective shadow ledger"
+            git push origin "HEAD:${{ github.ref_name }}"
+          fi
+      - name: Upload shadow ledger artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORBIT-10-prospective-shadow-ledger
+          path: outputs/research/orbit10_prospective_shadow/
+          if-no-files-found: warn
+          retention-days: 90
