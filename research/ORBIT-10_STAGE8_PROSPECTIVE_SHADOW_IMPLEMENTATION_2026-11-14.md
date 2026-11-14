@@ -34,8 +34,9 @@
 
 - Initial workflow validation run [43626513274](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43626513274) — success.
 - Follow-up validation run [43626671206](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43626671206) — success.
-- Latest validation run [43626704144](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43626704144) — success.
-- Latest validated commit: `8c5818d032e3e2803f63e7984571256e51558b2b`.
+- Additional provenance hardening added explicit schedule endpoint/response hash and boxscore endpoint to the ledgers.
+- Latest validation run [43626871929](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43626871929) — success.
+- Latest validated runner commit: `a50a65c5aba306c01a6efa59261f8cc0a6dd15fc`.
 - The push-triggered job installed dependencies and successfully ran Python bytecode compilation for the shadow runner and Stage 2 baseline.
 - No live capture or scoring run was launched. Therefore there are no prospective forecasts, settled results, or live-performance metrics yet. Syntax/workflow validation is not evidence that the external NBA feeds or full live execution have passed end-to-end.
 
