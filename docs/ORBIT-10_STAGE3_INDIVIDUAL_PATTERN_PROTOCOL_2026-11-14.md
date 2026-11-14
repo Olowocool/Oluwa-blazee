@@ -11,7 +11,7 @@ Test each available ORBIT-10 hypothesis independently against the frozen Stage 2
 - Rebuild the same game spine through the Stage 2 loaders and the same 2000-01 to 2025-26 regular-season filter.
 - Rebuild each feature using only completed games strictly before the target calendar date. All games on a date are featured before any same-day result enters history.
 - Join features one-to-one to the frozen Stage 2 prediction population.
-- Fit one scalar residual adjustment per binary feature using TRAIN only: mean baseline residual for feature=1 minus mean baseline residual for feature=0.
+- Fit one scalar residual effect per binary feature using TRAIN only: mean baseline residual for feature=1 minus mean baseline residual for feature=0. Since residual = prediction − actual, subtract that estimated residual effect from the prediction when feature=1.
 - Require at least 100 training games in each group; otherwise mark insufficient evidence.
 - Bootstrap the training group-mean difference 1,000 times with fixed seed 20261114 for a descriptive 95% interval.
 - Apply the training-only adjustment unchanged to validation and holdout. Do not tune thresholds, features, or coefficients on either split.
@@ -23,7 +23,7 @@ Test each available ORBIT-10 hypothesis independently against the frozen Stage 2
 
 | Pattern | Operational feature | Status / caveat |
 |---:|---|---|
-| 1 | Home team's trailing 25-game mean points >110 AND away team's trailing 25-game defensive rating >105. Defensive rating is 100 × opponent points / opponent possessions. | Reconstructed from prior box scores only; threshold comes from the original hypothesis and is fixed before evaluation. |
+| 1 | Home team's trailing 25 home-game mean points >110 AND away team's trailing 25 road-game defensive rating >105. Defensive rating is 100 × opponent points / opponent possessions; at least five venue-specific prior games are required. | Reconstructed from prior box scores only; threshold comes from the original hypothesis and is fixed before evaluation. |
 | 2 | Coach matchup / style | Not testable: no verified historical coach/team effective-date source. |
 | 3 | Key-playmaker injury and pace | Not included in common full-era sample. Injury archive is partial from 2018-12-17; a separate era-specific experiment requires date-level completeness, report-vintage, player identity and replacement-minute audit. |
 | 4 | Either team played on the immediately preceding calendar day (0 rest days). | Schedule-derived proxy; no tip-time granularity. |
