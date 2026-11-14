@@ -26,7 +26,7 @@ All games on the same date are featured before any same-day results enter the hi
 
 - Use the frozen Stage 2 baseline predictions only.
 - Estimate one residual effect on TRAIN: mean (prediction − actual) for qualifying games minus mean residual for controls.
-- Require at least 100 qualifying and 100 control training games.
+- Use complete cases only when both z-scores are available; do not impute missing league or venue history. Report eligible and excluded games by split. Require at least 100 qualifying and 100 control training games and at least 100 validation qualifying and 100 validation control games.
 - Bootstrap the training group difference 2,000 times, fixed seed 20261114.
 - Subtract the training residual effect from qualifying predictions.
 - Apply the unchanged training effect to validation. Validation is the sole out-of-sample decision split for this replication.
