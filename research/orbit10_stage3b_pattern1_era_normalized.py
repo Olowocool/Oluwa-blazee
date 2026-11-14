@@ -124,9 +124,19 @@ def main():
           "mae_change_adjusted_minus_baseline":round(metrics(part.actual_total,part.adjusted_prediction)["mae"]-metrics(part.actual_total,part.predicted_total)["mae"],4),
           "rmse_change_adjusted_minus_baseline":round(metrics(part.actual_total,part.adjusted_prediction)["rmse"]-metrics(part.actual_total,part.predicted_total)["rmse"],4)}
         adjusted.append(part[["game_id","game_date","split","home_ppg_z","away_def_z","p1_era_normalized","actual_total","predicted_total","adjusted_prediction"]])
+    validation=reports["validation"]
+    criteria={
+      "train_groups_at_least_minimum": bool(len(yes)>=MIN_GROUP and len(no)>=MIN_GROUP),
+      "train_bootstrap_interval_excludes_zero": bool(ci[0]>0 or ci[1]<0),
+      "validation_groups_at_least_100": bool(validation["qualifying"]>=100 and validation["control"]>=100),
+      "validation_effect_same_sign": bool(validation["feature_minus_control_residual"] is not None and np.sign(validation["feature_minus_control_residual"])==np.sign(effect)),
+      "validation_mae_improves": bool(validation["mae_change_adjusted_minus_baseline"]<0),
+      "validation_rmse_improves": bool(validation["rmse_change_adjusted_minus_baseline"]<0)
+    }
+    reports["decision"]={"criteria":criteria,"passes_all":all(criteria.values()),"interpretation":"Screening pass only; not deployment approval or proof of profitability."}
     reports["method"]={"feature":"Both home trailing-25 home-game PPG and opponent trailing-25 road defensive rating are at or above their contemporaneous league mean by at least the TRAIN 75th-percentile z-score threshold for that metric.","normalization":"Cross-sectional same-date league mean and population SD across teams with >=5 prior venue-specific games; rates use trailing 25 venue-specific games.","threshold_fit":"TRAIN only; 75th percentile for each z-score, then frozen for validation.","residual":"prediction minus actual; training group-minus-control residual effect is subtracted from predictions for qualifying games.","bootstrap_replicates":BOOTSTRAPS,"seed":SEED,"minimum_train_group":MIN_GROUP,"holdout":"SEALED — not loaded into analysis dataframe, not scored, not used for thresholds or decisions.","same_day":"All games on date are featured before any same-day result enters histories."}
     (OUT/"orbit10_stage3b_pattern1_summary.json").write_text(json.dumps(reports,indent=2))
-    pd.DataFrame(adjusted).to_csv(OUT/"orbit10_stage3b_pattern1_predictions.csv",index=False)
+    pd.concat(adjusted,ignore_index=True).to_csv(OUT/"orbit10_stage3b_pattern1_predictions.csv",index=False)
     print(json.dumps(reports,indent=2))
 
 if __name__=="__main__": main()
