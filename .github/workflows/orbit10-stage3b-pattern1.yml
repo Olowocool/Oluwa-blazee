@@ -37,7 +37,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ORBIT-10-stage3b-pattern1-era-normalized
-          path: outputs/research/orbit10_stage3b/
+          path: outputs/research/orbit10_stage3b_pattern1/
           if-no-files-found: warn
           retention-days: 90
       - name: Require summary and predictions
