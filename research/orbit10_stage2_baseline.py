@@ -65,7 +65,9 @@ def load_legacy() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     for col in LEGACY_COLUMNS:
         if col not in ("game_id", "season_type", "game_date"):
             raw[col] = pd.to_numeric(raw[col], errors="coerce")
-    raw["season_end_year"] = raw["season_id"] - 20000
+    # NBA Stats season_id 22010 denotes the 2010-11 season; the
+    # season-end year is therefore season_id - 19999, not -20000.
+    raw["season_end_year"] = raw["season_id"] - 19999
     raw["season_type_norm"] = raw["season_type"].astype(str).str.strip().str.lower()
     raw = raw[
         raw["season_type_norm"].str.contains("regular", na=False)
