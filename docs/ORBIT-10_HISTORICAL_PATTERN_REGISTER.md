@@ -238,13 +238,13 @@ The workbook should refresh automatically from verified sources where available.
 
 ## 9. Workflow status register
 
-All stages begin as **NOT STARTED**. Status changes require evidence and a dated note.
+Status changes require evidence and a dated note. Stage 1 is closed as a source-readiness audit, not as proof that every feature is available.
 
 | Work item | Status | Evidence required to mark complete |
 |---|---|---|
 | Scope and historical window | APPROVED | User confirmation: 2000–01 onward |
-| Dedicated branch and register | IN PROGRESS | Branch and committed register file verified |
-| Stage 1 — Data audit | NOT STARTED | Inventory, coverage report, timestamps and gaps |
+| Dedicated branch and register | COMPLETE | Branch and committed register file retrieved and verified |
+| Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
 | Stage 2 — Baseline | NOT STARTED | Frozen baseline code, split definitions and results |
 | Stage 3 — Ten individual tests | NOT STARTED | Ten reproducible reports |
 | Stage 4 — Interactions | NOT STARTED | Pre-specified interaction results and sample counts |
@@ -256,3 +256,4 @@ All stages begin as **NOT STARTED**. Status changes require evidence and a dated
 
 ### Change log
 - 2026-11-14 — ORBIT-10 scope established; historical window set to NBA seasons 2000–01 onward; ten user-supplied patterns mapped into five engines and seven testing stages; Excel deliverable and isolation requirements recorded.
+- 2026-11-14 — Stage 1 data inventory completed on the dedicated branch. Pattern-level availability, coverage limits, source-vintage cautions and Stage 2 gates recorded in research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md. No model training or paid API calls performed.
