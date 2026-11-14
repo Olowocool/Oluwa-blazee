@@ -48,11 +48,12 @@ def build_features(spine):
             def rest(hist):
                 return int((day - hist[-1]["date"]).days - 1) if hist else None
             hr, ar = rest(hh), rest(ah)
-            hlast, alast = hh[-25:], ah[-25:]
-            hppg = float(np.mean([x["pts"] for x in hlast])) if hlast else np.nan
-            # Defensive rating: opponent points per 100 possessions faced.
-            hdef = float(100*np.sum([x["opp_pts"] for x in hlast])/np.sum([x["opp_poss"] for x in hlast])) if hlast and sum(x["opp_poss"] for x in hlast)>0 else np.nan
-            adef = float(100*np.sum([x["opp_pts"] for x in alast])/np.sum([x["opp_poss"] for x in alast])) if alast and sum(x["opp_poss"] for x in alast)>0 else np.nan
+            home_home_hist = [x for x in hh if x["is_home"]][-25:]
+            away_road_hist = [x for x in ah if not x["is_home"]][-25:]
+            # Pattern 1 is explicitly a home-scoring vs visiting-defence hypothesis.
+            hppg = float(np.mean([x["pts"] for x in home_home_hist])) if len(home_home_hist)>=5 else np.nan
+            # Defensive rating: opponent points per 100 possessions faced, away games only.
+            adef = float(100*np.sum([x["opp_pts"] for x in away_road_hist])/np.sum([x["opp_poss"] for x in away_road_hist])) if len(away_road_hist)>=5 and sum(x["opp_poss"] for x in away_road_hist)>0 else np.nan
             h2h_rows = [x for x in h2h.get(tuple(sorted((ht,at))), []) if 0 < (day-x["date"]).days <= 42]
             home_held = len(h2h_rows)>3 and all((x["away_pts"] if x["home_team"]==ht else x["home_pts"]) < 100 for x in h2h_rows)
             away_held = len(h2h_rows)>3 and all((x["away_pts"] if x["home_team"]==at else x["home_pts"]) < 100 for x in h2h_rows)
@@ -73,8 +74,8 @@ def build_features(spine):
             ht, at = str(g["home_team_id"]), str(g["away_team_id"])
             hp, ap = float(g["poss_home"]), float(g["poss_away"])
             pace=(hp+ap)/2
-            histories.setdefault(ht,[]).append({"date":day,"pts":float(g["pts_home"]),"opp_pts":float(g["pts_away"]),"opp_poss":ap,"pace":pace})
-            histories.setdefault(at,[]).append({"date":day,"pts":float(g["pts_away"]),"opp_pts":float(g["pts_home"]),"opp_poss":hp,"pace":pace})
+            histories.setdefault(ht,[]).append({"date":day,"pts":float(g["pts_home"]),"opp_pts":float(g["pts_away"]),"opp_poss":ap,"pace":pace,"is_home":True})
+            histories.setdefault(at,[]).append({"date":day,"pts":float(g["pts_away"]),"opp_pts":float(g["pts_home"]),"opp_poss":hp,"pace":False})
             key=tuple(sorted((ht,at)))
             h2h.setdefault(key,[]).append({"date":day,"home_team":ht,"away_team":at,"home_pts":float(g["pts_home"]),"away_pts":float(g["pts_away"])})
     return pd.DataFrame(rows)
@@ -130,7 +131,7 @@ def main():
             yes=part[part[col].astype(bool)].residual
             no=part[~part[col].astype(bool)].residual
             part_effect=float(yes.mean()-no.mean()) if len(yes) and len(no) else None
-            part["adjusted_prediction"]=part.predicted_total + part[col].astype(float)*effect
+            part["adjusted_prediction"]=part.predicted_total - part[col].astype(float)*effect
             result[f"{split}_qualifying_games"]=int(len(yes))
             result[f"{split}_feature_minus_control_residual"]=round(part_effect,4) if part_effect is not None else None
             result[f"{split}_baseline_metrics"]=metric(part.actual_total,part.predicted_total)
@@ -155,7 +156,7 @@ def main():
       "tested_patterns":[1,4,5,6,7,9],
       "unavailable_or_partial_patterns":unavailable,
       "pattern_results":reports,
-      "protocol":{"effect":"training-only difference in baseline residual means, feature group minus control group","adjustment":"training effect applied unchanged to validation and holdout; no holdout fitting","bootstrap_replicates":BOOTSTRAPS,"seed":SEED,"minimum_train_group_n":MIN_TRAIN_GROUP,"break_threshold_days":7,"h2h_window_days":42,"h2h_min_meetings_exclusive":3,"pace_rank_threshold":3},
+      "protocol":{"effect":"training-only difference in baseline residual means, feature group minus control group; correction subtracts this residual effect from prediction for feature=1","adjustment":"training effect applied unchanged to validation and holdout; no holdout fitting","bootstrap_replicates":BOOTSTRAPS,"seed":SEED,"minimum_train_group_n":MIN_TRAIN_GROUP,"break_threshold_days":7,"h2h_window_days":42,"h2h_min_meetings_exclusive":3,"pace_rank_threshold":3},
       "limitations":["These are univariate association/ablation screens, not causal estimates.","Pattern 1 operationalizes the stated home-scoring/weak-defence hypothesis with pregame trailing-25 team points and defensive efficiency.","Patterns 4, 5, 6, 7 and 9 are schedule/history proxies, not direct physiological or causal measurements.","Patterns 2, 3, 8 and 10 are not falsely backfilled into the full-era common sample."],
       "holdout_policy":"Holdout metrics are reported once as an untouched descriptive check; no tuning or feature selection is permitted from them.",
     }
