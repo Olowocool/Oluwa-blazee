@@ -235,7 +235,39 @@ def score():
     if rows:
         pd.DataFrame(rows).to_csv(RESULTS,index=False,mode="a",header=not RESULTS.exists())
     log_event({"mode":"score","status":"ok","newly_scored":len(rows),"pending":len(forecasts)-len(known)-len(rows)})
+    write_metrics()
     print(json.dumps({"mode":"score","newly_scored":len(rows),"pending":len(forecasts)-len(known)-len(rows)}))
+
+def write_metrics():
+    ROOT.mkdir(parents=True,exist_ok=True)
+    if not FORECASTS.exists(): return
+    f=pd.read_csv(FORECASTS,dtype={"game_id":str})
+    if RESULTS.exists():
+        r=pd.read_csv(RESULTS,dtype={"game_id":str})
+        d=f.merge(r[["game_id","actual_total","actual_home_points","actual_away_points"]],on="game_id",how="inner",validate="one_to_one")
+    else: d=f.iloc[0:0].copy()
+    def stats(part):
+        if part.empty: return {"games":0,"mae":None,"rmse":None,"bias_prediction_minus_actual":None,"within_5_pct":None,"within_10_pct":None}
+        actual=part.actual_total.to_numpy(float)
+        a=part.model_a_prediction.to_numpy(float)-actual
+        b=part.model_b_prediction.to_numpy(float)-actual
+        def one(e): return {"mae":round(float(np.mean(np.abs(e))),4),"rmse":round(float(np.sqrt(np.mean(e*e))),4),"bias_prediction_minus_actual":round(float(np.mean(e)),4),"within_5_pct":round(float(np.mean(np.abs(e)<=5)*100),2),"within_10_pct":round(float(np.mean(np.abs(e)<=10)*100),2)}
+        return {"games":int(len(part)),"model_a":one(a),"model_b":one(b),"model_b_minus_a":{"mae":round(float(np.mean(np.abs(b))-np.mean(np.abs(a))),4),"rmse":round(float(np.sqrt(np.mean(b*b))-np.sqrt(np.mean(a*a))),4)}}
+    started=pd.to_datetime(f.capture_timestamp_utc,utc=True).min() if len(f) else pd.NaT
+    elapsed=(datetime.now(timezone.utc).date()-started.date()).days+1 if pd.notna(started) else 0
+    by_week={}
+    by_season={}
+    if not d.empty:
+        d["game_date"]=pd.to_datetime(d.game_date,errors="coerce")
+        d["week_start"]=d.game_date.dt.to_period("W-SUN").dt.start_time.dt.strftime("%Y-%m-%d")
+        by_week={str(k):stats(v) for k,v in d.groupby("week_start",sort=True)}
+        if "season_end_year" in d.columns:
+            by_season={str(int(k)):stats(v) for k,v in d.groupby("season_end_year",sort=True)}
+    if elapsed>=60 and len(d)<500: status="INSUFFICIENT SAMPLE"
+    elif elapsed>=60 and len(d)>=500: status="READY FOR FINAL REVIEW"
+    else: status="COLLECTING"
+    summary={"project":"ORBIT-10 prospective shadow evaluation","status":status,"first_capture_utc":started.isoformat() if pd.notna(started) else None,"elapsed_calendar_days":int(elapsed),"planned_duration_days":60,"minimum_eligible_settled_games":500,"captured_forecasts":int(len(f)),"settled_games":int(len(d)),"pending_games":int(len(f)-len(d)),"overall":stats(d),"by_week_start":by_week,"by_season_end_year":by_season,"model_b_frozen_constants":{"alpha":ALPHA,"beta":BETA,"home_ppg_z_threshold":HOME_Z,"away_road_def_z_threshold":AWAY_Z},"interpretation":"Prospective shadow prediction only; no betting, profitability, causal, or deployment claim."}
+    (ROOT/"shadow_metrics.json").write_text(json.dumps(summary,indent=2),encoding="utf-8")
 
 def main():
     if len(sys.argv)!=2 or sys.argv[1] not in {"capture","score"}:
