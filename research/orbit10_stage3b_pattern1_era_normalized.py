@@ -80,16 +80,22 @@ def main():
     baseline=baseline[baseline.split.isin(["train","validation"])].copy()
     spine=load_spine()
     features=build_features(spine)
-    df=baseline.merge(features,on=["game_id","game_date"],how="left",validate="one_to_one")
-    if df[["home_ppg_z","away_def_z"]].isna().any().any():
-        raise RuntimeError("Missing normalized feature values; report coverage rather than silently imputing.")
+    df_all=baseline.merge(features,on=["game_id","game_date"],how="left",validate="one_to_one")
+    feature_cols=["home_ppg_z","away_def_z"]
+    coverage={}
+    for split in ["train","validation"]:
+        part=df_all[df_all.split==split]
+        coverage[split]={"baseline_games":int(len(part)),"eligible_games":int(part[feature_cols].notna().all(axis=1).sum()),"excluded_missing_normalized_feature":int((~part[feature_cols].notna().all(axis=1)).sum()),"coverage_rate":round(float(part[feature_cols].notna().all(axis=1).mean()),6) if len(part) else None}
+    # Complete-case eligibility is explicit; never impute missing league/venue history.
+    df=df_all[df_all[feature_cols].notna().all(axis=1)].copy()
+    if df.empty: raise RuntimeError("No games have complete normalized feature history.")
     train=df[df.split=="train"]
     # Both cutoffs are learned only from the training era distribution.
     h_cut=float(train.home_ppg_z.quantile(TRAIN_Q))
     d_cut=float(train.away_def_z.quantile(TRAIN_Q))
     df["p1_era_normalized"]=(df.home_ppg_z>=h_cut)&(df.away_def_z>=d_cut)
     tr=df[df.split=="train"]
-    yes=tr[tr.p1_era_normalized].residual if "residual" in tr else (tr[tr.p1_era_normalized].predicted_total-tr[tr.p1_era_normalized].actual_total)
+    yes=tr[tr.p1_era_normalized].predicted_total-tr[tr.p1_era_normalized].actual_total
     no=tr[~tr.p1_era_normalized].predicted_total-tr[~tr.p1_era_normalized].actual_total
     if len(yes)<MIN_GROUP or len(no)<MIN_GROUP:
         raise RuntimeError(f"Insufficient train groups: feature={len(yes)}, control={len(no)}")
@@ -100,7 +106,7 @@ def main():
     for i in range(BOOTSTRAPS):
         diffs[i]=rng.choice(yv,len(yv),replace=True).mean()-rng.choice(nv,len(nv),replace=True).mean()
     ci=[round(float(np.quantile(diffs,.025)),4),round(float(np.quantile(diffs,.975)),4)]
-    reports={"thresholds":{"home_ppg_z_train_75th_percentile":round(h_cut,6),"away_road_def_rating_z_train_75th_percentile":round(d_cut,6)},
+    reports={"coverage":coverage,"thresholds":{"home_ppg_z_train_75th_percentile":round(h_cut,6),"away_road_def_rating_z_train_75th_percentile":round(d_cut,6)},
       "train":{"qualifying":len(yes),"control":len(no),"residual_effect_feature_minus_control":round(effect,4),"bootstrap_95ci":ci},
       "validation":{}}
     adjusted=[]
