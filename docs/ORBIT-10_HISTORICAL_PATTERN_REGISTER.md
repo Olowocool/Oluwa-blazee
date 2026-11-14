@@ -2,7 +2,7 @@
 
 **Register code name:** ORBIT-10  
 **Expanded name:** Out-of-sample Research Benchmark for Integrated Totals — 10 patterns  
-**Status:** APPROVED SCOPE / NOT YET IMPLEMENTED OR VALIDATED  
+**Status:** RESEARCH IN PROGRESS — STAGE 3B COMPLETE; STAGE 4 SCREEN RUN PENDING  
 **Scope date:** 2026-11-14  
 **Historical training window:** NBA seasons 2000–01 onward, through the latest season with verified data.
 
@@ -339,3 +339,15 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 
 
 - 2026-11-14 17:42 UTC — Stage 3B run #6 completed successfully and passed the workflow's artifact verification: [run 43622334146](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43622334146), workflow commit `22ba9899786fdf424e3d796772ee952f9b668025`, runner fix `11ee1aabde394414f59490b6850816d97a7775e8`, artifact ID `14125070696` (`ORBIT-10-stage3b-pattern1-era-normalized`, SHA-256 `6800c656504cf5f1f10608f607580ed2e8d295b066480b2ba7e336782b750a38`). Inspected JSON and CSV: train 19,100 eligible (92 excluded; 99.5206% coverage), validation 4,749 (100%); thresholds home PPG z=0.657915 and away road DRtg z=0.732879; train qualifying/control 1,155/17,945, residual effect -5.8361, bootstrap 95% CI [-6.9573,-4.6496]; validation qualifying/control 265/4,484, effect -5.1825. Validation MAE 15.7279 to 15.6350 (delta -0.0929); RMSE 20.0342 to 19.9061 (delta -0.1281). All six preregistered screening gates pass. Independently recomputed group effects and error metrics from CSV; 23,849 rows contain train/validation only, zero holdout. Decision: **era-normalized Pattern 1 screening pass only**. This is not causal evidence, profitability proof, or deployment approval. Original fixed-threshold Pattern 1 remains rejected. Detailed report: `research/ORBIT-10_STAGE3B_PATTERN1_ERA_NORMALIZED_RESULTS_2026-11-14.md`. Stage 3B is complete; Stage 4 remains a separate preregistered research stage, and holdout remains sealed. No main/production/Render/betting records/paid DunkAPI changes.
+
+
+### Stage 3B register correction and Stage 4 commencement — 2026-11-14
+
+- The Stage 3B results report is present at `research/ORBIT-10_STAGE3B_PATTERN1_ERA_NORMALIZED_RESULTS_2026-11-14.md` and its content matches successful run #6 (43622334146), artifact 14125070696. The table above is corrected from the stale "run pending" entry.
+- Stage 4 preregistration: `docs/ORBIT-10_STAGE4_INTERACTION_PROTOCOL_2026-11-14.md`.
+- Stage 4 runner: `research/orbit10_stage4_interaction_screen.py`.
+- Stage 4 workflow: `.github/workflows/orbit10-stage4-interaction-screen.yml`.
+- Exactly two pairs are pre-specified: era-normalized Pattern 1 × Pattern 5 rest disadvantage; and era-normalized Pattern 1 × Pattern 7 top-three-vs-bottom-three pace collision. These are conditional tests, not an endorsement of Pattern 5 or Pattern 7 as standalone features.
+- Each pair uses a TRAIN-only 2×2 difference-in-differences interaction contrast, 2,000 cell-stratified bootstrap replicates, minimum 30 observations in every TRAIN cell and 15 in every VALIDATION cell, and unchanged application to validation. Both MAE and RMSE must improve versus the Stage 3B Pattern 1-only comparator. Sparse pairs are reported as INSUFFICIENT EVIDENCE, with no fitted correction.
+- The runner filters the prediction table to train and validation before merging features. Holdout is not merged, scored, or used. No market data, paid DunkAPI calls, main/production, Render, or betting records are used.
+- Stage 4 workflow definition committed as `11177d57cbfa0322c5fc6454781204c410bf46fb`. Workflow execution and artifact inspection are still pending; no interaction result is accepted yet.
