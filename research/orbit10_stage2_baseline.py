@@ -119,9 +119,15 @@ def load_legacy() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
             ])
     audit = {
         "legacy_raw_rows": int(raw_rows),
-        "legacy_regular_season_rows_2000_01_to_2022_23_after_required_field_filter": int(len(raw)),
+        "legacy_regular_season_rows_after_required_field_filter": int(len(raw)),
         "legacy_rows_excluded_for_missing_required_values": missing_rows,
         "legacy_baseline_games_used_2000_01_to_2008_09": int(len(rows)),
+        "season_id_examples": sorted(raw["season_id"].dropna().astype(int).unique().tolist())[:40],
+        "season_end_year_examples_current_mapping": sorted(raw["season_end_year"].dropna().astype(int).unique().tolist())[:40],
+        "game_date_year_examples": sorted(raw["game_date"].dt.year.dropna().unique().tolist())[:40],
+        "overlap_rows_by_season_end_year": {
+            str(int(y)): int(n) for y, n in pd.DataFrame(overlap).groupby("season_end_year").size().items()
+        } if overlap else {},
     }
     return pd.DataFrame(rows), pd.DataFrame(overlap), audit
 
@@ -286,6 +292,8 @@ def main() -> None:
     diagnostics = {
         "legacy_overlap_rows": int(len(legacy_overlap)),
         "modern_overlap_rows": int(len(modern_overlap)),
+        "legacy_audit": legacy_audit,
+        "modern_season_end_years": sorted(modern_overlap["season_end_year"].unique().astype(int).tolist()),
         "legacy_sample": legacy_overlap.head(12).astype(str).to_dict(orient="records"),
         "modern_sample": modern_overlap.head(12).astype(str).to_dict(orient="records"),
         "same_season_game_id_team_rows": int(len(game_matches)),
