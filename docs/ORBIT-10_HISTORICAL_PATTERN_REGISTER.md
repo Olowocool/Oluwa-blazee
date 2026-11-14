@@ -247,7 +247,7 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 | Stage 1 — Data audit | COMPLETE WITH FEATURE GAPS | See research/ORBIT-10_STAGE1_DATA_AUDIT_2026-11-14.md; coverage and unavailable sources documented |
 | Stage 2 — Baseline | COMPLETE — FROZEN BASELINE BUILT; PERFORMANCE IS A BENCHMARK, NOT ACCEPTANCE | Run #10 passed reconciliation and produced inspected predictions and split metrics; see verification record below |
 | Stage 3 — Ten individual tests | COMPLETE WITH FEATURE GAPS — SIX SCREENED; FOUR SOURCE/MEASUREMENT LIMITED | See research/ORBIT-10_STAGE3_INDIVIDUAL_PATTERN_RESULTS_2026-11-14.md and artifact 14117349844; no feature approved for the combined model yet |
-| Stage 4 — Interactions | NOT STARTED | Pre-specified interaction results and sample counts |
+| Stage 3B — Pattern 1 era-normalized replication | IN PROGRESS — PREREGISTERED; RUN PENDING | Train-only thresholds, validation-only decision, final holdout sealed |\n| Stage 4 — Interactions | NOT STARTED — BLOCKED PENDING STAGE 3B DECISION | Only individually supported features may enter interaction tests |
 | Stage 5 — Combined model | NOT STARTED | Reproducible fit and feature-contribution audit |
 | Stage 6 — Chronological validation | NOT STARTED | Untouched holdout and leakage checks |
 | Stage 7 — Final comparison | NOT STARTED | Model A/B/C/D comparison and written decision |
@@ -315,3 +315,15 @@ Status changes require evidence and a dated note. Stage 1 is closed as a source-
 - Run #1 (`43605906188`, commit `bc87ec9`) is superseded: review identified a reversed residual-correction sign. Run #2 (`43606056452`) failed due a missing away-venue flag in the feature history. The sign and venue-history issues were corrected before valid run #3; only run #3 is accepted as Stage 3 evidence.
 - Stage 3 is marked **complete with feature gaps** because every pattern now has an explicit tested, insufficient, partial, or unavailable disposition. This does not mean all ten were empirically tested or any feature has been validated for deployment.
 - No changes to `main`, production, Render, betting records or paid DunkAPI usage.
+
+
+### Stage 3B — Pattern 1 era-normalized replication preregistered (2026-11-14)
+
+- Protocol: `docs/ORBIT-10_STAGE3B_PATTERN1_ERA_NORMALIZED_PROTOCOL_2026-11-14.md`.
+- Runner: `research/orbit10_stage3b_pattern1_era_normalized.py`.
+- Workflow: `.github/workflows/orbit10-stage3b-pattern1.yml`.
+- Run: [43606608960](https://github.com/Olowocool/Oluwa-blazee/actions/runs/43606608960), commit `afa095b356a217d065180243920a7307f411787d`; observed in progress.
+- Feature uses trailing-25 home-game PPG and road-game defensive rating, each standardized against same-date league cross-section. Both thresholds are the 75th percentile of the respective TRAIN z-score distributions and are frozen for validation.
+- Training-only residual adjustment, 2,000 bootstrap replicates, minimum 100 observations per train group. Validation is the sole out-of-sample decision set.
+- Final holdout is excluded from the analysis dataframe and is not scored, tuned, or reported. No odds or paid APIs used.
+- Stage 4 interactions remain blocked until this replication is inspected and decided.
