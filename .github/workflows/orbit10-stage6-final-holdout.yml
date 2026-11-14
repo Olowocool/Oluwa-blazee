@@ -1,0 +1,78 @@
+name: ORBIT-10 Stage 6 Final Holdout Evaluation
+
+on:
+  push:
+    branches:
+      - "research/historical-pattern-total-test"
+    paths:
+      - "research/orbit10_stage6_final_holdout.py"
+      - "research/orbit10_stage3b_pattern1_era_normalized.py"
+      - "research/orbit10_stage2_baseline.py"
+      - ".github/workflows/orbit10-stage6-final-holdout.yml"
+      - "data/game.csv"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  final-holdout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas numpy duckdb
+      - name: Rebuild frozen baseline
+        run: |
+          python -m py_compile research/orbit10_stage2_baseline.py research/orbit10_stage3b_pattern1_era_normalized.py research/orbit10_stage6_final_holdout.py
+          python research/orbit10_stage2_baseline.py
+      - name: Run one-time final holdout evaluation
+        run: python research/orbit10_stage6_final_holdout.py
+      - name: Verify final holdout evidence and frozen arithmetic
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import numpy as np
+          import pandas as pd
+          out = Path("outputs/research/orbit10_stage6_final_holdout")
+          sp = out / "orbit10_stage6_final_holdout_summary.json"
+          pp = out / "orbit10_stage6_final_holdout_predictions.csv"
+          assert sp.is_file() and sp.stat().st_size > 0
+          assert pp.is_file() and pp.stat().st_size > 0
+          s = json.loads(sp.read_text())
+          p = pd.read_csv(pp)
+          assert set(p.season_end_year.astype(int).unique()) == {2021, 2022, 2023, 2024, 2025, 2026}
+          assert len(p) == p.game_id.nunique()
+          assert p.prediction_reconstruction_error.abs().max() < 1e-10
+          assert s["holdout"]["coverage"]["eligible_games"] == len(p)
+          assert s["holdout"]["paired_population_model_a"]["games"] == len(p)
+          assert s["holdout"]["paired_population_model_b"]["games"] == len(p)
+          assert s["frozen_model"]["alpha"] == -0.805967
+          assert s["frozen_model"]["beta"] == -5.836135
+          assert s["frozen_model"]["home_ppg_z_threshold"] == 0.657915
+          assert s["frozen_model"]["away_road_defensive_rating_z_threshold"] == 0.732879
+          assert set(s["decision"]["criteria"]) == {
+              "all_six_expected_seasons_present", "at_least_1000_paired_games",
+              "feature_coverage_at_least_95_percent", "overall_paired_mae_improves",
+              "overall_paired_rmse_improves", "both_metrics_improve_in_at_least_four_seasons"
+          }
+          print("Final holdout evidence verified:", len(p), "paired games.")
+          print("Model A:", s["holdout"]["paired_population_model_a"])
+          print("Model B:", s["holdout"]["paired_population_model_b"])
+          print("Decision:", s["status"])
+          PY
+      - name: Upload final holdout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORBIT-10-stage6-final-holdout
+          path: outputs/research/orbit10_stage6_final_holdout/
+          if-no-files-found: warn
+          retention-days: 90
