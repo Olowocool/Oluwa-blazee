@@ -111,9 +111,11 @@ def load_legacy() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
         else:
             overlap.extend([
                 {"season_end_year": int(r["season_end_year"]), "source_game_id": r["game_id"],
-                 "team_id": r["team_id_home"], "pts": float(r["pts_home"]), "formula_poss": hp},
+                 "team_id": r["team_id_home"], "game_date": r["game_date"].date().isoformat(),
+                 "is_home": True, "pts": float(r["pts_home"]), "formula_poss": hp},
                 {"season_end_year": int(r["season_end_year"]), "source_game_id": r["game_id"],
-                 "team_id": r["team_id_away"], "pts": float(r["pts_away"]), "formula_poss": ap},
+                 "team_id": r["team_id_away"], "game_date": r["game_date"].date().isoformat(),
+                 "is_home": False, "pts": float(r["pts_away"]), "formula_poss": ap},
             ])
     audit = {
         "legacy_raw_rows": int(raw_rows),
@@ -206,6 +208,8 @@ def load_modern() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
             cross_rows.append({
                 "season_end_year": int(season),
                 "source_game_id": str(gid),
+                "game_date": team["game_date"].date().isoformat(),
+                "is_home": bool(team["home"]),
                 "team_id": team["team_id"],
                 "pts": float(team["pts"]),
                 "formula_poss": float(team["formula_poss"]),
@@ -273,16 +277,28 @@ def main() -> None:
         "within_0_01_possessions_pct": round(float(np.isclose(provider_delta, 0, atol=0.01).mean() * 100), 2),
     }
 
-    overlap = legacy_overlap.merge(
-        modern_team[modern_team["season_end_year"].between(2010, 2023)],
-        on=["season_end_year", "source_game_id", "team_id"],
-        how="inner", suffixes=("_legacy", "_modern"),
-        validate="one_to_one",
-    )
+    modern_overlap = modern_team[modern_team["season_end_year"].between(2010, 2023)].copy()
+    # Save forensic counts before enforcing the reconciliation gate.
+    game_keys = ["season_end_year", "source_game_id"]
+    game_matches = legacy_overlap.merge(modern_overlap, on=game_keys, how="inner", suffixes=("_legacy", "_modern"))
+    home_matches = legacy_overlap.merge(modern_overlap, on=game_keys + ["is_home"], how="inner", suffixes=("_legacy", "_modern"))
+    date_score_matches = legacy_overlap.merge(modern_overlap, on=["season_end_year", "game_date", "is_home", "pts"], how="inner", suffixes=("_legacy", "_modern"))
+    diagnostics = {
+        "legacy_overlap_rows": int(len(legacy_overlap)),
+        "modern_overlap_rows": int(len(modern_overlap)),
+        "legacy_sample": legacy_overlap.head(12).astype(str).to_dict(orient="records"),
+        "modern_sample": modern_overlap.head(12).astype(str).to_dict(orient="records"),
+        "same_season_game_id_team_rows": int(len(game_matches)),
+        "same_season_game_id_and_home_flag_rows": int(len(home_matches)),
+        "same_season_date_home_score_rows": int(len(date_score_matches)),
+        "same_game_id_team_id_rows": int(legacy_overlap.merge(modern_overlap, on=game_keys + ["team_id"], how="inner").shape[0]),
+        "legacy_team_id_examples": sorted(legacy_overlap["team_id"].astype(str).unique())[:30],
+        "modern_team_id_examples": sorted(modern_overlap["team_id"].astype(str).unique())[:30],
+    }
+    (OUT / "orbit10_source_reconciliation_diagnostics.json").write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
+    overlap = legacy_overlap.merge(modern_overlap, on=game_keys + ["team_id"], how="inner", suffixes=("_legacy", "_modern"), validate="one_to_one")
     if len(overlap) < 1000:
-        raise RuntimeError(
-            f"Insufficient cross-source overlap for Stage 2 gate: {len(overlap)} team-games; expected >=1000."
-        )
+        raise RuntimeError(f"Insufficient cross-source overlap: {len(overlap)} team-games; diagnostic counts: game_id={len(game_matches)}, game_id+home={len(home_matches)}, date+home+score={len(date_score_matches)}.")
     score_diff = overlap["pts_legacy"] - overlap["pts_modern"]
     poss_diff = overlap["formula_poss_legacy"] - overlap["formula_poss_modern"]
     cross_source_audit = {
